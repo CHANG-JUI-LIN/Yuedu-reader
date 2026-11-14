@@ -87,6 +87,48 @@ struct ReaderWindowObstructions: Equatable {
         folds.contains { $0.height > $0.width }
     }
 
+    /// One report on its way to the page: `measured` as the page is laid out, and the report to
+    /// keep as the one taken while reading. A report taken with the status bar hidden is the
+    /// reading one; any other — status bar shown, or not known for that measurement (`nil`) —
+    /// keeps the occlusions of the last reading one (`withOcclusions(whileReading:)`).
+    ///
+    /// The reader hides the status bar while reading and shows it with its menu. A folded
+    /// iPhone Duo stands its status bar down the right side, under the camera, and reports the
+    /// housing grown to take it in: 84×82pt hidden, 84×174pt shown (iOS 27.2 simulator,
+    /// 2026-11-15). 174pt reaches the first lines of text, so every tap that opened or closed the
+    /// menu took the text's 84pt right inset away or gave it back, and the whole chapter was laid
+    /// out again behind a loading screen (221 pages read, 257 with the menu open). The page is
+    /// laid out for reading; the status bar shown over it with the menu is part of the menu.
+    ///
+    /// Fallback, disclosed: with no report taken while reading for this window — a book opened
+    /// from the shelf, whose first report still has the shelf's status bar, or a window resized
+    /// with the menu open — these stand as measured, and the page is laid out once more when the
+    /// status bar hides. Delete this once the system reports the status bar apart from the
+    /// housing it stands beside.
+    static func forReading(
+        _ measured: ReaderWindowObstructions,
+        statusBarHidden: Bool?,
+        whileReading: ReaderWindowObstructions?
+    ) -> (laidOut: ReaderWindowObstructions, whileReading: ReaderWindowObstructions?) {
+        if statusBarHidden == true {
+            return (measured, measured)
+        }
+        return (measured.withOcclusions(whileReading: whileReading), whileReading)
+    }
+
+    /// These, with the occlusions of `whileReading` in place of their own, when both were
+    /// measured for the same window: the same size and the same side safe areas.
+    func withOcclusions(whileReading: ReaderWindowObstructions?) -> ReaderWindowObstructions {
+        guard let whileReading,
+              whileReading.windowWidth == windowWidth,
+              whileReading.windowHeight == windowHeight,
+              whileReading.sideSafeArea == sideSafeArea
+        else { return self }
+        var laidOut = self
+        laidOut.occlusions = whileReading.occlusions
+        return laidOut
+    }
+
     /// The side insets for something spanning `band` (window y) across the window.
     func sideInsets(across band: ClosedRange<CGFloat>) -> ReaderSideInsets {
         ReaderSideInsets(
@@ -117,7 +159,8 @@ struct ReaderWindowObstructions: Equatable {
     ///
     /// A housing sits in a corner: flush with this side, flush with the top or the bottom, and
     /// exactly as wide as the inset, which is there for it — the folded iPhone Duo's is 84pt
-    /// beside an 84pt inset, held upright or on its side, status bar shown or hidden.
+    /// beside an 84pt inset, held upright or on its side, status bar shown or hidden (shown, it
+    /// also runs twice as far down: `withOcclusions(whileReading:)`).
     ///
     /// An iPhone reports a 54pt band along the Dynamic Island's whole edge: across the top in
     /// portrait, where the sides have no inset, and down one side in landscape, narrower than
@@ -154,6 +197,8 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
     private final class HeldObstructions {
         var latest: ReaderWindowObstructions?
         var awaitsWindow = false
+        /// The last report taken with the status bar hidden — what the page is laid out around.
+        var whileReading: ReaderWindowObstructions?
     }
 
     func body(content: Content) -> some View {
@@ -202,7 +247,11 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
     private func report(_ obstructions: ReaderWindowObstructions) {
         held.latest = obstructions
         if let readerWindow = window.window {
-            action(Self.withSides(of: readerWindow, obstructions))
+            action(Self.forReading(
+                Self.withSides(of: readerWindow, obstructions),
+                statusBarHidden: readerWindow.windowScene?.statusBarManager?.isStatusBarHidden ?? true,
+                held: held
+            ))
             return
         }
         guard !held.awaitsWindow else { return }
@@ -213,7 +262,11 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
             Task { @MainActor in
                 held.awaitsWindow = false
                 guard let latest = held.latest else { return }
-                action(Self.withSides(of: readerWindow, latest))
+                action(Self.forReading(
+                    Self.withSides(of: readerWindow, latest),
+                    statusBarHidden: nil,
+                    held: held
+                ))
             }
         }
     }
@@ -240,5 +293,26 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
         var obstructions = obstructions
         obstructions.sideSafeArea = ReaderSideInsets(left: insets.left, right: insets.right)
         return obstructions
+    }
+
+    /// `measured` as the page is laid out, through `ReaderWindowObstructions.forReading`, with
+    /// the report kept for the next one.
+    ///
+    /// `statusBarHidden` is the window scene's, asked in the handler for the reason `withSides`
+    /// gives, and only for a report just measured: one the deferred path hands on later was
+    /// measured before the flag may have moved, so it passes `nil`. A scene without a status
+    /// bar manager has no status bar to show.
+    private static func forReading(
+        _ measured: ReaderWindowObstructions,
+        statusBarHidden: Bool?,
+        held: HeldObstructions
+    ) -> ReaderWindowObstructions {
+        let step = ReaderWindowObstructions.forReading(
+            measured,
+            statusBarHidden: statusBarHidden,
+            whileReading: held.whileReading
+        )
+        held.whileReading = step.whileReading
+        return step.laidOut
     }
 }

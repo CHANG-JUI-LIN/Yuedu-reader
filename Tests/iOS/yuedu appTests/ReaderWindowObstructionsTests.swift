@@ -39,6 +39,92 @@ struct ReaderWindowObstructionsTests {
         #expect(Self.foldedDuo.sideInsets(across: 630...648) == .zero)
     }
 
+    /// The folded Duo with the reader's menu open: the status bar stands under the camera and
+    /// the housing is reported twice as tall. Measured on the iPhone Duo simulator, iOS 27.2.
+    private static let foldedDuoWithStatusBar: ReaderWindowObstructions = {
+        var shown = foldedDuo
+        shown.occlusions = [
+            CGRect(x: 382, y: 0, width: 84, height: 174),
+            CGRect(x: 399.67, y: 29.33, width: 37, height: 37),
+        ]
+        return shown
+    }()
+
+    /// As measured, the grown housing reaches the text — which is why opening the menu used to
+    /// lay the chapter out again 84pt narrower.
+    @Test func foldedDuoStatusBarReachesTheText() {
+        #expect(Self.foldedDuoWithStatusBar.sideInsets(across: 96...640) == ReaderSideInsets(left: 0, right: 84))
+    }
+
+    /// Laid out for reading, the menu's status bar leaves the text where it was.
+    @Test func foldedDuoTextKeepsItsWidthWithTheMenuOpen() {
+        let laidOut = Self.foldedDuoWithStatusBar.withOcclusions(whileReading: Self.foldedDuo)
+        #expect(laidOut == Self.foldedDuo)
+        #expect(laidOut.sideInsets(across: 96...640) == .zero)
+    }
+
+    /// A report taken while reading in another window — before a rotation, before a resize —
+    /// says nothing about this one, so the measured occlusions stand.
+    @Test func readingOcclusionsOfAnotherWindowAreNotUsed() {
+        var otherSize = Self.foldedDuo
+        otherSize.windowHeight = 466
+        #expect(Self.foldedDuoWithStatusBar.withOcclusions(whileReading: otherSize) == Self.foldedDuoWithStatusBar)
+
+        var otherSides = Self.foldedDuo
+        otherSides.sideSafeArea = ReaderSideInsets(left: 84, right: 0)
+        #expect(Self.foldedDuoWithStatusBar.withOcclusions(whileReading: otherSides) == Self.foldedDuoWithStatusBar)
+
+        #expect(Self.foldedDuoWithStatusBar.withOcclusions(whileReading: nil) == Self.foldedDuoWithStatusBar)
+    }
+
+    /// The reports of opening a book from the shelf and opening and closing the menu twice, as
+    /// the reporter hands them on (iPhone Duo simulator, iOS 27.2): the page is laid out wide
+    /// throughout once a report has been taken while reading.
+    @Test func menuOpenedAndClosedKeepsThePageWide() {
+        let reports: [(ReaderWindowObstructions, Bool?)] = [
+            (Self.foldedDuoWithStatusBar, false), // the shelf's status bar, still up
+            (Self.foldedDuo, true),               // reading
+            (Self.foldedDuoWithStatusBar, false), // menu
+            (Self.foldedDuo, true),
+            (Self.foldedDuoWithStatusBar, false), // menu
+            (Self.foldedDuo, true),
+        ]
+        var whileReading: ReaderWindowObstructions?
+        var laidOut: [ReaderWindowObstructions] = []
+        for (measured, statusBarHidden) in reports {
+            let step = ReaderWindowObstructions.forReading(
+                measured,
+                statusBarHidden: statusBarHidden,
+                whileReading: whileReading
+            )
+            whileReading = step.whileReading
+            laidOut.append(step.laidOut)
+        }
+        // Before anything was measured while reading, the first stands as measured.
+        #expect(laidOut[0] == Self.foldedDuoWithStatusBar)
+        #expect(laidOut.dropFirst().allSatisfy { $0 == Self.foldedDuo })
+    }
+
+    /// A report handed on later, by the reporter's deferred path, was measured before the status
+    /// bar may have moved: it is laid out like a status-bar report and never kept as the reading one.
+    @Test func aReportOfUnknownStatusBarIsNotKeptAsReading() {
+        let step = ReaderWindowObstructions.forReading(
+            Self.foldedDuoWithStatusBar,
+            statusBarHidden: nil,
+            whileReading: Self.foldedDuo
+        )
+        #expect(step.laidOut == Self.foldedDuo)
+        #expect(step.whileReading == Self.foldedDuo)
+
+        let first = ReaderWindowObstructions.forReading(
+            Self.foldedDuoWithStatusBar,
+            statusBarHidden: nil,
+            whileReading: nil
+        )
+        #expect(first.laidOut == Self.foldedDuoWithStatusBar)
+        #expect(first.whileReading == nil)
+    }
+
     /// iPhone landscape: the Dynamic Island's side reports a band down its whole length,
     /// narrower than the inset, so it is no housing and nothing changes from the safe area.
     /// Measured on the iPhone 18 Pro Max simulator, iOS 27.2, status bar hidden.
