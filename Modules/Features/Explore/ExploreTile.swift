@@ -14,6 +14,8 @@ enum ExploreArtwork: Equatable {
     case symbol(String)
     /// A symbol on grey, the same for every entry of its kind: a source, a group of sources.
     case neutral(String)
+    /// A module: its own `icon` (format 3.0.2), else the symbol every module shares.
+    case module(RuleModule)
 
     /// Every source's picture (maintainer, 2026-10-13: one symbol for a source without one).
     static let source = ExploreArtwork.neutral("square.grid.2x2.fill")
@@ -215,6 +217,14 @@ private struct ExploreArtworkView: View {
                     .foregroundStyle(DSColor.textPrimary)
                     .frame(width: side, height: side)
                     .background(DSColor.neutralControlFill, in: shape)
+            case .module(let module):
+                // The shared symbol until its picture is read, then the picture filling the square.
+                RuleModuleIcon(module: module)
+                    .font(DSFont.fixed(size: size, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: side, height: side)
+                    .background(DSColor.accentLight, in: shape)
+                    .clipShape(shape)
             }
         }
         .accessibilityHidden(true)

@@ -1,13 +1,16 @@
 import SwiftUI
 
-// 作品詳情's series fan (Apple Books' series header, `Technotes/AppleBooksHomeLayouts-2026-10-25.md`;
-// maintainer, by option, 2026-10-26): the other volumes' covers fanned behind the page's own,
-// up to two on each side, the nearest in series order. The volumes are the series read on this
-// device (同系列), else the covers a list gave the item that stands for its series (趨勢's
+// A series page's fan (Apple Books' series header, `Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
+// the series' other volumes standing upright behind the page's cover, up to two on each side, the
+// nearest in series order. The volumes are the series read on this device (`WorkDetailSeriesPage`),
+// or the covers a list gave the item that stands for its series (`ListedSeriesPage`, 趨勢's
 // `seriesCovers`). Real artwork only: a volume whose cover would be a 預設封面 or generated, or
 // whose artwork does not load, is skipped, and with none left the hero keeps its single cover.
-// The fan is decoration; the hero names the series once, by its series link or a list's series
-// name, or by its title for a list's item that is the whole series.
+// The fan is decoration; the hero names the series.
+//
+// Until 2026-11-14 作品詳情 drew it too, tilted, behind a book's own cover (maintainer, by option,
+// 2026-10-26). Since the series has a page (maintainer, 2026-11-14: 「拿掉扇形」) a book's page has
+// the book's cover alone and names its series over its title.
 
 /// The other volumes of the page's series, before the fan picks from them.
 struct SeriesFan {
@@ -68,19 +71,6 @@ struct SeriesFan {
             }
         }
         return [:]
-    }
-}
-
-extension SeriesFan {
-    /// The series read on this device (同系列) around the page's own volume; nil when the
-    /// page's volume is not among its volumes.
-    @MainActor
-    init?(_ series: WorkSeriesShelf, store: BookStore) {
-        guard let own = series.volumes.firstIndex(where: \.isPageWork) else { return nil }
-        let cards = HomeRowContent(entries: series.others.map(\.entry), store: store).cards
-        // A card is made of each item entry, and only of those.
-        let before = series.volumes[..<own].filter { if case .item = $0.entry { true } else { false } }.count
-        self.init(volumes: cards.map { Volume(id: $0.id.sortKey, cover: $0.cover) }, position: before)
     }
 }
 
@@ -233,8 +223,8 @@ private struct SeriesFanCover: View {
             .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
             .shadow(color: DSColor.bookDetailCoverShadow, radius: DSLayout.bookDetailCoverShadowRadius,
                     y: DSLayout.bookDetailCoverShadowOffsetY)
-            .rotationEffect(.degrees(isOpen ? DSLayout.bookDetailSeriesFanAngles[depth] * side : 0), anchor: .bottom)
-            .offset(x: isOpen ? size.width * DSLayout.bookDetailSeriesFanOffsets[depth] * side : 0)
+            .offset(x: isOpen ? size.width * DSLayout.seriesPageFanOffsets[depth] * side : 0,
+                    y: -size.height * DSLayout.seriesPageFanLifts[depth])
             .onAppear {
                 guard !reduceMotion else { return }
                 withAnimation(DSAnimation.standard) { self.isOpen = true }
@@ -261,22 +251,11 @@ extension SeriesFan {
 #Preview("系列扇形") {
     let sample = SeriesFan.preview
     NavigationStack {
-        BookDetailScaffold(title: "第 2 冊", compactAction: BookDetailAction(title: "開始閱讀", systemImage: "book", action: {})) {
-            BookDetailHero(
-                artworkShape: .book,
-                cover: HomeCoverArtwork(cover: sample.own, title: "第 2 冊", author: "",
-                                        size: CGSize(width: DSLayout.bookDetailCoverWidth, height: DSLayout.bookDetailCoverHeight)),
-                title: "第 2 冊",
-                author: "示範作者",
-                meta: "",
-                primary: BookDetailAction(title: "開始閱讀", systemImage: "book", action: {}),
-                secondary: nil,
-                links: [BookDetailLink(id: "series", title: SeriesWorks.line(name: "示範系列", number: 2), action: {})],
-                seriesFan: sample.fan
-            )
-        } content: {
-            EmptyView()
-        }
+        SeriesPageLayout(
+            hero: SeriesPageHero(name: "示範系列", author: "示範作者", meta: "系列 · 5 本", cover: sample.own, coverTitle: "第 2 冊",
+                                 coverAuthor: "", fan: sample.fan,
+                                 open: BookDetailAction(title: "檢視第 2 冊", systemImage: "book", action: {})),
+            rows: [])
     }
 }
 #endif

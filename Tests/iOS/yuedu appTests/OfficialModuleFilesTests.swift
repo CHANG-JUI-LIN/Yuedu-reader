@@ -65,6 +65,23 @@ struct OfficialModuleFilesTests {
             let module = try official(list.moduleID)
             #expect(module.modules.contains { $0.id == list.entryID }, "\(list.moduleID) has \(list.entryID)")
         }
+        // Today's page (2026-11-14): 趨勢's lists as sections and collages, the rankings as columns.
+        let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh", "ja", "en"])
+        var named: [(module: String, entry: String)] = []
+        for section in page.sections {
+            switch section.binding {
+            case .module(let moduleID, let entryID): named.append((moduleID, entryID))
+            case .lists(let cards):
+                for card in cards {
+                    if case .module(let moduleID, let entryID) = card.binding { named.append((moduleID, entryID)) }
+                }
+            default: break
+            }
+        }
+        #expect(Set(named.map(\.module)) == ["trends", "bangumi", "narou", "anilist"])
+        for list in named {
+            #expect(try official(list.module).modules.contains { $0.id == list.entry }, "\(list.module) has \(list.entry)")
+        }
         let aniList = ModuleProvider(module: try official("anilist").localized(for: "en"))
         let section = HomeSection(layout: .row, binding: .module(moduleID: "anilist", entryID: "trending-manga"))
         #expect(aniList.rowName(for: section) == "Trending Manga", "the list's title in the app's language")
@@ -675,6 +692,28 @@ struct OfficialModuleFilesTests {
         } == ["https://upload.wikimedia.org/wikipedia/en/thumb/2/2a/The_Well_of_Ascension.jpg/500px-The_Well_of_Ascension.jpg",
               "https://thumb.wikimedia.org/wikipedia/en/thumb/d/d4/Hero_of_Ages.jpg/500px-Hero_of_Ages.jpg"])
         #expect(found[1].summary.seriesCovers.isEmpty)
+
+        // The series' books, for its page (2026-11-14): each read as an item is, the item's own
+        // first. One with an article is a work of its own; one only named opens nothing.
+        let volumes = found[0].summary.volumes
+        #expect(volumes.map(\.title) == ["Mistborn: The Final Empire", "The Well of Ascension", "The Hero of Ages",
+                                         "Mistborn: Secret History"])
+        #expect(volumes.map { $0.work?.record.key.item } == [
+            "https://en.wikipedia.org/wiki/Mistborn:_The_Final_Empire", "https://en.wikipedia.org/wiki/The_Well_of_Ascension",
+            "https://en.wikipedia.org/wiki/The_Hero_of_Ages", nil])
+        #expect(volumes[1].work?.record.authors == ["Brandon Sanderson"])
+        #expect(volumes.allSatisfy { $0.work?.summary.volumes.isEmpty != false }, "a volume lists none: no way back into the series")
+        // Artwork only from the module's hosts, as the item's own; none is no cover, not a drawn one.
+        #expect(volumes.map { $0.cover != nil } == [true, true, false, false])
+        #expect(found[1].summary.volumes.isEmpty)
+        // The card opens the series first; the series' button, and a book alone, open 作品詳情.
+        let series = WorkDetailRoute(record: found[0].record, summary: found[0].summary, opening: .bibliographic)
+        #expect(ExplorePush.item(series) == .series(ListedSeriesRoute(work: series)))
+        #expect(ExplorePush.item(ListedSeriesRoute(work: series).workAlone) == .work(ListedSeriesRoute(work: series).workAlone))
+        #expect(ListedSeriesRoute(work: series).workAlone.record == series.record)
+        #expect(ListedSeriesRoute(work: series).workAlone.summary.seriesCovers.isEmpty, "the book's page has the book's cover alone")
+        let alone = WorkDetailRoute(record: found[1].record, summary: found[1].summary, opening: .bibliographic)
+        #expect(ExplorePush.item(alone) == .work(alone))
 
         let entry = try #require(module.modules.first { $0.id == "year" })
         let listed = try await f.client.page(of: entry, in: module, values: ["region": "en"]).items

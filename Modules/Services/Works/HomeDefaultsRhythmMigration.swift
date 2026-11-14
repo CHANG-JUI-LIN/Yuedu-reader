@@ -10,8 +10,8 @@ import Foundation
 ///   reading languages: the defaults from 2026-10-13 (a338bbea, 精選書單 one section) to
 ///   2026-10-25 (c4cd251e), without 為你推薦, which `HomePageStore` takes off first (deleted
 ///   2026-10-27). An older 預設, or one with a section added, removed or moved, is left as it is.
-/// - A section still as those defaults made it takes the layout today's defaults give its
-///   binding. One the reader hid, titled, gave a subtitle or parameters, or drew another way
+/// - A section still as those defaults made it takes the layout the defaults of 2026-10-25
+///   gave its binding (`HomeDefaultsStoreMigration.previousDefaults`). One the reader hid, titled, gave a subtitle or parameters, or drew another way
 ///   keeps what it has.
 /// - Layouts only: no section is added, removed or moved, and each keeps its id.
 /// - One band on the page: the first untouched list with covers takes it, unless the reader
@@ -47,8 +47,10 @@ enum HomeDefaultsRhythmMigration {
                 && section.isEnabled && section.parameters.isEmpty
         }
         let untouchedBindings = Set(untouched.map { sections[$0].binding })
-        // Today's layout for each binding, the band among the untouched lists.
-        var layouts = Dictionary(HomePageDefaults.page(for: context).sections.map { ($0.binding, $0.layout) },
+        // The 2026-10-25 layout for each binding, the band among the untouched lists. From the
+        // frozen defaults of that time (`HomeDefaultsStoreMigration.previousDefaults`): today's
+        // page is another one, which a 預設 these layouts leave untouched then becomes.
+        var layouts = Dictionary(HomeDefaultsStoreMigration.previousDefaults(for: context).map { ($0.binding, $0.layout) },
                                  uniquingKeysWith: { first, _ in first })
         let hasBand = sections.contains { $0.layout == .band }
         let lists = HomePageDefaults.officialModuleLists(

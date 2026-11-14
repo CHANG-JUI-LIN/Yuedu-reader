@@ -64,8 +64,8 @@ struct CollectionLayoutTests {
             let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: [])
             let lists = page.sections.filter { $0.binding == .gutenbergLists }
             #expect(lists.count == 1)
-            // 分類卡片 since 2026-10-25, after Apple Books' More to Explore.
-            #expect(lists.first?.layout == .categoryCards)
+            // 大圖卡片 since 2026-11-14, as Apple Books' store draws its 探索更多 (分類卡片 from 2026-10-25).
+            #expect(lists.first?.layout == .bannerCards)
             #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
             #expect(lists.first?.displayTitle(sourceName: "") == localized("精選書單"))
         }
@@ -90,7 +90,7 @@ struct CollectionLayoutTests {
 
     @Test("A list section offers the layouts of lists alone; a section of books every layout, its list a card")
     func choices() {
-        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards, .bannerCards, .chart])
+        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards, .bannerCards, .chart, .groupedShelves, .genreList])
         for binding: HomeSectionBinding in [.latest, .continueReading, .gutenbergCollection(id: "chinese"), .aozoraNew] {
             #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases)
         }

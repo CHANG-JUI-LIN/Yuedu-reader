@@ -3,8 +3,9 @@ import Testing
 @testable import yuedu_app
 
 // The 2026-10-25 layouts for a 預設 saved before them (maintainer, 2026-10-26): a 預設 whose
-// sections are the old defaults' is recognised, each section still as they made it takes today's
-// layout, and the store does it once, on 預設 only.
+// sections are the old defaults' is recognised, each section still as they made it takes the
+// layout of 2026-10-25 (the defaults until 2026-11-14, frozen in `HomeDefaultsStoreMigration`),
+// and the store does it once, on 預設 only.
 
 private typealias Migration = HomeDefaultsRhythmMigration
 
@@ -27,7 +28,7 @@ struct HomeDefaultsRhythmMigrationTests {
         for made in Migration.contexts {
             let saved = Migration.previousDefaults(for: made)
             let outcome = try #require(Migration.apply(to: saved), "\(made)")
-            let today = HomePageDefaults.page(for: made).sections
+            let today = HomeDefaultsStoreMigration.previousDefaults(for: made)
             #expect(outcome.sections.map(\.binding) == today.map(\.binding), "the same sections in the same order: \(made)")
             #expect(outcome.sections.map(\.layout) == today.map(\.layout), "\(made)")
             #expect(outcome.sections.map(\.id) == saved.map(\.id))
@@ -158,7 +159,7 @@ struct HomeDefaultsRhythmStoreTests {
         let defaults = suite()
         let store = HomePageStore(fileURL: url, defaults: defaults, appliesDefaultsRhythmOnce: true)
         store.waitForPendingWritesForTesting()
-        #expect(store.page?.sections.map(\.layout) == HomePageDefaults.page(for: chinese).sections.map(\.layout))
+        #expect(store.page?.sections.map(\.layout) == HomeDefaultsStoreMigration.previousDefaults(for: chinese).map(\.layout))
         #expect(store.page?.sections.map(\.id) == made.map(\.id))
         #expect(defaults.bool(forKey: HomePageStore.defaultsRhythmKey))
         #expect(HomePageStore(fileURL: url).page == store.page, "the file holds them")
@@ -183,11 +184,9 @@ struct HomeDefaultsRhythmStoreTests {
         let defaults = suite()
         let store = HomePageStore(fileURL: url, defaults: defaults, appliesDefaultsRhythmOnce: true)
         _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
-        // The reader draws every section the way the old defaults did.
+        // The reader makes their home the old defaults, section for section.
         let previous = Migration.previousDefaults(for: chinese)
-        store.edit { page in
-            for index in page.sections.indices { page.sections[index].layout = previous[index].layout }
-        }
+        store.save(HomePage(sections: previous))
         store.waitForPendingWritesForTesting()
         let reopened = HomePageStore(fileURL: url, defaults: defaults, appliesDefaultsRhythmOnce: true)
         #expect(reopened.page?.sections.map(\.layout) == previous.map(\.layout))
@@ -206,7 +205,7 @@ struct HomeDefaultsRhythmStoreTests {
         let store = HomePageStore(fileURL: url, defaults: suite(), appliesDefaultsRhythmOnce: true)
         #expect(store.selectedConfiguration == own)
         #expect(store.page?.sections.map(\.layout) == old.map(\.layout))
-        #expect(store.home?.sections(of: .defaults).map(\.layout) == HomePageDefaults.page(for: chinese).sections.map(\.layout))
+        #expect(store.home?.sections(of: .defaults).map(\.layout) == HomeDefaultsStoreMigration.previousDefaults(for: chinese).map(\.layout))
     }
 
     /// 為你推薦 as the builds before 2026-10-27 wrote it.
@@ -221,7 +220,7 @@ struct HomeDefaultsRhythmStoreTests {
         let url = savedHome(saved)
         let store = HomePageStore(fileURL: url, defaults: suite(), appliesDefaultsRhythmOnce: true)
         store.waitForPendingWritesForTesting()
-        let today = HomePageDefaults.page(for: chinese).sections
+        let today = HomeDefaultsStoreMigration.previousDefaults(for: chinese)
         #expect(store.page?.sections.map(\.binding) == today.map(\.binding))
         #expect(store.page?.sections.map(\.layout) == today.map(\.layout))
         #expect(HomePageStore(fileURL: url).page == store.page, "the file holds it")

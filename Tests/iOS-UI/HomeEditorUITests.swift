@@ -49,7 +49,12 @@ final class HomeEditorUITests: XCTestCase {
         let tab = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        XCTAssertTrue(app.buttons[card].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        // With the official modules the defaults are several screens tall (2026-11-14) and 熱門 far
+        // down them, not made until scrolled to: the home is there once its first section is named.
+        let ready = officialModules
+            ? app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.row.header.")).firstMatch
+            : app.buttons[card].firstMatch
+        XCTAssertTrue(ready.waitForExistence(timeout: 15), app.debugDescription)
         return app
     }
 
@@ -277,12 +282,12 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(mark.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(mark.isHittable, app.debugDescription)
         mark.tap()
-        XCTAssertEqual(mark.value as? String, "已隱藏")
+        XCTAssertTrue(takesValue(mark, "已隱藏"), app.debugDescription)
         attach(app, "home-editing-top-hidden")
         XCTAssertFalse(done.isHittable, "a shorter card keeps the page where the status bar took it: \(app.debugDescription)")
         XCTAssertTrue(app.windows.firstMatch.frame.contains(mark.frame), app.debugDescription)
         mark.tap()
-        XCTAssertEqual(mark.value as? String, "顯示")
+        XCTAssertTrue(takesValue(mark, "顯示"), app.debugDescription)
         XCTAssertFalse(done.isHittable, "and a taller one: \(app.debugDescription)")
 
         app.buttons["home.editDoneBar"].firstMatch.tap()
@@ -308,6 +313,15 @@ final class HomeEditorUITests: XCTestCase {
     private func tapStatusBar(_ app: XCUIApplication) {
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0))
             .withOffset(CGVector(dx: 0, dy: 15)).tap()
+    }
+
+    /// The mark says its section's new state once its card has gone where that state puts it: a
+    /// hidden section's card moves to the editor's end and a shown one's back, and on the long
+    /// store defaults (2026-11-14) the mark read while its card was on the way had no value yet.
+    @MainActor
+    private func takesValue(_ element: XCUIElement, _ value: String) -> Bool {
+        let said = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in element.value as? String == value }, object: nil)
+        return XCTWaiter.wait(for: [said], timeout: 5) == .completed
     }
 
     @MainActor
@@ -361,6 +375,28 @@ final class HomeEditorUITests: XCTestCase {
             XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeEditor.toggle."))
                 .firstMatch.exists, "\(doneButton): no card is left: \(app.debugDescription)")
         }
+    }
+
+    /// The defaults since 2026-11-14 with the official modules on, as a reader has them: a home
+    /// several screens tall, 經典名著 on its band among its sections. 編輯首頁 from its end and
+    /// 完成 leave the home drawn at its end, as on the shorter homes above.
+    @MainActor
+    func testEditingTheStoreDefaults() {
+        let app = launchExplore(officialModules: true)
+        let edit = app.buttons["home.edit"].firstMatch
+        let done = app.buttons["home.editDone"].firstMatch
+        for _ in 0..<20 where !edit.isHittable { app.swipeUp() }
+        XCTAssertTrue(edit.isHittable, app.debugDescription)
+        edit.tap()
+        XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(becomesHittable(done), "the editor's end: \(app.debugDescription)")
+        attach(app, "store-defaults-editing")
+        done.tap()
+        XCTAssertTrue(becomesHittable(edit), "the home's end: \(app.debugDescription)")
+        attach(app, "store-defaults-after-done")
+        XCTAssertGreaterThan(drawnShare(app, above: edit), 0.05, "the home is drawn, not its background")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeEditor.toggle."))
+            .firstMatch.exists, "no card is left: \(app.debugDescription)")
     }
 
     /// 編輯首頁 on a home that ends on the screen, its hidden sections last: the app hung at the
@@ -431,11 +467,11 @@ final class HomeEditorUITests: XCTestCase {
         return 1 - Double(commonest) / Double(samples)
     }
 
-    /// 5d-3: 呈現方式, from the same long press, redraws the section: 橫向單排書架 shows several
-    /// books to a screen, 圖文資訊清單 gives each the width of the screen. 熱門 starts ranked
-    /// (2026-10-25, after Apple Books' charts), which is 排行榜 since 2026-10-27 (it replaced
-    /// 顯示排名): one ranking takes the page, each place read with its rank first; the other
-    /// layouts read none.
+    /// 5d-3: 呈現方式, from the same long press, redraws the section. 熱門 is a new install's plain
+    /// row since 2026-11-14 (the home after Apple Books' store: 古騰堡's covers are not drawn
+    /// large, and the rankings are 熱門排行榜's): several books to a screen, none read with a rank.
+    /// 排行榜 (2026-10-27, in place of 顯示排名) gives its one ranking the page, each place read
+    /// with its rank first; 圖文資訊清單 gives each book the width of the screen, and reads none.
     @MainActor
     func testLongPressChangesTheLayout() throws {
         let app = launchExplore()
@@ -443,22 +479,22 @@ final class HomeEditorUITests: XCTestCase {
                                                       "home.row.header.", listTitle)).firstMatch
         var book = try popularCard(app, under: header)
         func readsRank(_ label: String) -> Bool { label.range(of: "^[0-9]+, ", options: .regularExpression) != nil }
-        XCTAssertTrue(readsRank(book.label), "排行榜 reads its rank first: \(book.label)")
-        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, "one ranking takes the page: \(book.frame)")
-        attach(app, "home-section-chart")
+        XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen: \(book.frame)")
+        XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
+        attach(app, "home-section-row")
 
         header.press(forDuration: 1.0)
         let layouts = app.buttons["呈現方式"].firstMatch
         XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
         layouts.tap()
-        let row = app.buttons["橫向單排書架"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        let chart = app.buttons["排行榜"].firstMatch
+        XCTAssertTrue(chart.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "home-section-layouts")
-        row.tap()
-        book = try popularCard(app, under: header) { $0.frame.width < app.frame.width / 2 }
-        XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
-        XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
-        attach(app, "home-section-row")
+        chart.tap()
+        book = try popularCard(app, under: header) { $0.frame.width > app.frame.width * 0.8 }
+        XCTAssertTrue(readsRank(book.label), "排行榜 reads its rank first: \(book.label)")
+        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, "one ranking takes the page: \(book.frame)")
+        attach(app, "home-section-chart")
 
         header.press(forDuration: 1.0)
         XCTAssertTrue(layouts.waitForExistence(timeout: 5))
@@ -466,7 +502,8 @@ final class HomeEditorUITests: XCTestCase {
         let list = app.buttons["圖文資訊清單"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
         list.tap()
-        book = try popularCard(app, under: header) { $0.frame.width > app.frame.width * 0.8 }
+        // As wide as 排行榜's places were: told from them by the rank it no longer reads.
+        book = try popularCard(app, under: header) { $0.frame.width > app.frame.width * 0.8 && !readsRank($0.label) }
         XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
         XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
         attach(app, "home-section-list")
@@ -516,9 +553,10 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-section-featured-next")
     }
 
-    /// 精選書單's lists, each read by its name: 分類卡片 for a new install (2026-10-25, after Apple
-    /// Books' More to Explore), a card as wide as the page and the next one under it. Its long
-    /// press offers the layouts of lists and no other; 專題集合 (decision 37) pages them by.
+    /// 精選書單's lists, each read by its name: 大圖卡片 for a new install (2026-11-14, as Apple
+    /// Books' store draws its 探索更多; 分類卡片 from 2026-10-25), a card to a page and the next one
+    /// showing past the edge. Its long press offers the layouts of lists and no other; 專題集合
+    /// (decision 37) pages them by too.
     @MainActor
     func testListsAreCollectionCards() {
         let app = launchExplore()
@@ -528,11 +566,12 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<6 where !list.exists || list.frame.maxY > tabBarTop { app.swipeUp() }
         XCTAssertTrue(list.isHittable, app.debugDescription)
         XCTAssertEqual(list.label, "中文書籍")
-        XCTAssertGreaterThan(list.frame.width, app.frame.width * 0.8, "a card as wide as the page: \(list.frame)")
+        XCTAssertGreaterThan(list.frame.width, app.frame.width * 0.8, "a card to a page: \(list.frame)")
         let fiction = app.buttons["home.collection.gutenberg.fiction"].firstMatch
         XCTAssertTrue(fiction.exists, "the next list follows")
-        XCTAssertGreaterThanOrEqual(fiction.frame.minY, list.frame.maxY, "under it: \(fiction.frame) \(list.frame)")
-        attach(app, "home-category-cards")
+        XCTAssertGreaterThanOrEqual(fiction.frame.minX, list.frame.maxX, "beside it: \(fiction.frame) \(list.frame)")
+        XCTAssertLessThan(fiction.frame.minX, app.frame.width, "the next page shows past the edge: \(fiction.frame)")
+        attach(app, "home-banner-cards")
 
         // The header's long press: the three layouts of lists, no layout of books.
         // The name, then its line (`HomeSection.displaySubtitle`).
@@ -588,6 +627,67 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(list.waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    /// The three layouts after Apple Books' store (2026-11-14), as VoiceOver finds them. 主打卡片:
+    /// a book a page and one stop each, its title then its author, the next one past the edge.
+    /// 分組書架: each list's name a button to all of it, its books under it, each a stop of its
+    /// own. 類型清單: a row per list, read by its name, the next one under it; a tap opens the list.
+    @MainActor
+    func testStoreLayoutsReadTheirCards() throws {
+        func section(_ binding: [String: Any], layout: String) -> [String: Any] {
+            ["binding": binding, "id": UUID().uuidString, "isEnabled": true, "layout": layout,
+             "parameters": [String: Any](), "title": ""]
+        }
+        let sections = [section(["type": "gutenbergShelf", "id": "popular"], layout: "heroCards"),
+                        section(["type": "gutenbergLists"], layout: "groupedShelves"),
+                        section(["type": "gutenbergLists"], layout: "genreList")]
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 3, "sections": sections])
+            .write(to: home)
+        let app = launchExplore(["-explore-home-file", home.path])
+        let tabBarTop = app.tabBars.firstMatch.frame.minY
+
+        // 主打卡片.
+        let book = app.buttons[card].firstMatch
+        XCTAssertEqual(book.label, "Moby Dick")
+        XCTAssertEqual(book.value as? String, "Herman Melville")
+        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, "a book a page: \(book.frame)")
+        XCTAssertLessThan(book.frame.maxX, app.frame.width, "the next page shows past the edge: \(book.frame)")
+        XCTAssertTrue(book.isHittable, app.debugDescription)
+        let next = app.buttons["home.card.gutenberg.1513"].firstMatch
+        XCTAssertTrue(next.exists, "the next book follows: \(app.debugDescription)")
+        XCTAssertEqual(next.frame.minY, book.frame.minY, accuracy: 1, "beside it: \(next.frame) \(book.frame)")
+        attach(app, "home-hero-cards")
+
+        // 分組書架: 中文書籍's shelf, its name over its books.
+        let shelf = app.buttons["home.shelf.header.chinese"].firstMatch
+        for _ in 0..<6 where !shelf.exists || shelf.frame.maxY > tabBarTop - 140 { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(shelf.isHittable, app.debugDescription)
+        XCTAssertEqual(shelf.label, "中文書籍")
+        let volume = app.buttons["home.card.gutenberg.24264"].firstMatch
+        XCTAssertTrue(volume.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(volume.label, "紅樓夢")
+        XCTAssertEqual(volume.value as? String, "曹雪芹")
+        XCTAssertGreaterThanOrEqual(volume.frame.minY, shelf.frame.maxY - 1, "its books under its name: \(volume.frame) \(shelf.frame)")
+        XCTAssertLessThan(volume.frame.width, app.frame.width / 3, "small covers, several to a screen: \(volume.frame)")
+        attach(app, "home-grouped-shelves")
+
+        // 類型清單: a row per list, under 分組書架's shelves, which hold the same lists' books.
+        let rows = app.buttons.matching(identifier: listCard)
+        let fictionRows = app.buttons.matching(identifier: "home.collection.gutenberg.fiction")
+        for _ in 0..<12 where !(rows.firstMatch.exists && rows.firstMatch.isHittable && fictionRows.firstMatch.isHittable) {
+            app.swipeUp(velocity: .slow)
+        }
+        let row = rows.firstMatch, fiction = fictionRows.firstMatch
+        XCTAssertTrue(row.isHittable && fiction.isHittable, app.debugDescription)
+        XCTAssertEqual(row.label, "中文書籍")
+        XCTAssertGreaterThan(row.frame.width, app.frame.width * 0.8, "a row as wide as the page: \(row.frame)")
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "a row to tap: \(row.frame)")
+        XCTAssertGreaterThanOrEqual(fiction.frame.minY, row.frame.maxY - 1, "the next row under it: \(fiction.frame) \(row.frame)")
+        attach(app, "home-genre-list")
+        row.tap()
+        XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
     /// Decision 34: 新增欄目 shows each layout drawn small with real covers, read by its name; the
     /// form's 呈現方式 opens the same previews with the section's own books, the current one
     /// selected, and a choice comes back to the form.
@@ -610,10 +710,17 @@ final class HomeEditorUITests: XCTestCase {
         let featured = app.buttons["homeNewSection.layout.featured"].firstMatch
         for _ in 0..<8 where !featured.isHittable { app.swipeUp() }
         attach(app, "home-new-section-previews-more")
-        // The list's end: 精選 and 專題集合.
+        // The store's layouts (2026-11-14), each with covers of its own; 類型清單 ends the list.
+        for (style, name) in [("heroCards", "主打卡片"), ("groupedShelves", "分組書架"), ("genreList", "類型清單")] {
+            let choice = app.buttons["homeNewSection.layout.\(style)"].firstMatch
+            for _ in 0..<12 where !choice.isHittable { app.swipeUp() }
+            XCTAssertTrue(choice.isHittable, "\(name)\n\(app.debugDescription)")
+            XCTAssertEqual(choice.label, name)
+            attach(app, "home-new-section-preview-\(style)")
+        }
         app.swipeUp()
         attach(app, "home-new-section-previews-end")
-        for _ in 0..<8 where !featured.isHittable { app.swipeDown() }
+        for _ in 0..<16 where !featured.isHittable { app.swipeDown() }
         featured.tap()
         let layout = app.buttons["homeSection.layout"].firstMatch
         XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
@@ -863,7 +970,8 @@ final class HomeEditorUITests: XCTestCase {
         try writeBookSource()
         let app = launchExplore(officialModules: true)
         let edit = app.buttons["home.edit"].firstMatch
-        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        for _ in 0..<20 where !edit.isHittable { app.swipeUp() }
+        XCTAssertTrue(edit.isHittable, app.debugDescription)
         edit.tap()
 
         startSection(app, layout: "compactReadingCard")

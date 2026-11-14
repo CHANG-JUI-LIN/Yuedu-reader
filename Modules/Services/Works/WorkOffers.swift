@@ -13,8 +13,13 @@ import Foundation
 enum WorkOffers {
     /// The tapped work's books among `books`, one per source (its first), each as its source's
     /// own version; a source not in `sources`, or turned off, offers nothing.
-    static func books(of work: WorkDetailRoute, in books: [OnlineBook], sources: [UUID: BookSource]) -> [WorkDetailRoute] {
+    ///
+    /// - Parameter kind: the books' kind; the work's own unless given. Its other form (a
+    ///   book's audiobook, an audiobook's book) is matched the same way, title and author.
+    static func books(of work: WorkDetailRoute, in books: [OnlineBook], sources: [UUID: BookSource],
+                      kind: ContentKind? = nil) -> [WorkDetailRoute] {
         guard let key = Key(work.summary.title, authors: work.summary.authors) else { return [] }
+        let isOtherForm = kind.map { $0 != work.record.contentKind } ?? false
         var offered = Set<UUID>()
         var offers: [WorkDetailRoute] = []
         var matched: [(witness: String, authors: [String])] = []
@@ -22,15 +27,21 @@ enum WorkOffers {
             // The title first: folding costs ICU transforms (7a-5), and most books differ there.
             guard let source = sources[book.sourceId], source.enabled, key.matchesTitle(book.name),
                   let route = WorkDetailRoute(.onlineBook(book, source: source)),
-                  key.matchesAuthors(route.record.authors),
-                  route.record.contentKind == work.record.contentKind else { continue }
+                  route.record.contentKind == kind ?? work.record.contentKind,
+                  // A version may write its author longer or shorter. The work in its other form
+                  // is another book: the same author by name, and only of a work that names one
+                  // (maintainer, 2026-11-14: stricter).
+                  isOtherForm ? WorkMatchKey.authorsSame(work.summary.authors, route.record.authors)
+                      : key.matchesAuthors(route.record.authors) else { continue }
             offered.insert(book.sourceId)
             // The tapped book itself, met again, is not a witness to its own author.
             guard route.record.key != work.record.key else { continue }
             matched.append((book.sourceId.uuidString, route.record.authors))
             offers.append(route)
         }
-        return key.agreeing(offers, authors: matched)
+        // Each was matched by name already; the versions of a work with no author are those
+        // that agree on one.
+        return isOtherForm ? offers : key.agreeing(offers, authors: matched)
     }
 
     /// 青空文庫's works of the tapped work's title and author.

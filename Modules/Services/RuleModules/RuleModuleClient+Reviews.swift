@@ -21,7 +21,7 @@ extension RuleModuleClient {
     func cachedReviews(_ reviews: RuleModule.Reviews, key: [String: String], in module: RuleModule) -> RuleModuleReviewPage? {
         let duration = TimeInterval(max(reviews.cacheDuration ?? 0, 0))
         guard duration > 0,
-              let cached = cached(RuleModuleReviewPage.self, at: cacheFile(module: module.id, entry: Self.reviewsCacheName, values: key)),
+              let cached = cached(RuleModuleReviewPage.self, at: cacheFile(module: module.id, entry: Self.reviewsCacheName, values: Self.reviewsCacheKey(key, in: module))),
               cached.version == module.version, now().timeIntervalSince(cached.fetchedAt) < duration else { return nil }
         return cached
     }
@@ -32,7 +32,12 @@ extension RuleModuleClient {
                      in module: RuleModule) {
         guard (reviews.cacheDuration ?? 0) > 0 else { return }
         save(RuleModuleReviewPage(reviews: found, rating: rating, fetchedAt: now(), version: module.version),
-             to: cacheFile(module: module.id, entry: Self.reviewsCacheName, values: key))
+             to: cacheFile(module: module.id, entry: Self.reviewsCacheName, values: Self.reviewsCacheKey(key, in: module)))
+    }
+
+    /// The work's key with the module's global values, which change what the site answers.
+    nonisolated static func reviewsCacheKey(_ key: [String: String], in module: RuleModule) -> [String: String] {
+        module.globalValues(language: nil).reduce(into: key) { $0["global.\($1.key)"] = $1.value }
     }
 
     /// Whether `item` has every key the request names: a record without its `id` is not asked.
@@ -50,7 +55,7 @@ extension RuleModuleClient {
     func reviews(of item: RuleListItem, by reviews: RuleModule.Reviews,
                  in module: RuleModule) async throws -> (reviews: [WorkReview], rating: WorkRating?) {
         let request = reviews.request
-        let values = ["id": item.id ?? "", "url": item.bookUrl]
+        let values = module.withGlobalValues(["id": item.id ?? "", "url": item.bookUrl], language: nil)
         let leading = request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
         let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
         let started = SourcePerfTrace.now

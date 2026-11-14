@@ -24,6 +24,43 @@ enum WorkMatchKey {
         authorKeysCompatible(lhs.map(author), rhs.map(author))
     }
 
+    /// The same author, strictly (maintainer, 2026-11-14: 「作者的其他作品和有聲書什麼的，採嚴格
+    /// 一點」, after 飛天魚's page listed the works of 飛天魚兒, 驕傲的飛天魚 and Yuky飛天魚): some
+    /// name of one side is a name of the other, in either script, with what a source writes
+    /// around a name taken off (`authorNames`). Never one name inside another, which
+    /// `authorsCompatible` allows where a work's versions are matched. For an author's own
+    /// page and rows, and for a work's other form.
+    static func authorsSame(_ lhs: [String], _ rhs: [String]) -> Bool {
+        let right = Set(rhs.flatMap(authorNames))
+        return !right.isEmpty && lhs.flatMap(authorNames).contains(where: right.contains)
+    }
+
+    /// The names an author field holds, each folded: a field of several (「A、B」, "A, B") is
+    /// each of them, and 「作者：X」 and 「X 著」 are X.
+    static func authorNames(_ raw: String) -> [String] {
+        raw.components(separatedBy: authorSeparators).compactMap { part in
+            var name = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            for prefix in ["作者：", "作者:"] where name.hasPrefix(prefix) { name.removeFirst(prefix.count) }
+            for suffix in [" 編著", " 编著", " 原著", " 著", "\u{3000}著"] where name.hasSuffix(suffix) { name.removeLast(suffix.count) }
+            let key = fold(name)
+            return key.isEmpty ? nil : key
+        }
+    }
+
+    private static let authorSeparators = CharacterSet(charactersIn: "、,，;；/／&＆")
+
+    /// A title's key among one author's works: the title's, without the author's own name before
+    /// it. Some sources write the author into the title (「飛天魚萬古神帝」 by 飛天魚, on the
+    /// maintainer's page of 飛天魚 beside 萬古神帝, 2026-11-14): on an author's page that is the
+    /// same work, once. A title that is the name alone keeps it.
+    static func title(_ raw: String, by authors: [String]) -> String {
+        let key = title(raw)
+        for name in authors.flatMap(authorNames) where key.count > name.count && key.hasPrefix(name) {
+            return String(key.dropFirst(name.count))
+        }
+        return key
+    }
+
     /// `authorsCompatible` over keys already folded.
     static func authorKeysCompatible(_ lhs: [String], _ rhs: [String]) -> Bool {
         let right = rhs.filter { !$0.isEmpty }

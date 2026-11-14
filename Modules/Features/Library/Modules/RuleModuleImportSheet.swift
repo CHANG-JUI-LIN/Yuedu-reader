@@ -144,6 +144,9 @@ struct RuleModuleManifestSections: View {
     var addedHosts: [String] = []
     /// Shown as the header when this is an update.
     var newVersion: String?
+    /// Its `icon` beside its name (format 3.0.2): on an installed module's page only. Before the
+    /// reader adds it, nothing is asked of a site they have not agreed to.
+    var showsIcon = false
 
     var body: some View {
         Section {
@@ -169,8 +172,17 @@ struct RuleModuleManifestSections: View {
                 }
             }
         } header: {
-            Text(newVersion.map { String(format: localized("新版本 %@"), $0) } ?? module.title)
+            if showsIcon, newVersion == nil, module.icon != nil {
+                Label {
+                    Text(module.title)
+                } icon: {
+                    RuleModuleSizedIcon(module: module, base: DSLayout.moduleHeaderIconSide)
+                }
                 .foregroundStyle(DSColor.textSecondary)
+            } else {
+                Text(newVersion.map { String(format: localized("新版本 %@"), $0) } ?? module.title)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
         }
         .interfaceSectionSurface()
 

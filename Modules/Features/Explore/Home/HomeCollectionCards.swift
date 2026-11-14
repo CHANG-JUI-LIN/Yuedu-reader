@@ -13,16 +13,18 @@ import SwiftUI
 // - 大圖卡片 (2026-10-27): a 分類卡 as More to Explore's Romance, a wide card a page, the list's
 //   name on a face designed from it (`HomeCategoryArt`) or the reader's photo; no covers.
 // - 排行榜 (2026-10-27): Top Charts' columns, a ranking each (`HomeChartColumns`).
+// - 類型清單 (2026-11-14): the 類型 at the foot of the store, a row per list (`HomeGenreList`).
+// - 分組書架 (2026-11-14): Recent Bestsellers by Genre, a shelf per list (`HomeGroupedShelves`).
 
 /// A section's lists in its layout. A section of lists given a layout of books (a custom page's,
 /// a later build's) draws 專題集合, the layout every section of lists can take.
 struct HomeSectionLists: View {
     let layout: HomeSectionLayout
     let collections: [CollectionSummary]
-    /// Each list's books by its id, which 排行榜 draws (`HomeRowContent.lists`).
+    /// Each list's books by its id, which 排行榜 and 分組書架 draw (`HomeRowContent.lists`).
     var contents: [String: HomeRowContent] = [:]
     let open: (CollectionSummary) -> Void
-    /// A book of 排行榜 was tapped, with its column's books.
+    /// A book of 排行榜 or 分組書架 was tapped, with its column's or its shelf's books.
     var openBook: (HomeCardContent, [HomeCardContent]) -> Void = { _, _ in }
     /// An article of 排行榜 was tapped.
     var openArticle: (SubscriptionArticle) -> Void = { _ in }
@@ -32,6 +34,9 @@ struct HomeSectionLists: View {
         case .categoryCards: HomeCategoryCards(collections: collections, open: open)
         case .collageCards: HomeCollageCards(collections: collections, open: open)
         case .bannerCards: HomeBannerCards(collections: collections, open: open)
+        case .genreList: HomeGenreList(collections: collections, open: open)
+        case .groupedShelves:
+            HomeGroupedShelves(collections: collections, contents: contents, openList: open, open: openBook)
         case .chart:
             HomeChartColumns(collections: collections, contents: contents, openColumn: open, open: openBook,
                              openArticle: openArticle)
@@ -140,7 +145,7 @@ extension CollectionOpening {
 
 /// One list's button in every layout of lists: its name is the whole label (the artwork is
 /// hidden), and the UI tests find it by `CollectionSummary.homeIdentifier`.
-private struct HomeCollectionButton<Card: View>: View {
+struct HomeCollectionButton<Card: View>: View {
     let collection: CollectionSummary
     var value: String?
     let open: (CollectionSummary) -> Void
@@ -470,6 +475,9 @@ struct CollectionCoverArtwork<Cover: View>: View {
         }
         .background(DSColor.surfaceTertiary)
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
+        // White on the head of a section's white ground (`HomeSectionShade`): the shadow the
+        // home's other cards stand on.
+        .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
         .accessibilityHidden(true)
     }
 }

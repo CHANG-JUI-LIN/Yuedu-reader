@@ -33,6 +33,33 @@ struct RuleModule: Codable, Hashable, Sendable {
     /// What its readers wrote about a book (format 3.0.1): asked for the record that is the
     /// work 作品詳情 shows, found by `lookup` or `search`. Without it the module gives none.
     var reviews: Reviews?
+    /// The module's picture, an address on `hosts` (format 3.0.2): drawn wherever the module is
+    /// named. Without it the module has the symbol every module shares.
+    var icon: String?
+    /// Parameters of the whole module, Forward's `globalParams` (format 3.0.2): set once on the
+    /// module's page, and a `{{name}}` in any request of its lists, search, lookup and reviews.
+    /// `RuleModuleLibrary` writes the reader's own into each one's `value`.
+    var globalParams: [Param]?
+    /// A book's own page as 作品詳情 opens one of the module's books, Forward's `loadDetail`
+    /// (format 3.0.2): `{{url}}` is the book's `url`; it gives the description and tags its row
+    /// did not. Asked once per opening, or from its `cacheDuration`.
+    var detail: Detail?
+    /// Works like a book, Forward's `relatedItems` (format 3.0.2): 作品詳情's 相關作品, asked of
+    /// the record of the work as `reviews` is.
+    var related: Related?
+    /// The module's books of one genre, by `{{tag}}` (format 3.0.2): where a genre of one of its
+    /// books opens. Without it the genre opens what `search` finds for the word.
+    var genre: Entry?
+
+    /// A record's related works, on one page of the site's.
+    struct Related: Codable, Hashable, Sendable {
+        /// `{{id}}` is the record's `id`, `{{url}}` its `url`, as for `reviews`.
+        var request: Request
+        /// Seconds a work's related works answer again without a request.
+        var cacheDuration: Int?
+        /// Each work, read as a list's are.
+        var list: ListRules
+    }
 
     /// A record's reviews, on one page of the site's.
     struct Reviews: Codable, Hashable, Sendable {
@@ -221,6 +248,9 @@ struct RuleModule: Codable, Hashable, Sendable {
         var intro: String?
         /// Several values.
         var tags: String?
+        /// On the module's own `detail` (format 3.0.2): seconds a book's page answers again
+        /// without a request.
+        var cacheDuration: Int?
     }
 
     /// Forward's parameter, by its names and types.
@@ -237,11 +267,18 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// An enumeration whose default is the option in the reader's 中繼資料語言偏好推薦 (format
         /// 3.0): 趨勢's 地區. `value` is the default when no option is in that language.
         var followsLanguage: Bool?
+        /// Shown, and its own value sent, only while another parameter of the same list (or of
+        /// `globalParams`) has one of these values, Forward's `belongTo` (format 3.0.2). Hidden,
+        /// it sends its default.
+        var belongTo: BelongTo?
+        /// Values an `input` offers to fill in, Forward's `placeholders` (format 3.0.2).
+        var placeholders: [Placeholder]?
 
         var kind: ParamType? { ParamType(rawValue: type) }
 
         init(name: String, title: String? = nil, type: String, description: String? = nil, value: String? = nil,
-             enumOptions: [Option]? = nil, followsLanguage: Bool? = nil) {
+             enumOptions: [Option]? = nil, followsLanguage: Bool? = nil, belongTo: BelongTo? = nil,
+             placeholders: [Placeholder]? = nil) {
             self.name = name
             self.title = title
             self.type = type
@@ -249,6 +286,8 @@ struct RuleModule: Codable, Hashable, Sendable {
             self.value = value
             self.enumOptions = enumOptions
             self.followsLanguage = followsLanguage
+            self.belongTo = belongTo
+            self.placeholders = placeholders
         }
 
         init(from decoder: any Decoder) throws {
@@ -266,7 +305,21 @@ struct RuleModule: Codable, Hashable, Sendable {
             }
             enumOptions = try container.decodeIfPresent([Option].self, forKey: .enumOptions)
             followsLanguage = try container.decodeIfPresent(Bool.self, forKey: .followsLanguage)
+            belongTo = try container.decodeIfPresent(BelongTo.self, forKey: .belongTo)
+            placeholders = try container.decodeIfPresent([Placeholder].self, forKey: .placeholders)
         }
+    }
+
+    /// The parameter a `belongTo` follows, by its `name`, and the values that show it.
+    struct BelongTo: Codable, Hashable, Sendable {
+        var paramName: String
+        var value: [String]
+    }
+
+    /// An `input`'s suggestion: what the menu says, and what it fills in.
+    struct Placeholder: Codable, Hashable, Sendable {
+        var title: String
+        var value: String
     }
 
     enum ParamType: String, CaseIterable, Sendable {
@@ -335,6 +388,11 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// The record's own id on the site, for a request that takes one where its `url` is
         /// another address (`reviews`' `{{id}}`; format 3.0.1).
         var id: String? = nil
+        /// The books of the series the item stands for, in series order, the item's own among
+        /// them: a rule that selects them inside the item, each then read with this list's own
+        /// rules (`title`, `author`, `cover`, `url`…). The item's card opens the series' page,
+        /// which lists them; one with a `url` opens as a work of its own (format 3.0.1).
+        var volumes: String? = nil
     }
 }
 
@@ -387,8 +445,11 @@ private extension String {
 /// (a JSON body sent percent-encoded searches for `%E8…`).
 enum RuleModuleFormat {
     static let version3 = "3.0"
-    /// `reviews`, a list's `id`, and a search's `searchesAuthors`.
+    /// `reviews`, a list's `id` and `volumes`, and a search's `searchesAuthors`.
     static let version3_0_1 = "3.0.1"
+    /// `icon`, `globalParams`, `detail`, `related`, `genre`, and a parameter's `belongTo` and
+    /// `placeholders`.
+    static let version3_0_2 = "3.0.2"
 }
 
 extension RuleModule.ListRules {
@@ -398,7 +459,7 @@ extension RuleModule.ListRules {
                        intro: intro ?? "", wordCount: "", lastChapter: "", kind: kind ?? "", language: language ?? "",
                        aliases: aliases ?? "", tags: tags ?? "", publisher: publisher ?? "", isbn: isbn ?? "",
                        series: series ?? "", seriesCovers: seriesCovers ?? "", contentKind: contentKind ?? "",
-                       id: id ?? "")
+                       id: id ?? "", volumes: volumes ?? "")
     }
 }
 

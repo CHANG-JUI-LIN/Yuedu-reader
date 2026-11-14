@@ -17,7 +17,8 @@ import Foundation
 /// - The custom pages move in once (5d-4): when a file older than 5d-4 is read, or when the
 ///   first home is made. `custom_explore_pages.json` is left where it is.
 /// - A 預設 still as the defaults of 2026-10-13 to 2026-10-25 made it takes the 2026-10-25
-///   layouts once (`HomeDefaultsRhythmMigration`).
+///   layouts once (`HomeDefaultsRhythmMigration`), and becomes the 2026-11-14 page once
+///   (`HomeDefaultsStoreMigration`).
 /// - 預設's official modules' lists follow the language, as the home reads it
 ///   (`HomeDefaultsLanguageSwap`).
 /// - 為你推薦, deleted 2026-10-27, is taken off every 首頁配置 that still has it
@@ -99,15 +100,21 @@ final class HomePageStore: ObservableObject {
         let context = HomePageDefaults.Context(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable,
                                                languages: languages)
         if var home {
-            if followLanguage(in: &home, context: context) {
+            // The store's page first: it is made for the language, so there is nothing to follow.
+            let restocked = applyStoreDefaultsOnce(to: &home, context: context)
+            if followLanguage(in: &home, context: context) || restocked {
                 self.home = home
                 write()
             }
             return HomePage(sections: home.sections(of: home.selectedID))
         }
         let defaultPage = HomePageDefaults.page(for: context)
-        // They have the 2026-10-25 layouts already; a reader who changes them keeps theirs.
-        if appliesDefaultsRhythmOnce, !isReadOnly { defaults.set(true, forKey: Self.defaultsRhythmKey) }
+        // They have the 2026-10-25 layouts and the 2026-11-14 page already; a reader who changes
+        // them keeps theirs.
+        if appliesDefaultsRhythmOnce, !isReadOnly {
+            defaults.set(true, forKey: Self.defaultsRhythmKey)
+            defaults.set(true, forKey: Self.defaultsStoreKey)
+        }
         var made = HomeConfigurations(sections: defaultPage.sections)
         made.defaultsLanguages = languages
         if !isReadOnly { moveCustomPages(into: &made) }
@@ -280,6 +287,36 @@ final class HomePageStore: ObservableObject {
             "changed": "\(outcome.changed)", "kept": "\(outcome.kept)",
         ])
         return outcome.changed > 0
+    }
+
+    // MARK: - The 2026-11-14 page
+
+    /// Set once 預設 has been looked at for the 2026-11-14 page, or made as it.
+    static let defaultsStoreKey = "home.defaultsStore20261114"
+
+    /// An untouched 預設 becomes the 2026-11-14 page once (`HomeDefaultsStoreMigration`), made for
+    /// the reader as the home knows them now, so a reader who then changes it keeps theirs. Here,
+    /// not as the file is read: the page depends on the mode, the region and the languages,
+    /// which only the home knows. Under the same switch as the 2026-10-25 layouts, so a test's
+    /// home is read as it was saved; not on a file this build only reads. Returns whether 預設
+    /// changed.
+    private func applyStoreDefaultsOnce(to home: inout HomeConfigurations, context: HomePageDefaults.Context) -> Bool {
+        guard appliesDefaultsRhythmOnce, !isReadOnly, !defaults.bool(forKey: Self.defaultsStoreKey) else { return false }
+        defaults.set(true, forKey: Self.defaultsStoreKey)
+        guard !home.defaultsDeleted, HomeDefaultsStoreMigration.recognises(home.sections) else {
+            AppLogger.cache("⟐ 預設 keeps its sections: not the untouched defaults of 2026-10-25 to 2026-11-14", context: [
+                "sections": "\(home.sections.count)", "defaultsDeleted": "\(home.defaultsDeleted)",
+            ])
+            return false
+        }
+        let before = home.sections.count
+        home.sections = HomePageDefaults.page(for: context).sections
+        home.defaultsLanguages = context.languages
+        AppLogger.cache("⟐ 預設 becomes the 2026-11-14 page", context: [
+            "before": "\(before)", "sections": "\(home.sections.count)", "mode": context.mode.rawValue,
+            "language": context.languages.joined(separator: ","),
+        ])
+        return true
     }
 
     // MARK: - The language

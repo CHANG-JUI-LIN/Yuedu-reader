@@ -13,8 +13,19 @@ private func context(_ languages: [String], mode: ExploreMode = .publicLibraries
     HomePageDefaults.Context(mode: mode, publicLibrariesAvailable: libraries, languages: languages)
 }
 
+/// The defaults until 2026-11-14, each language's lists a section of its own: what a 預設 the
+/// reader changed still holds.
 private func defaults(_ languages: [String], mode: ExploreMode = .publicLibraries, libraries: Bool = true) -> [HomeSection] {
+    HomeDefaultsStoreMigration.previousDefaults(for: context(languages, mode: mode, libraries: libraries))
+}
+
+/// The defaults since 2026-11-14, the languages' rankings the columns of one 熱門排行榜.
+private func storePage(_ languages: [String], mode: ExploreMode = .publicLibraries, libraries: Bool = true) -> [HomeSection] {
     HomePageDefaults.page(for: context(languages, mode: mode, libraries: libraries)).sections
+}
+
+private func rankings(_ languages: [String], libraries: Bool = true) -> HomeSectionBinding {
+    .lists(HomePageDefaults.rankings(languages: languages, publicLibrariesAvailable: libraries))
 }
 
 private func position(of binding: HomeSectionBinding, in sections: [HomeSection]) throws -> Int {
@@ -142,6 +153,72 @@ struct HomeDefaultsLanguageSwapTests {
         #expect(outcome.sections[latest + 1].binding == anilistNovels)
     }
 
+    // MARK: 熱門排行榜 (the defaults since 2026-11-14)
+
+    @Test("the store's page becomes the new language's, 熱門排行榜 in its place under its id, every other section as it was")
+    func storePageUntouched() {
+        let languages = ["zh", "ja", "en", "ko"]
+        for mode in ExploreMode.allCases {
+            for libraries in [true, false] {
+                for from in languages {
+                    for to in languages where to != from {
+                        let saved = storePage([from], mode: mode, libraries: libraries)
+                        let outcome = Swap.apply(to: saved, from: [from], to: context([to], mode: mode, libraries: libraries))
+                        let wanted = storePage([to], mode: mode, libraries: libraries)
+                        let label = "\(from)→\(to) \(mode) libraries: \(libraries)"
+                        #expect(outcome.sections.map(\.binding) == wanted.map(\.binding), "\(label)")
+                        #expect(outcome.sections.map(\.layout) == wanted.map(\.layout), "\(label)")
+                        let others = saved.filter { if case .lists = $0.binding { $0.binding == .lists(HomePageDefaults.pickCards) } else { true } }
+                        #expect(outcome.sections.filter { others.map(\.id).contains($0.id) } == others, "\(label)")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("中文 to English: AniList's rankings take Bangumi's columns, and nothing is added beside them")
+    func storePageChineseToEnglish() throws {
+        let saved = storePage(["zh"])
+        let chart = try position(of: rankings(["zh"]), in: saved)
+        let outcome = Swap.apply(to: saved, from: ["zh"], to: context(["en"]))
+        #expect(outcome.sections.count == saved.count)
+        #expect(outcome.sections[chart].binding == rankings(["en"]))
+        #expect(outcome.sections[chart].id == saved[chart].id)
+        #expect(outcome.sections[chart].layout == .rankedRow)
+        #expect(!outcome.sections.contains { $0.binding == anilistNovels || $0.binding == bangumiNovels },
+                "no ranking as a section of its own")
+    }
+
+    @Test("a language without rankings takes 熱門排行榜 off; coming back, it goes after 本月熱門")
+    func storePageWithoutRankings() throws {
+        let saved = storePage(["zh"])
+        let korean = Swap.apply(to: saved, from: ["zh"], to: context(["ko"]))
+        #expect(korean.sections.count == saved.count - 1)
+        #expect(!korean.sections.contains { $0.binding == rankings(["zh"]) })
+        let back = Swap.apply(to: korean.sections, from: ["ko"], to: context(["ja"]))
+        let month = try position(of: .module(moduleID: "trends", entryID: "month"), in: back.sections)
+        #expect(back.sections[month + 1].binding == rankings(["ja"]))
+        #expect(back.sections[month + 1].layout == .rankedRow)
+        #expect(back.sections.map(\.binding) == storePage(["ja"]).map(\.binding))
+    }
+
+    @Test("熱門排行榜 the reader titled, hid, drew another way or took off is theirs: nothing changes")
+    func storePageChangedChart() throws {
+        let saved = storePage(["zh"])
+        let chart = try position(of: rankings(["zh"]), in: saved)
+        var titled = saved
+        titled[chart].title = "我的排行"
+        var hidden = saved
+        hidden[chart].isEnabled = false
+        var redrawn = saved
+        redrawn[chart].layout = .collageCards
+        var removed = saved
+        removed.remove(at: chart)
+        for changed in [titled, hidden, redrawn, removed] {
+            #expect(Swap.apply(to: changed, from: ["zh"], to: context(["en"])).sections == changed)
+        }
+    }
+
     @Test("whose lists a 預設 from before the language was saved holds")
     func languagesHeld() {
         #expect(Swap.languages(of: defaults(["zh"]), publicLibrariesAvailable: true) == ["zh"])
@@ -178,8 +255,8 @@ struct HomeDefaultsLanguageStoreTests {
         let store = HomePageStore(fileURL: url)
         let chinese = page(store, ["zh"])
         let english = page(store, ["en"])
-        #expect(english.sections.map(\.binding) == defaults(["en"]).map(\.binding))
-        #expect(english.sections.first?.id == chinese.sections.first?.id)
+        #expect(english.sections.map(\.binding) == storePage(["en"]).map(\.binding))
+        #expect(english.sections.map(\.id) == chinese.sections.map(\.id), "熱門排行榜 keeps its id as its columns change")
         #expect(page(store, ["en"]) == english, "once")
         store.waitForPendingWritesForTesting()
 
@@ -195,7 +272,7 @@ struct HomeDefaultsLanguageStoreTests {
         store.createConfiguration(named: "週末", from: .defaults, defaults: context(["zh"]))
         let own = store.page
         #expect(page(store, ["en"]) == own)
-        #expect(store.home?.sections(of: .defaults).map(\.binding) == defaults(["en"]).map(\.binding))
+        #expect(store.home?.sections(of: .defaults).map(\.binding) == storePage(["en"]).map(\.binding))
     }
 
     @Test("a 預設 saved before 2026-10-27 follows a language its lists are not for")

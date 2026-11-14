@@ -92,7 +92,7 @@ final class BookSourceCheckBackgroundTask {
                 "finished": finished, "total": total,
             ], level: .warning)
             expire()
-        }
+        }   
         if identifier != .invalid {
             UIApplication.shared.endBackgroundTask(identifier)
         }

@@ -49,6 +49,10 @@ extension EnvironmentValues {
 /// 書架's 選取 mode, which hides it for its own bottom toolbar (iOS 26.5 simulator). And
 /// the `if` lives in here so the tab's content keeps its identity; swapping that would
 /// reset the tab's navigation stack.
+///
+/// No `accessibilityHidden` on the clear colour, which is no accessibility element to begin
+/// with: a view carrying that modifier in a background can make SwiftUI order the content's
+/// accessibility elements by position (see `RootTabBarHidingModifier`).
 struct RootTabBarHider: View {
     @ObservedObject var visibility: RootTabBarVisibility
 
@@ -56,31 +60,48 @@ struct RootTabBarHider: View {
         if visibility.isTabBarHidden {
             Color.clear
                 .toolbar(.hidden, for: .tabBar)
-                .accessibilityHidden(true)
         }
     }
 }
 
 private struct RootTabBarHidingModifier: ViewModifier {
     let hidesTabBar: Bool
+    let hasBottomBar: Bool
     @Environment(\.rootTabBarVisibility) private var rootTabBar
     @State private var requestID = UUID()
     @State private var isOnScreen = false
 
     func body(content: Content) -> some View {
         content
+            // The hidden bar would otherwise still blur the bottom of this page's scroll
+            // views. A page with a bar of its own there is left alone: the effect is that
+            // bar's, and whatever the page set for its edges stands.
+            .modifier(HiddenBottomScrollEdge(isHidden: hidesTabBar, appliesToPage: !hasBottomBar))
             // Hidden while it hides, and nothing otherwise: `.automatic` is not "no preference".
             // On a stack's root it overrode the `.hidden` of every page pushed over it, which
             // left the tab bar over 探索's readers on iOS 17 (FB-100, iOS 17.5 simulator), as it
             // kept the bar over 書架's 選取 mode from a tab's content (`RootTabBarHider`). In a
             // background, as there, so `content` keeps its identity.
+            //
+            // The clear colour carries no `accessibilityHidden`: a colour is no accessibility
+            // element, and a view with that modifier in a background, whatever its value,
+            // makes SwiftUI order the page's accessibility elements by position. On a page
+            // that is a full-screen UIKit view under SwiftUI bars, the bottom bar then comes
+            // after the view, and VoiceOver's touch, which takes the first element under the
+            // finger, lands on the view (the shape of feedback #15). Seen 2026-11-14 in
+            // `NavigationBackSwipeReservationTests`, with and without a `TabView`. The app's
+            // own reader was not affected: with the modifier and without it, VoiceOver's hit
+            // test found 目錄, 深色, 聽書, 主題, 更多 and the progress slider (iOS 27.2
+            // simulator, opened from 書架 and from 探索).
             .background {
                 if hidesTabBar {
                     Color.clear
                         .toolbar(.hidden, for: .tabBar)
-                        .accessibilityHidden(true)
                 }
             }
+            // On iOS 27 the bar is covered by this page as it slides in, and uncovered as it
+            // slides away (`RootTabBarTransitionCover`).
+            .modifier(RootTabBarTransitionCovering(hidesTabBar: hidesTabBar))
             .onAppear {
                 isOnScreen = true
                 rootTabBar?.setRequest(requestID, hidesTabBar: hidesTabBar)
@@ -99,9 +120,11 @@ private struct RootTabBarHidingModifier: ViewModifier {
 extension View {
     /// Hides the root tab bar while this screen is on screen and `hides` holds — in
     /// place of `.toolbar(.hidden, for: .tabBar)`, which only answers for this screen's
-    /// own tab (see `RootTabBarVisibility`).
-    func hidesRootTabBar(_ hides: Bool = true) -> some View {
-        modifier(RootTabBarHidingModifier(hidesTabBar: hides))
+    /// own tab (see `RootTabBarVisibility`). `hasBottomBar` is for a page that puts a bar
+    /// of its own where the tab bar was: its scroll views keep their bottom edge effect
+    /// (`HiddenBottomScrollEdge`).
+    func hidesRootTabBar(_ hides: Bool = true, hasBottomBar: Bool = false) -> some View {
+        modifier(RootTabBarHidingModifier(hidesTabBar: hides, hasBottomBar: hasBottomBar))
     }
 }
 

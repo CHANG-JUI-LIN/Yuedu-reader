@@ -70,19 +70,20 @@ enum AuthorWorks {
     }
 
     /// A source's search results for an author's name as that author's other books: a search
-    /// matches titles too (「魯迅傳」 for 魯迅), so only a book whose author is compatible with
-    /// `author` (`WorkMatchKey`) is kept; never the page's own book, by address or by title,
+    /// matches titles too (「魯迅傳」 for 魯迅), so only a book whose author is `author` by name
+    /// (`WorkMatchKey.authorsSame`: 飛天魚兒 is not 飛天魚) is kept; never the page's own book, by address or by title,
     /// and each title once.
     static func sameAuthor(_ books: [OnlineBook], author: String, excludingTitle title: String, bookURL: String,
                            limit: Int) -> [OnlineBook] {
-        let own = WorkMatchKey.title(title)
+        let own = WorkMatchKey.title(title, by: [author])
         let ownURL = OnlineBookURLKey.normalize(bookURL)
         var seen: Set<String> = [own]
-        // Not lazy: the filter remembers the titles it has kept, and must see each book once.
+        // Not lazy: the filter remembers the titles it has kept, and must see each book once. A
+        // title with the author's name written before it is that title (`WorkMatchKey.title(_:by:)`).
         return Array(books.filter { book in
-            WorkMatchKey.authorsCompatible([author], [book.author])
+            WorkMatchKey.authorsSame([author], [book.author])
                 && OnlineBookURLKey.normalize(book.bookUrl) != ownURL
-                && seen.insert(WorkMatchKey.title(book.name)).inserted
+                && seen.insert(WorkMatchKey.title(book.name, by: [author])).inserted
         }.prefix(limit))
     }
 

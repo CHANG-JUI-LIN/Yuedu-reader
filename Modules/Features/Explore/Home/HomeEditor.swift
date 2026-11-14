@@ -43,10 +43,11 @@ extension HomeSection {
         case .sourceCategories(let categories): sourceName = categories.first?.source?.bookSourceName ?? ""
         // An untitled module list (the defaults) by its list's title, as its row reads
         // (`ModuleProvider.rowName`); by its id once its module is gone. In a layout of lists
-        // the card names the list, and the section is its module's, as on the home.
+        // the card names the list, and the section is its module's, as on the home; 排行榜's one
+        // ranking is named by the section (`headerNamesItsList`).
         case .module(let moduleID, let entryID):
             let module = modules.installed(id: moduleID)?.module
-            let list = drawsLists ? nil : module?.modules.first { $0.id == entryID }?.title
+            let list = drawsLists && !headerNamesItsList ? nil : module?.modules.first { $0.id == entryID }?.title
             sourceName = list ?? module?.title ?? entryID
         // Lists from one source, by the source.
         case .lists:
@@ -190,6 +191,7 @@ struct HomeSectionSlot<RowContent: View>: View {
         content(title)
             .modifier(HomeSectionMorph(isEditing: isEditing, pageWidth: pageWidth, isOnHome: entry.isOnHome,
                                        isOnEditor: entry.editableIndex != nil,
+                                       ownsGround: entry.homeGroup?.drawsColorBand ?? false,
                                        mark: toggle(title), surface: editingSurface(title),
                                        gestures: HomeSectionEditGestures(
                                            isEditing: isEditing, open: { openSettings(section.id) },
@@ -289,6 +291,9 @@ private struct HomeSectionMorph<Mark: View, Surface: View, Gestures: ViewModifie
     let pageWidth: CGFloat
     let isOnHome: Bool
     let isOnEditor: Bool
+    /// 色帶書架's band is the section's ground, from the section before it to the one after: no
+    /// shade, and no room over or under it.
+    let ownsGround: Bool
     let mark: Mark
     let surface: Surface
     let gestures: Gestures
@@ -352,8 +357,12 @@ private struct HomeSectionMorph<Mark: View, Surface: View, Gestures: ViewModifie
                             .accessibilityHidden(!isEditing || presence < 1)
                     }
                 }
-                // The gap to the next section, going with the section's room.
-                .padding(.bottom, DSSpacing.xxl)
+                // The gap to the next section, going with the section's room: on the home the room
+                // over its name and under its row, inside its ground; in 編輯首頁 the gap between
+                // the cards. By the morph's progress, as every size here (`HomeSectionMorph`).
+                .padding(.top, ownsGround ? 0 : DSSpacing.xl * (1 - edited))
+                .padding(.bottom, ownsGround ? DSSpacing.xxl * edited : DSSpacing.xxl)
+                .background { HomeSectionShade().opacity(ownsGround ? 0 : 1 - edited) }
         }
         .clipShape(HomeSectionPresenceClip(clips: presence < 1))
         .allowsHitTesting(presence == 1)
@@ -392,6 +401,20 @@ private struct HomeSectionFrame: Shape {
         // The trailing corners past the screen's edge, where the card ends.
         frame.size.width += DSRadius.xxl
         return RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous).path(in: frame)
+    }
+}
+
+/// A section's ground on the home (maintainer, 2026-11-14, after Apple Books' store, whose
+/// sections run from white at the head to #EEEEEE at the foot): nothing at its head, deepening to
+/// `DSColor.homeSectionShade` at its foot, so the next section, clear again, stands apart from it.
+/// Over the page, whose colour or theme picture shows through. Decoration: nothing to VoiceOver,
+/// nothing to the finger.
+private struct HomeSectionShade: View {
+    var body: some View {
+        LinearGradient(colors: [DSColor.homeSectionShade.opacity(0), DSColor.homeSectionShade],
+                       startPoint: .top, endPoint: .bottom)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

@@ -615,7 +615,7 @@ struct HomeView: View {
             .toolbar { shelfToolbar(addsBooks: true) }
             // In edit mode, hide the app tab bar so the contextual .bottomBar (delete / group / share)
             // takes its place — the system selection pattern used by Photos / Files.
-            .hidesRootTabBar(editMode == .active)
+            .hidesRootTabBar(editMode == .active, hasBottomBar: true)
             .onChange(of: store.allGroups) { _, groups in
                 // A group whose last book moved out or was deleted has no page left to
                 // show: 全部 takes over, and its folder's page goes back to the shelf.
@@ -1116,7 +1116,7 @@ struct HomeView: View {
         .navigationTitle(group)
         .toolbarTitleDisplayMode(.inline)
         .toolbar { shelfToolbar(addsBooks: false) }
-        .hidesRootTabBar(editMode == .active)
+        .hidesRootTabBar(editMode == .active, hasBottomBar: true)
     }
 
     // MARK: - Group Filter Bar

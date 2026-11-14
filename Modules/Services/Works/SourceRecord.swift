@@ -137,6 +137,18 @@ enum ContentKind: String, Codable, Hashable, Sendable {
     case text, comic, audio, video
 }
 
+extension ContentKind {
+    /// The other way the same work is taken in: a book is listened to, an audiobook read. A
+    /// comic and a video have none.
+    var otherForm: ContentKind? {
+        switch self {
+        case .text: .audio
+        case .audio: .text
+        case .comic, .video: nil
+        }
+    }
+}
+
 /// How a record can be read; the existing services still perform it (design D7).
 enum AcquisitionOption: Hashable, Codable, Sendable {
     case openCopy(UUID)

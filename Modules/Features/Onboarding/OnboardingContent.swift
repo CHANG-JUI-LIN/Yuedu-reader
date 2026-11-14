@@ -53,7 +53,7 @@ struct OnboardingContent: Equatable {
         if visibleTabs.contains(.explore) {
             // The rankings a new home is made with (`HomePageDefaults`): none yet for Korean, nor
             // for Japanese where なろう is hidden.
-            let hasRankings = !HomePageDefaults.officialModuleLists(
+            let hasRankings = !HomePageDefaults.rankings(
                 languages: languages, publicLibrariesAvailable: librariesAvailable
             ).isEmpty
             explore = Copy(

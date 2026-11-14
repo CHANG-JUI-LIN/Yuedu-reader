@@ -29,8 +29,6 @@ struct OnlineBookDetailDestination: View {
     /// On 作品詳情, the work's versions, which 換源 lists first (unified library 5f-3; a search
     /// result's page too, 5f-4c).
     private let workVersions: BookDetailInfoChoice?
-    /// On 作品詳情, the work's series, fanned behind whichever page's cover (`SeriesCoverFan`).
-    private let seriesFan: SeriesFan?
     /// The bookshelf's reader coordinator, given to the text page only: its reader
     /// opens through the coordinator, while the audiobook page's player does not.
     private let textPageReaderNavigator: ReaderNavigationCoordinator?
@@ -46,14 +44,12 @@ struct OnlineBookDetailDestination: View {
         shelfCopyId: UUID? = nil,
         onRemoveFromShelf: (() -> Void)? = nil,
         textPageReaderNavigator: ReaderNavigationCoordinator? = nil,
-        workVersions: BookDetailInfoChoice? = nil,
-        seriesFan: SeriesFan? = nil
+        workVersions: BookDetailInfoChoice? = nil
     ) {
         self.entry = entry
         self.shelfCopyId = shelfCopyId
         self.onRemoveFromShelf = onRemoveFromShelf
         self.workVersions = workVersions
-        self.seriesFan = seriesFan
         self.textPageReaderNavigator = textPageReaderNavigator
         let kind: OnlineBookContentKind
         switch entry {
@@ -83,8 +79,7 @@ struct OnlineBookDetailDestination: View {
                     initialOrigin: switchedOrigin,
                     onRemoveFromShelf: onRemoveFromShelf,
                     onSourceKindChange: switchPage,
-                    workVersions: workVersions,
-                    seriesFan: seriesFan
+                    workVersions: workVersions
                 )
             case .video:
                 VideoDetailView(
@@ -101,8 +96,7 @@ struct OnlineBookDetailDestination: View {
                     sourceSwitchBookId: shelfCopyId,
                     onRemoveFromShelf: onRemoveFromShelf,
                     onSourceKindChange: switchPage,
-                    workVersions: workVersions,
-                    seriesFan: seriesFan
+                    workVersions: workVersions
                 )
                 .environment(\.readerNavigator, textPageReaderNavigator ?? inheritedReaderNavigator)
             }
@@ -116,8 +110,7 @@ struct OnlineBookDetailDestination: View {
                     book: shown,
                     onRemoveFromShelf: onRemoveFromShelf,
                     onSourceKindChange: switchPage,
-                    workVersions: workVersions,
-                    seriesFan: seriesFan
+                    workVersions: workVersions
                 )
             case .video:
                 VideoDetailView(
@@ -132,8 +125,7 @@ struct OnlineBookDetailDestination: View {
                     sourceSwitchBookId: shelfCopyId,
                     onRemoveFromShelf: onRemoveFromShelf,
                     onSourceKindChange: switchPage,
-                    workVersions: workVersions,
-                    seriesFan: seriesFan
+                    workVersions: workVersions
                 )
                 .environment(\.readerNavigator, textPageReaderNavigator ?? inheritedReaderNavigator)
             }

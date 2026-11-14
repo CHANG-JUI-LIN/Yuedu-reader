@@ -5,12 +5,13 @@ import zlib
 /// opens the series page; the section lists the other volumes, each numbered in place of its
 /// author.
 ///
-/// The books are three EPUB 3 files the test writes (`belongs-to-collection` + `group-position`),
+/// The books are five EPUB 3 files the test writes (`belongs-to-collection` + `group-position`,
+/// each with a cover of its own colour, so the series page fans them as it does real artwork),
 /// imported one per launch (`-auto-import-epub` with an absolute path, DEBUG). The test deletes
 /// them from the shelf at the end.
 final class WorkDetailSeriesUITests: XCTestCase {
     private let series = "系列驗收"
-    private let titles = ["系列驗收一", "系列驗收二", "系列驗收三"]
+    private let titles = ["系列驗收一", "系列驗收二", "系列驗收三", "系列驗收四", "系列驗收五"]
     private var folder: URL!
 
     override func setUpWithError() throws {
@@ -87,7 +88,7 @@ final class WorkDetailSeriesUITests: XCTestCase {
         let first = volumes.firstMatch
         if !first.exists { app.swipeUp() }
         XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(volumes.count, 2, "the page's own volume is not listed again")
+        XCTAssertEqual(volumes.count, titles.count - 1, "the page's own volume is not listed again")
         // A shelf copy says what the shelf says of it (title, author, status), then its number.
         XCTAssertTrue(volumes.element(boundBy: 0).label.hasPrefix(titles[0] + "，"), app.debugDescription)
         XCTAssertEqual(volumes.element(boundBy: 0).value as? String, "第 1 冊")
@@ -100,11 +101,23 @@ final class WorkDetailSeriesUITests: XCTestCase {
         link.tap()
         let page = app.navigationBars[series].firstMatch
         XCTAssertTrue(page.waitForExistence(timeout: 10), app.debugDescription)
-        for title in titles {
-            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch.waitForExistence(timeout: 5),
-                          "\(title)\n\(app.debugDescription)")
-        }
+        // As Apple Books' store draws a series (2026-11-14): its name and how many it holds on
+        // the hero, one button to the first volume, then a row for each, numbered.
+        XCTAssertTrue(app.staticTexts["系列 · 5 本"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["檢視第 1 冊"].firstMatch.exists, app.debugDescription)
+        // The author the volumes share opens their page, as 作品詳情's does.
+        XCTAssertTrue(app.buttons["publicLibrary.author.系列驗收作者"].firstMatch.exists, app.debugDescription)
         screenshot(app, "work-detail-series-page")
+        let rows = app.buttons.matching(identifier: "detail.series.volume")
+        for (offset, title) in titles.enumerated() {
+            let row = rows.matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
+            for _ in 0..<4 where !row.exists { app.swipeUp() }
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "\(title)\n\(app.debugDescription)")
+            XCTAssertEqual(row.value as? String, "第 \(offset + 1) 冊")
+        }
+        // Books only, so no 書籍｜有聲書 to choose between.
+        XCTAssertFalse(app.buttons["detail.series.form.books"].exists)
+        screenshot(app, "work-detail-series-page-volumes")
 
         // A volume opens its own 作品詳情.
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", titles[2] + "，")).firstMatch.tap()
@@ -148,6 +161,7 @@ final class WorkDetailSeriesUITests: XCTestCase {
             <meta refines="#series" property="group-position">\(position)</meta>
           </metadata>
           <manifest>
+            <item id="cover" href="cover.png" media-type="image/png" properties="cover-image"/>
             <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
             <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
           </manifest>
@@ -172,7 +186,22 @@ final class WorkDetailSeriesUITests: XCTestCase {
             ("OPS/package.opf", Data(opf.utf8)),
             ("OPS/nav.xhtml", Data(xhtml(#"<nav epub:type="toc"><ol><li><a href="chapter1.xhtml">一</a></li></ol></nav>"#).utf8)),
             ("OPS/chapter1.xhtml", Data(xhtml("<p>\(title)的正文。</p>").utf8)),
+            ("OPS/cover.png", cover(title, hue: CGFloat(position) / 6)),
         ])
+    }
+
+    /// A jacket in one colour with the title on it: real artwork to the app, which fans only
+    /// volumes that have some.
+    private static func cover(_ title: String, hue: CGFloat) -> Data {
+        let size = CGSize(width: 400, height: 600)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            UIColor(hue: hue, saturation: 0.75, brightness: 0.78, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            (title as NSString).draw(in: CGRect(x: 40, y: 70, width: 320, height: 400),
+                                     withAttributes: [.font: UIFont.boldSystemFont(ofSize: 72), .foregroundColor: UIColor.white])
+        }
     }
 }
 

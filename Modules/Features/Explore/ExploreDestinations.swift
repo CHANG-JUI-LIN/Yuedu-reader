@@ -27,6 +27,10 @@ private struct ExploreRouteDestinations: ViewModifier {
             .navigationDestination(for: HomeListRoute.self) { route in
                 HomeListPage(route: route)
             }
+            // A list's series (趨勢's): its page before the work's own.
+            .navigationDestination(for: ListedSeriesRoute.self) { route in
+                ListedSeriesPage(route: route).environmentObject(store)
+            }
     }
 
     @ViewBuilder
@@ -142,6 +146,14 @@ enum ExplorePush: Hashable {
     case article(SubscriptionArticleRoute)
     /// A card's books, for a list with no page of its own (`HomeListRoute`).
     case list(HomeListRoute)
+    /// The series a list's item stands for (`ListedSeriesRoute`).
+    case series(ListedSeriesRoute)
+
+    /// What a list's item opens: the page of the series it stands for, where the list names the
+    /// series' books (maintainer, 2026-11-14: a series opens as one first), else 作品詳情.
+    static func item(_ route: WorkDetailRoute) -> ExplorePush {
+        route.summary.volumes.isEmpty ? .work(route) : .series(ListedSeriesRoute(work: route))
+    }
 
     /// What a home card opens: 作品詳情, where reading starts (decision 27), except a shelf copy
     /// on 繼續閱讀 or 書架, which goes straight back into its reader as the shelf's own cards do
@@ -150,7 +162,7 @@ enum ExplorePush: Hashable {
         if binding == .continueReading || binding == .bookshelf, let id = route.shelfCopyID {
             return .reader(PublicLibraryReaderRoute(bookID: id))
         }
-        return .work(route)
+        return .item(route)
     }
 
     /// Opens the route on `path`. A shelf audiobook is the exception: its player grows out of
@@ -176,6 +188,7 @@ enum ExplorePush: Hashable {
         case .publicLibrary(let route): path.append(route)
         case .article(let route): path.append(route)
         case .list(let route): path.append(route)
+        case .series(let route): path.append(route)
         }
     }
 }

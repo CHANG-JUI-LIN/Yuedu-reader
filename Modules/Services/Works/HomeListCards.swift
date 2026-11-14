@@ -95,6 +95,29 @@ extension HomeSection {
     /// Drawn as lists, a card each: 專題集合, 分類卡片, 拼貼卡片, 大圖卡片.
     var drawsLists: Bool { layout.style.drawsLists }
 
+    /// 排行榜 of one ranking: its column has no header of its own (`HomeChartColumns`), so the
+    /// section's header names the ranking, as a section of books is named, not the ranking's
+    /// source. Named by its source, the defaults' 漫畫排行 read 「Bangumi 番組計劃」 with its own
+    /// name nowhere on the home (maintainer, 2026-11-14).
+    var headerNamesItsList: Bool { layout.style == .chart && listCards.count == 1 }
+
+    /// The name of an untitled section of lists put together from modules or several sources:
+    /// its layout's own, as Apple Books names the sections it lays out so — 熱門精選 over its
+    /// collages, 探索更多 over its category cards, 熱門排行榜, 類型; 分組書架's is 分類瀏覽. Every
+    /// card names its own list. Named by its source, the defaults' 熱門排行榜 read 「Bangumi
+    /// 番組計劃」 and their 熱門精選 「趨勢」 (maintainer, 2026-11-14: the home does not print a
+    /// module's name). Nil in a layout of books, where a section of lists is not drawn as one.
+    var layoutTitle: String? {
+        switch layout.style {
+        case .collageCards: localized("熱門精選")
+        case .collection, .categoryCards, .bannerCards: localized("探索更多")
+        case .chart: localized("熱門排行榜")
+        case .genreList: localized("欄目：類型")
+        case .groupedShelves: localized("分類瀏覽")
+        default: nil
+        }
+    }
+
     /// The cards the section draws in a layout of lists, at most `listCardLimit`; none in a
     /// layout of books.
     var listCards: [HomeListCard] {

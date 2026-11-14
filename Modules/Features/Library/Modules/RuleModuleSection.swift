@@ -119,7 +119,7 @@ struct RuleModuleCard: View {
         let detail = [version, author].compactMap { $0 }.joined(separator: " · ")
         let description = module.description.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         NavigationLink(value: ExploreNavigationRoute.module(id: module.id)) {
-            ExploreEntryLabel(title: module.title, artwork: .symbol("puzzlepiece.extension"), layout: layout,
+            ExploreEntryLabel(title: module.title, artwork: .module(module), layout: layout,
                               subtitle: description, detail: detail)
         }
         .buttonStyle(ExploreTileButtonStyle())

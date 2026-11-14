@@ -30,6 +30,10 @@ final class RuleModuleLibrary: ObservableObject {
     @Published private(set) var disabled: Set<String>
     /// Turned off with 在資源庫中展示: on the 模組 page only, still in use everywhere else.
     @Published private(set) var hiddenInLibrary: Set<String>
+    /// The reader's own value of each module's `globalParams`, by module id and parameter name,
+    /// set on the module's page (format 3.0.2). Every module this library publishes carries them
+    /// as those parameters' `value`, so each path that reads its modules sends them.
+    @Published private(set) var globalValues: [String: [String: String]]
 
     let store: RuleModuleStore
     private let appVersion: String
@@ -46,6 +50,9 @@ final class RuleModuleLibrary: ObservableObject {
     private let preferences: UserDefaults
     private static let disabledKey = "ruleModules.disabled"
     private static let hiddenInLibraryKey = "ruleModules.hiddenInLibrary"
+    private static let globalValuesKey = "ruleModules.globalValues"
+    /// The imported modules as the store read them, before the reader's global values.
+    private var readImported: [InstalledRuleModule] = []
 
     init(store: RuleModuleStore = RuleModuleStore(), appVersion: String = RuleModuleVersion.app,
          officialFiles: @escaping @Sendable () -> [URL] = { OfficialRuleModules.bundledFiles },
@@ -55,6 +62,7 @@ final class RuleModuleLibrary: ObservableObject {
         self.preferences = preferences
         disabled = Set(preferences.stringArray(forKey: Self.disabledKey) ?? [])
         hiddenInLibrary = Set(preferences.stringArray(forKey: Self.hiddenInLibraryKey) ?? [])
+        globalValues = preferences.dictionary(forKey: Self.globalValuesKey) as? [String: [String: String]] ?? [:]
         self.appVersion = appVersion
         self.language = language
         self.officialFiles = officialFiles
@@ -103,6 +111,16 @@ final class RuleModuleLibrary: ObservableObject {
         preferences.set(hiddenInLibrary.sorted(), forKey: Self.hiddenInLibraryKey)
     }
 
+    /// Sets the reader's own value of one of the module's `globalParams`; nil goes back to the
+    /// module's default. Every screen that reads `modules` follows at once.
+    func setGlobalValue(_ value: String?, name: String, id: String) {
+        var values = globalValues[id] ?? [:]
+        values[name] = value
+        globalValues[id] = values.isEmpty ? nil : values
+        preferences.set(globalValues, forKey: Self.globalValuesKey)
+        publish()
+    }
+
     /// The first read, for a screen that may open before 資源庫 has read it (the Explore home).
     func loadIfNeeded() async {
         guard !isLoaded else { return }
@@ -128,7 +146,7 @@ final class RuleModuleLibrary: ObservableObject {
                                since: started, thresholdMs: 0)
         guard current == generation else { return }
         self.bundled = bundled
-        imported = listing.modules
+        readImported = listing.modules
         failures = listing.failures
         publish()
         isLoaded = true
@@ -137,7 +155,10 @@ final class RuleModuleLibrary: ObservableObject {
     private func publish() {
         let available = librariesAvailable()
         let official = bundled.filter { OfficialRuleModules.isAvailable($0.module.id, librariesAvailable: available) }
+            .map(applyingGlobalValues)
         if self.official != official { self.official = official }
+        let imported = readImported.map(applyingGlobalValues)
+        if self.imported != imported { self.imported = imported }
         let modules = (official + imported).filter { !disabled.contains($0.module.id) }
         if self.modules != modules { self.modules = modules }
     }
@@ -172,6 +193,17 @@ final class RuleModuleLibrary: ObservableObject {
         try await Task.detached(priority: .userInitiated) { try store.remove(id: id) }.value
         if disabled.contains(id) { setEnabled(true, id: id) }
         if hiddenInLibrary.contains(id) { setShownInLibrary(true, id: id) }
+        if globalValues[id] != nil {
+            globalValues[id] = nil
+            preferences.set(globalValues, forKey: Self.globalValuesKey)
+        }
         await load()
+    }
+
+    private func applyingGlobalValues(_ installed: InstalledRuleModule) -> InstalledRuleModule {
+        guard let values = globalValues[installed.module.id] else { return installed }
+        return InstalledRuleModule(module: installed.module.applyingGlobalValues(values),
+                                   subscriptionURL: installed.subscriptionURL, installedAt: installed.installedAt,
+                                   updatedAt: installed.updatedAt, isOfficial: installed.isOfficial)
     }
 }

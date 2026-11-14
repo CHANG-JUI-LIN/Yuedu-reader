@@ -132,6 +132,30 @@ struct SourceTagWorksPage: View {
     }
 }
 
+// MARK: - A module book's genre
+
+/// A module book's genre, pushed from 作品詳情 (format 3.0.2): the module's books of it, page by
+/// page, on the page a module row's 查看全部 opens (`ModuleListPage`). A book opens its own
+/// 作品詳情 on this stack, a series its page first, as Explore opens them.
+struct WorkDetailModuleTagPage: View {
+    let route: ModuleListRoute
+    @EnvironmentObject private var store: BookStore
+    @State private var pushed: ExplorePush?
+
+    var body: some View {
+        ModuleListPage(route: route)
+            .environment(\.explorePush) { pushed = $0 }
+            .navigationDestination(item: $pushed) { push in
+                switch push {
+                case .work(let work): WorkDetailView(route: work).environmentObject(store)
+                case .series(let series): ListedSeriesPage(route: series).environmentObject(store)
+                // A module list's card opens nothing else (`ExplorePush.item`).
+                case .reader, .explore, .feed, .folder, .publicLibrary, .article, .list: EmptyView()
+                }
+            }
+    }
+}
+
 // MARK: - Genre category
 
 /// A genre link's category, pushed from a book-source detail page: Explore's 查看全部 page for

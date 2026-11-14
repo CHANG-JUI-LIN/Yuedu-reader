@@ -67,8 +67,29 @@ struct HomeLayoutStyleTests {
             #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases)
         }
         for binding in [HomeSectionBinding.gutenbergLists, .lists([])] {
-            #expect(HomeLayoutStyle.choices(for: binding) == [.collection, .categoryCards, .collageCards, .bannerCards, .chart])
+            #expect(HomeLayoutStyle.choices(for: binding) == [.collection, .categoryCards, .collageCards, .bannerCards, .chart, .groupedShelves, .genreList])
         }
+    }
+
+    @Test("the store's three layouts (2026-11-14) are stored under their own values, which a build before them keeps")
+    func storeLayouts() throws {
+        for (layout, style) in [(HomeSectionLayout.heroCards, HomeLayoutStyle.heroCards), (.groupedShelves, .groupedShelves),
+                                (.genreList, .genreList)] {
+            #expect(layout.isKnown)
+            #expect(layout.style == style)
+            #expect(HomeSectionLayout(style: style) == layout)
+            #expect(layout.componentKind == nil)
+            // Written and read back as the string it is.
+            let section = HomeSection(layout: layout, binding: .gutenbergLists)
+            let decoded = try JSONDecoder().decode(HomeSection.self, from: JSONEncoder().encode(section))
+            #expect(decoded.layout == layout)
+        }
+        // 主打卡片 is a layout of books; the other two draw a list each, 分組書架 with the list's own books.
+        #expect(!HomeLayoutStyle.heroCards.drawsLists)
+        #expect(HomeLayoutStyle.groupedShelves.drawsLists && HomeLayoutStyle.genreList.drawsLists)
+        #expect(HomeLayoutStyle.allCases.filter(\.drawsListBooks) == [.chart, .groupedShelves])
+        // A build before them reads the value as one it does not know, drawn as a row.
+        #expect(HomeSectionLayout(rawValue: "aLaterBuildsLayout").style == .row)
     }
 
     @Test("色帶書架 is the 頂部輪播圖, no layout to choose: a band saved anywhere else draws as 大型封面書架")
@@ -91,15 +112,21 @@ struct HomeLayoutStyleTests {
         #expect(!HomeLayoutStyle.choices(for: .gutenbergLists).contains(.colorBand))
     }
 
-    @Test("繼續閱讀 starts as 精簡閱讀卡片, 古騰堡熱門 ranked, 精選書單 as 分類卡片; the other defaults as a row")
+    @Test("the defaults' layouts are the store's: 繼續閱讀 精簡閱讀卡片, 熱門精選 collages, 今日熱門 主打卡片, 熱門排行榜 ranked, 精選書單 大圖卡片")
     func defaults() {
         for mode in ExploreMode.allCases {
-            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: [])
+            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: ["zh"])
             for section in page.sections {
                 let expected: HomeSectionLayout = switch section.binding {
                 case .continueReading: .compactReadingCard
-                case .gutenbergShelf(id: "popular"): .rankedRow
-                case .gutenbergLists: .categoryCards
+                case .lists(HomePageDefaults.pickCards): .collageCards
+                case .lists: .rankedRow
+                case .module(HomePageDefaults.trendsID, "today"): .heroCards
+                case .module(HomePageDefaults.trendsID, "month"): .multiRow
+                case .module(HomePageDefaults.trendsID, "completed"): .largeRow
+                case .module(HomePageDefaults.trendsID, "year"): .heroGrid
+                case .module(HomePageDefaults.trendsID, "classics"): .colorBand
+                case .gutenbergLists: .bannerCards
                 default: .row
                 }
                 #expect(section.layout == expected)

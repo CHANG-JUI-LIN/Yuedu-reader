@@ -3834,6 +3834,11 @@
 /* 作品詳情 · 同系列 */
 "同系列" = "More in This Series";
 "第 %@ 冊" = "Book %@";
+"系列" = "Series";
+"系列 · %d 本" = "Series · %d books";
+"檢視%@" = "View %@";
+"檢視有聲書" = "View Audiobook";
+"檢視書籍" = "View Book";
 "顯示這個系列的作品" = "Shows works in this series.";
 
 /* 作品詳情 · 作品資訊（青空文庫） */
@@ -4276,6 +4281,20 @@
 "大圖卡片" = "Banner Cards";
 "色帶書架" = "Color Band";
 "排行榜" = "Top Charts";
+"類型清單" = "Genre List";
+"愛情" = "Romance";
+"懸疑" = "Mystery";
+"科幻" = "Sci-Fi";
+"武俠" = "Wuxia";
+"童話" = "Fairy Tales";
+"怪談" = "Ghost Stories";
+"熱門排行榜" = "Top Charts";
+"欄目：類型" = "Genres";
+"分組書架" = "Grouped Shelves";
+"分類瀏覽" = "Browse by Category";
+"主打卡片" = "Hero Cards";
+"熱門精選" = "Top Picks";
+"探索更多" = "More to Explore";
 "推理" = "Mystery";
 "冒險" = "Adventure";
 "博物誌" = "Natural History";
@@ -4508,3 +4527,10 @@
 "%@ 顆星，滿分 %d 顆星" = "%@ out of %d stars";
 "%d 人覺得有幫助" = "%d found this helpful";
 "沒有找到這位作者的作品" = "No works by this author were found";
+
+/* Module format 3.0.2: a module's own settings, an input's suggestions */
+"模組：設定" = "Settings";
+"套用到這個模組的所有欄目、搜尋、補資料和評論。" = "Applies to all of this module's home sections, search, details and reviews.";
+"%@的建議" = "Suggestions for %@";
+
+"相關作品" = "Related Works";

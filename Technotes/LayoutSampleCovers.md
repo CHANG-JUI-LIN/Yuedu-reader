@@ -92,6 +92,13 @@ after 1931) and its 1927 printing (faded), and the NDL scans of 羅生門, 春�
 - Plain cloth: *Tarzan of the Apes* (1914, its designer's dates unknown), *King Solomon's
   Mines*. *Fame and Fortune* (1921): too small.
 
+2026-11-14, for the layouts taken from Apple Books' store (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`
+§10), 13 more: 主打卡片's three books, and five each for 分組書架's two shelves, 童話 and 怪談. Each
+file's Commons page was read for its artist and licence before it was fetched (the maintainer's
+go-ahead, 2026-11-14), from `Special:FilePath/<file>?width=960`. 類型清單 draws no covers.
+Read off Commons: each artist's year of death, the edition's date and the licence tag. The publishers
+and years of birth in these rows are from general reference, not from the file pages.
+
 ## The covers
 
 | Slug | Book | Author | Layout | Source | Licence |
@@ -176,3 +183,16 @@ after 1931) and its 1927 printing (faded), and the NDL scans of 羅生門, 春�
 | leavenworth-case | The Leavenworth Case (Putnam's Knickerbocker Novels, 1878) | Anna Katharine Green (1846–1935); cover unknown | 拼貼卡片「推理」 | Commons: The Leavenworth Case.png | PD |
 | king-solomons-mines | King Solomon's Mines (Cassell, 1887) | H. Rider Haggard (1856–1925); cover unknown | 拼貼卡片「冒險」 | Commons: Front cover King Solomon's Mines 1887.jpg, 960 px thumbnail, the spine cut off | PD |
 | robinson-crusoe | Robinson Crusoe (Cosmopolitan, 1920) | Daniel Defoe (1660–1731); painting N. C. Wyeth (1882–1945) | 拼貼卡片「冒險」 | Commons: Robinson Crusoe Wyeth 1920.jpg, 960 px thumbnail | PD |
+| blue-flower | The Blue Flower (Scribner, 1904) | Henry van Dyke (1852–1933); binding Margaret Armstrong (1867–1944) | 主打卡片 | Commons: Armstrong van-Dyke-1904.jpg | PD |
+| chinese-fairy-book | The Chinese Fairy Book (Stokes, 1921) | Richard Wilhelm (1873–1930), ed.; cover George W. Hood (died 1949) | 主打卡片 | Commons: Chinese Fairy Book - Cover.png | PD |
+| inaka-genji | 偐紫田舎源氏 二十一編 下 (1836) | 柳亭種彦 (1783–1842); 歌川国貞 (1786–1865) | 主打卡片 | Commons: A Country Genji, vol. 21, no. 2 (5758878613).jpg, 6% off the right edge | PD |
+| peter-rabbit | The Tale of Peter Rabbit (Warne, 1902) | Beatrix Potter (1866–1943) | 分組書架「童話」 | Commons: Peter Rabbit first edition 1902a.jpg | PD |
+| kattresan | Kattresan (Bonniers, 13th printing) | Ivar Arosenius (1878–1909) | 分組書架「童話」 | Commons: Kattresan framsida.jpg, 2% off the left edge | PD |
+| andersen-nightingale | Соловей (Кнебель, 1912) | Г. Х. Андерсен (1805–1875); cover Георгий Нарбут (1886–1920) | 分組書架「童話」 | Commons: Narbut cover Nightingale.jpg | PD |
+| wind-in-the-willows | The Wind in the Willows (Methuen, 1908) | Kenneth Grahame (1859–1932); cover W. Graham Robertson (1866–1948) | 分組書架「童話」 | Commons: The Wind in the Willows cover.jpg, the spine and the right edge cut off | PD |
+| blue-fairy-book | The Blue Fairy Book (the 1930 edition) | Andrew Lang (1844–1912); cover Frederick Richardson (1862–1937) | 分組書架「童話」 | Commons: Andrew Lang - The Blue Fairy Book cover.jpg | PD |
+| the-beetle | The Beetle: A Mystery (Skeffington, 1897) | Richard Marsh (1857–1915); cover unknown | 分組書架「怪談」 | Commons: Front Cover for The Beetle- A Mystery by Richard Marsh.jpg, the scan's white edge cut off | PD |
+| le-horla | Le Horla (Ollendorff, 1908) | Guy de Maupassant (1850–1893); William Julian-Damazy (died by 1925) | 分組書架「怪談」 | Commons: Guy de Maupassant le Horla-edition1908.jpg, 8% off the left edge and 2% off the right | PD |
+| more-ghost-stories | More Ghost Stories (Arnold; the scan is the 1927 printing) | M. R. James (1862–1936); cover unknown | 分組書架「怪談」 | Commons: More Ghost Stories of an Antiquary Cover.jpg, 6% off the bottom | PD |
+| the-raven | The Raven (Harper, 1884) | Edgar Allan Poe (1809–1849); Gustave Doré (1832–1883) | 分組書架「怪談」 | Commons: Paul Gustave Dore Raven0.jpg | PD |
+| new-ghost-stories | New Ghost Stories (Ward, Lock & Bowden, 1893) | L. Galbraith; cover unknown | 分組書架「怪談」 | Commons: NewGhostStories.jpg | PD |

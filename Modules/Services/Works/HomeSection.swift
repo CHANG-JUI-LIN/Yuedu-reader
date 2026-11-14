@@ -67,6 +67,18 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// 大圖卡片 (maintainer, 2026-10-27): a wide card per list, a category card as Apple Books'
     /// More to Explore: its name on a face designed from it, or on the reader's photo; no covers.
     static let bannerCards = Self(rawValue: "bannerCards")
+    /// 類型清單 (maintainer, 2026-11-14, after the 類型 at the foot of Apple Books' store): a row per
+    /// list down the page, a symbol for the kind of book its name says, its name and a chevron;
+    /// no covers. A build before it draws 專題集合 and keeps the value.
+    static let genreList = Self(rawValue: "genreList")
+    /// 分組書架 (maintainer, 2026-11-14, after Apple Books' Recent Bestsellers by Genre): a shelf
+    /// per list down the page, the list's name over a row of its covers. A build before it draws
+    /// 專題集合 and keeps the value.
+    static let groupedShelves = Self(rawValue: "groupedShelves")
+    /// 主打卡片 (maintainer, 2026-11-14, after the carousel at the head of Apple Books' store): a
+    /// book a page, its author and title over a wide card of its cover's colour, the cover
+    /// standing in it. A build before it draws a row and keeps the value.
+    static let heroCards = Self(rawValue: "heroCards")
 
     /// The custom-page layout this is, if it is one.
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
@@ -74,7 +86,8 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     var isKnown: Bool {
         componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList,
                                  .featured, .collection, .band, .largeRow, .heroGrid, .rankedRow, .categoryCards,
-                                 .collageCards, .bannerCards, .colorBand].contains(self)
+                                 .collageCards, .bannerCards, .colorBand, .genreList, .groupedShelves,
+                                 .heroCards].contains(self)
     }
 }
 
@@ -331,7 +344,9 @@ struct HomePage: Codable, Hashable, Sendable {
 /// is the reader's and keeps the defaults it was made with, except:
 /// - once, for the 2026-10-25 layouts: a 預設 still as the defaults made it takes them
 ///   (`HomeDefaultsRhythmMigration`);
-/// - the official modules' lists, which follow the language (`HomeDefaultsLanguageSwap`).
+/// - once, for the 2026-11-14 page after Apple Books' store: a 預設 still as the defaults made
+///   it becomes that page (`HomeDefaultsStoreMigration`);
+/// - the languages' rankings, which follow the language (`HomeDefaultsLanguageSwap`).
 enum HomePageDefaults {
     /// Whom the defaults are made for, as the home knows it: `page`'s inputs. 預設配置 makes a
     /// 首頁配置 from them (maintainer, 2026-10-23: the defaults the app keeps, not the reader's
@@ -347,44 +362,93 @@ enum HomePageDefaults {
              makeID: makeID)
     }
 
+    /// The home as Apple Books' store is laid out (maintainer, 2026-11-14, from recordings of its
+    /// home and store; `Technotes/AppleBooksHomeLayouts-2026-10-25.md` §10), filled from the lists
+    /// the app has:
+    /// - 繼續閱讀 and 系列下一本, the reader's own, first; empty, they take no room.
+    /// - 熱門精選, the store's Top Picks: 趨勢's 今年熱門, 完結推薦 and 經典名著 a collage each.
+    /// - 主打卡片, its opening carousel: 今日熱門. 多行橫向輪播, New & Trending: 本月熱門.
+    /// - 熱門排行榜, Top Charts: the reading languages' rankings a column each (`rankings`).
+    /// - 探索更多, More to Explore: 精選書單's lists as 大圖卡片, where the public libraries are.
+    /// - 完結推薦 large, 今年熱門 一大四小, 經典名著 on its band, then 古騰堡熱門 as a plain row:
+    ///   its covers are mostly made up, and never drawn large.
+    /// - 最新 last, or right after the reader's own where 來源配置 come first.
+    /// 趨勢's lists follow 中繼資料語言偏好推薦 by themselves (their 地區), so they are the same
+    /// sections for every language. 分組書架 and 類型清單 wait for lists by genre.
+    ///
+    /// This puts 趨勢 on the defaults, which the maintainer had kept off them on 2026-10-21. A
+    /// saved 預設 still as the defaults before made it takes this page once
+    /// (`HomeDefaultsStoreMigration`); one the reader changed keeps theirs.
+    ///
     /// - Parameters:
     ///   - mode: the effective `explore.mode` (`ExploreMode.effective`); a new install is
     ///     `.publicLibraries`.
     ///   - publicLibrariesAvailable: false in China, where no public-library section is made.
     ///   - languages: the reader's languages (偏好閱讀語言, base codes, most wanted first), which
-    ///     choose the official modules' lists (`officialModuleLists`).
+    ///     choose 熱門排行榜's rankings (`rankings`).
     static func page(mode: ExploreMode, publicLibrariesAvailable: Bool, languages: [String],
                      makeID: () -> UUID = UUID.init) -> HomePage {
+        func trends(_ entry: String, _ layout: HomeSectionLayout) -> HomeSection {
+            HomeSection(id: makeID(), layout: layout, binding: .module(moduleID: trendsID, entryID: entry))
+        }
         // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
         // Under 繼續閱讀 (decision 25); empty, it takes no room.
         let nextInSeries = HomeSection(id: makeID(), layout: .row, binding: .nextInSeries)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
-        // 古騰堡熱門, Gutenberg's download ranking, before 精選 (decisions 16 and 24), ranked
-        // since 2026-10-25 (`officialModuleLists` says why); a saved 預設 that still has it as a
-        // plain row takes the ranks once (`HomeDefaultsRhythmMigration`).
+        // Untitled, as every section here: named in the app's language, 熱門精選 and 熱門排行榜 by
+        // their layout (`HomeSection.layoutTitle`), a list by its own name.
+        let picks = HomeSection(id: makeID(), layout: .collageCards, binding: .lists(pickCards))
+        let hero = trends("today", .heroCards)
+        let trending = trends("month", .multiRow)
+        let rankingCards = rankings(languages: languages, publicLibrariesAvailable: publicLibrariesAvailable)
+        let charts = rankingCards.isEmpty ? [] : [HomeSection(id: makeID(), layout: .rankedRow, binding: .lists(rankingCards))]
+        let explore = publicLibrariesAvailable
+            ? [HomeSection(id: makeID(), layout: .bannerCards, binding: .gutenbergLists)]
+            : []
+        let completed = trends("completed", .largeRow)
+        let year = trends("year", .heroGrid)
+        let classics = trends("classics", .colorBand)
         let popular = publicLibrariesAvailable
-            ? [HomeSection(id: makeID(), layout: .rankedRow, binding: .gutenbergShelf(id: "popular"))]
+            ? [HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
             : []
-        // 精選書單: the bundled lists, a card each, in place of a row per list (plan decision 11)
-        // since 2026-10-13; 分類卡片 since 2026-10-25, as Apple Books' More to Explore lays out
-        // its classics, in place of 專題集合 (decision 37); a saved 預設 that still has it as
-        // 專題集合 takes 分類卡片 once (`HomeDefaultsRhythmMigration`).
-        let featured = publicLibrariesAvailable
-            ? [HomeSection(id: makeID(), layout: .categoryCards, binding: .gutenbergLists)]
-            : []
-        // The official modules' lists in the reader's languages (maintainer, 2026-10-21: the
-        // defaults made no use of them). A saved 預設 takes the next language's when the language
-        // changes (`HomeDefaultsLanguageSwap`). Untitled: each is named by its list in the app's
-        // language (`ModuleProvider.rowName`).
-        let modules = officialModuleLists(languages: languages, publicLibrariesAvailable: publicLibrariesAvailable)
-            .map { HomeSection(id: makeID(), layout: $0.layout, binding: .module(moduleID: $0.moduleID, entryID: $0.entryID)) }
+        let store = [picks, hero, trending] + charts + explore + [completed, year, classics] + popular
         switch mode {
         case .bookSources:
-            return HomePage(sections: [continueReading, nextInSeries, latest] + modules + popular + featured)
+            return HomePage(sections: [continueReading, nextInSeries, latest] + store)
         case .publicLibraries:
-            return HomePage(sections: [continueReading, nextInSeries] + modules + popular + featured + [latest])
+            return HomePage(sections: [continueReading, nextInSeries] + store + [latest])
         }
+    }
+
+    /// 趨勢, the official module whose lists the defaults are mostly made of.
+    static let trendsID = "trends"
+
+    /// 熱門精選's lists, a collage each: 趨勢's 今年熱門, 完結推薦 and 經典名著.
+    static let pickCards = ["year", "completed", "classics"].map {
+        HomeListCard(binding: .module(moduleID: trendsID, entryID: $0))
+    }
+
+    /// 熱門排行榜's rankings for the reader's languages, in the languages' order, each once, a
+    /// column each: Chinese reads Bangumi's, whose titles are Chinese; Japanese なろう's, hidden
+    /// where the public libraries are (`OfficialRuleModules.isAvailable`); English AniList's.
+    /// None for another language, whose home then has no 熱門排行榜.
+    static func rankings(languages: [String], publicLibrariesAvailable: Bool) -> [HomeListCard] {
+        var cards: [HomeListCard] = []
+        for language in languages {
+            let wanted: [(module: String, entry: String)] = switch ReadingLanguage.base(of: language) {
+            case "zh": [("bangumi", "novel-rank"), ("bangumi", "manga-rank")]
+            case "ja": OfficialRuleModules.isAvailable("narou", librariesAvailable: publicLibrariesAvailable)
+                ? [("narou", "weekly"), ("narou", "completed")] : []
+            case "en": [("anilist", "trending-novels"), ("anilist", "trending-manga")]
+            default: []
+            }
+            for list in wanted {
+                let card = HomeListCard(binding: .module(moduleID: list.module, entryID: list.entry))
+                if !cards.contains(card) { cards.append(card) }
+            }
+        }
+        return cards
     }
 
     /// An official module's list on the defaults, with the layout its content suits.
@@ -399,7 +463,12 @@ enum HomePageDefaults {
     /// The languages `officialModuleLists` has lists for.
     static let listLanguages = ["zh", "ja", "en"]
 
-    /// The official modules' lists for each language, in the languages' order, each list once.
+    /// The official modules' lists the defaults gave each language as sections of their own
+    /// until 2026-11-14, when the rankings became 熱門排行榜's columns (`rankings`). A 預設 the
+    /// reader changed keeps such sections, and still follows the language with them
+    /// (`HomeDefaultsLanguageSwap`); `HomeDefaultsStoreMigration` recognises a 預設 by them.
+    ///
+    /// For each language, in the languages' order, each list once.
     /// Chinese reads Bangumi, whose titles are Chinese; Japanese なろう, hidden where the public
     /// libraries are (`OfficialRuleModules.isAvailable`); English AniList. No other language has
     /// a list in its own language yet.

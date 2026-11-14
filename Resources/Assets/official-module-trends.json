@@ -4,8 +4,8 @@
   "description": "依維基百科瀏覽量排出的熱門小說、完結作品和經典名著，每天更新；地區預設跟隨「中繼資料語言偏好推薦」。",
   "author": "Yuedu",
   "site": "https://yuedureader.com/",
-  "version": "1.0",
-  "requiredVersion": "3.0",
+  "version": "1.1",
+  "requiredVersion": "3.0.1",
   "hosts": [
     "gateway.yuedureader.com",
     "upload.wikimedia.org",
@@ -63,7 +63,7 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers"
+        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
       }
     },
     {
@@ -112,7 +112,7 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers"
+        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
       }
     },
     {
@@ -161,7 +161,7 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers"
+        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
       }
     },
     {
@@ -210,7 +210,7 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers"
+        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
       }
     },
     {
@@ -259,7 +259,7 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers"
+        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
       }
     }
   ],

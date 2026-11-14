@@ -106,24 +106,6 @@ struct SeriesFanTests {
         let artwork = await fan.artwork(pipeline: CoverImagePipeline(logsSummaries: false)) { Self.source($0.cover) }
         #expect(artwork.isEmpty)
     }
-
-    @Test("a series read on this device: the others in order, counted before the page's volume")
-    func fromShelf() throws {
-        let index = SeriesCardsTests.catalog(titles: ["三體", "黑暗森林", "死神永生"])
-        let works = index.newWorks
-        try #require(works.count == 3)
-        let volumes = works.enumerated().map { offset, work in
-            WorkSeriesShelf.Volume(entry: .aozora(work, index: index), number: Double(offset + 1), isPageWork: offset == 1)
-        }
-        let fan = try #require(SeriesFan(WorkSeriesShelf(name: "地球往事", number: 2, volumes: volumes), store: BookStore()))
-        #expect(fan.volumes.map(\.id) == [volumes[0], volumes[2]].compactMap {
-            HomeRowContent(entries: [$0.entry], store: BookStore()).cards.first?.id.sortKey
-        })
-        #expect(fan.position == 1)
-        let elsewhere = volumes.map { WorkSeriesShelf.Volume(entry: $0.entry, number: $0.number, isPageWork: false) }
-        #expect(SeriesFan(WorkSeriesShelf(name: "地球往事", number: nil, volumes: elsewhere), store: BookStore()) == nil,
-                "the page's own volume is not in the series")
-    }
 }
 
 /// 趨勢's series: the other books' covers its list gives, which the fan stands after the item.

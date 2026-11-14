@@ -163,6 +163,9 @@ struct HomeArticleCard: View {
             HomeArticleImage(url: article.imageURL)
                 .frame(width: width, height: width / DSLayout.homeArticleImageAspectRatio)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+                // A card with no picture is a plain surface, white on the head of a section's
+                // white ground (`HomeSectionShade`): the shadow the home's other cards stand on.
+                .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
             HStack(spacing: DSSpacing.xs) {
                 if !article.isRead { HomeArticleUnreadDot() }
                 Text(article.feedAndDate)

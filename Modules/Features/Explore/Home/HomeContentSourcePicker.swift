@@ -173,8 +173,15 @@ struct HomeContentSourcePicker: View {
         NavigationLink {
             HomeModuleChoices(module: installed.module, current: current, choose: choose, chooseAll: chooseAll)
         } label: {
-            ownerLabel(installed.module.title, systemImage: "puzzlepiece.extension",
-                       isCurrent: owner == .module(id: installed.module.id))
+            LabeledContent {
+                if owner == .module(id: installed.module.id) { Text(localized("目前")) }
+            } label: {
+                Label {
+                    Text(installed.module.title)
+                } icon: {
+                    RuleModuleSizedIcon(module: installed.module, base: DSLayout.moduleRowIconSide)
+                }
+            }
         }
         .accessibilityIdentifier("homePicker.module.\(installed.module.id)")
     }

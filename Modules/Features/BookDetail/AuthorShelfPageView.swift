@@ -25,7 +25,8 @@ struct AuthorPageView: View {
             // A white page, as the detail page it was pushed from; a theme still paints its own.
             .background(PageBackgroundView(scope: .global, base: DSColor.background).ignoresSafeArea())
             .pageBackgroundToolbar(for: .global)
-            .navigationTitle(request.name)
+            // In 中繼資料語言偏好推薦's script, as the works under it are written.
+            .navigationTitle(MetadataDisplay.current.text(request.name))
             .toolbarTitleDisplayMode(.inline)
             .task(id: request) {
                 model.setPresentationActive(scenePhase == .active)

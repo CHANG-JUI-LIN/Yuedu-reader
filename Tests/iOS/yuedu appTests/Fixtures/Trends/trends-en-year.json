@@ -8,7 +8,9 @@
   "works": [
     {
       "title": "Mistborn: The Final Empire",
-      "author": ["Brandon Sanderson"],
+      "author": [
+        "Brandon Sanderson"
+      ],
       "intro": "A fantasy novel, the first of a series in which a street thief learns to burn metals.",
       "url": "https://en.wikipedia.org/wiki/Mistborn:_The_Final_Empire",
       "aliases": [],
@@ -19,14 +21,54 @@
         "https://images.example.com/hero-of-ages.jpg",
         "https://thumb.wikimedia.org/wikipedia/en/thumb/d/d4/Hero_of_Ages.jpg/500px-Hero_of_Ages.jpg"
       ],
-      "cover": "https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg"
+      "cover": "https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg",
+      "volumes": [
+        {
+          "title": "Mistborn: The Final Empire",
+          "author": [
+            "Brandon Sanderson"
+          ],
+          "url": "https://en.wikipedia.org/wiki/Mistborn:_The_Final_Empire",
+          "wikidata": "Q1514034",
+          "cover": "https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg"
+        },
+        {
+          "title": "The Well of Ascension",
+          "author": [
+            "Brandon Sanderson"
+          ],
+          "url": "https://en.wikipedia.org/wiki/The_Well_of_Ascension",
+          "wikidata": "Q2000001",
+          "cover": "https://upload.wikimedia.org/wikipedia/en/thumb/2/2a/The_Well_of_Ascension.jpg/500px-The_Well_of_Ascension.jpg"
+        },
+        {
+          "title": "The Hero of Ages",
+          "author": [
+            "Brandon Sanderson"
+          ],
+          "url": "https://en.wikipedia.org/wiki/The_Hero_of_Ages",
+          "wikidata": "Q2000002"
+        },
+        {
+          "title": "Mistborn: Secret History",
+          "author": [
+            "Brandon Sanderson"
+          ],
+          "cover": "https://images.example.com/secret-history.jpg"
+        }
+      ]
     },
     {
       "title": "Good Omens",
-      "author": ["Terry Pratchett", "Neil Gaiman"],
+      "author": [
+        "Terry Pratchett",
+        "Neil Gaiman"
+      ],
       "intro": "A comic novel about an angel and a demon who would rather the world did not end.",
       "url": "https://en.wikipedia.org/wiki/Good_Omens",
-      "aliases": ["Good Omens: The Nice and Accurate Prophecies of Agnes Nutter, Witch"],
+      "aliases": [
+        "Good Omens: The Nice and Accurate Prophecies of Agnes Nutter, Witch"
+      ],
       "wikidata": "Q1197512",
       "cover": "https://thumb.wikimedia.org/wikipedia/en/thumb/a/a1/Good_Omens_cover.jpg/500px-Good_Omens_cover.jpg"
     }

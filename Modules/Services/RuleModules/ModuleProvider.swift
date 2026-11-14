@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     let module: RuleModule
-    private let client: RuleModuleClient
+    let client: RuleModuleClient
     /// The reader's 中繼資料語言偏好推薦, for a parameter that follows it.
     private let language: @MainActor () -> String
 
@@ -76,7 +76,9 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         guard case .module(_, let entryID) = section.binding, let entry = entry(entryID) else { return module.version }
         let followed = entry.params.filter { $0.followsLanguage == true }
             .map { "\($0.name)=\($0.currentValue(in: section.parameters, language: language()))" }
-        return ([module.version] + followed).joined(separator: "\u{1F}")
+        // The module's own settings (`globalParams`, 3.0.2): one changed on its page loads every row again.
+        let globals = module.globalValues(language: nil).sorted { $0.key < $1.key }.map { "global.\($0.key)=\($0.value)" }
+        return ([module.version] + followed + globals).joined(separator: "\u{1F}")
     }
 
     /// The list's own title, in the app's language: a section the defaults made has none, and
@@ -270,13 +272,25 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
                 .map { .remote($0, headers: [:]) }
         }
         let cover = allowedCover(item.coverUrl) ?? .generated(seed: title)
-        let summary = WorkSummary(title: title, authors: authors, cover: cover,
+        var summary = WorkSummary(title: title, authors: authors, cover: cover,
                                   blurb: OPDSClient.plainMetadata(item.intro, limit: WorkSummary.blurbLimit),
                                   language: language, contentKind: kind,
                                   category: WorkSummary.category(fromSourceKind: OPDSClient.plainMetadata(item.kind, limit: 200))
                                     ?? entry.tags(of: item).first,
                                   series: OPDSClient.plainMetadata(item.series ?? "", limit: WorkSummary.seriesLimit),
                                   seriesCovers: Array((item.seriesCovers ?? []).lazy.compactMap(allowedCover).prefix(WorkSummary.seriesCoverLimit)))
+        summary.tags = entry.tags(of: item)
+        // The series' books, each made as an item is; a volume lists none itself, so its page
+        // and the series' never lead back into each other.
+        summary.volumes = (item.volumes ?? []).prefix(WorkSummary.volumeLimit).enumerated().compactMap { offset, volume in
+            var alone = volume
+            alone.volumes = nil
+            guard case .item(let book, let shown, let opening)? = Self.entry(
+                alone, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts, isReadable: isReadable) else { return nil }
+            let cover: CoverReference? = if case .generated? = shown.cover { nil } else { shown.cover }
+            return WorkVolume(id: "\(offset)", title: shown.title, cover: cover,
+                              work: volume.bookUrl.isEmpty ? nil : WorkDetailRoute(record: book, summary: shown, opening: opening))
+        }
         // A book the module reads has a page of its own: the item's url.
         guard isReadable, hasURLRule, !item.bookUrl.isEmpty else { return .item(record, summary, .bibliographic) }
         var readable = record
@@ -325,7 +339,7 @@ extension RuleModule.Entry {
     /// `title` with the options `parameters` pick by name (今日熱門 · 日本): what tells two cards of
     /// one list apart, in a layout of lists and in its form.
     func cardName(_ title: String, parameters: [String: String]) -> String {
-        let picked = editableParams.compactMap { param -> String? in
+        let picked = shownParams(in: parameters, language: nil).compactMap { param -> String? in
             guard param.kind == .enumeration, let value = parameters[param.name] else { return nil }
             return param.enumOptions?.first { $0.value == value }?.title
         }

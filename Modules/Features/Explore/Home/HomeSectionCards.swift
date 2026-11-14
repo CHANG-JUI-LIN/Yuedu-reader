@@ -94,9 +94,11 @@ struct HomeSectionCards: View {
                     }
                     .modifier(HomeBandGround(cover: ownBandCover, cutsCovers: !drawsSideways))
                 case .heroGrid: heroGrid
+                case .heroCards: heroCards
                 // A layout of lists draws its cards (`HomeSectionLists`); a section of books drawn
                 // in one here is a stored value this build cannot read, drawn as a row.
-                case .collection, .categoryCards, .collageCards, .bannerCards, .chart: rail(coverWidth: rowCoverWidth)
+                case .collection, .categoryCards, .collageCards, .bannerCards, .chart, .groupedShelves, .genreList:
+                    rail(coverWidth: rowCoverWidth)
                 }
             }
         }
@@ -126,6 +128,28 @@ struct HomeSectionCards: View {
             ForEach(menu) { item in Button(item.title, action: item.perform) }
         }
         .accessibilityIdentifier("home.card.\(card.id.instance.type.rawValue).\(card.id.item)")
+    }
+
+    // MARK: 主打卡片
+
+    /// As the carousel at the head of Apple Books' store (maintainer, 2026-11-14): a book a page
+    /// and the next one peeking (`DSLayout.homePagePeek`); two to a page on a wider screen.
+    private var heroCards: some View {
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
+                ForEach(cards.indices, id: \.self) { index in
+                    button(index, in: cards) { HomeHeroCard(content: cards[index]) }
+                        .homeSidewaysCardWidth { length in
+                            let peek = cards.count > perScreen ? DSSpacing.lg + DSLayout.homePagePeek : 0
+                            let gaps = DSSpacing.lg * CGFloat(perScreen - 1)
+                            return max(0, (length - gaps - peek) / CGFloat(perScreen))
+                        }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
     }
 
     // MARK: 橫向單排書架, 大型封面書架
@@ -538,6 +562,9 @@ struct HomeReadingCard: View {
         .padding(DSSpacing.lg)
         .frame(maxWidth: .infinity, minHeight: coverSize.height + DSSpacing.lg * 2, alignment: .topLeading)
         .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        // White on the head of a section's white ground (`HomeSectionShade`): the shadow the
+        // home's other cards stand on.
+        .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
         .contentShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
     }
 

@@ -396,6 +396,15 @@ class SeriesTests(unittest.TestCase):
         self.assertEqual(mistborn['seriesCovers'], ['https://upload.wikimedia.org/The Well of Ascension.jpg',
                                                     'https://upload.wikimedia.org/Mistborn: Secret History.jpg'])
         self.assertNotIn('seriesCovers', alone)
+        # The series' books for the app's series page, the entry's own first: each an entry the
+        # app can open, with the entry's author where Wikidata names none for the book.
+        self.assertEqual([volume['title'] for volume in mistborn['volumes']],
+                         ['Mistborn: The Final Empire', 'The Well of Ascension', 'Mistborn: Secret History'])
+        self.assertEqual(mistborn['volumes'][1], {
+            'title': 'The Well of Ascension', 'author': mistborn['author'], 'wikidata': 'Q-2',
+            'url': 'https://en.wikipedia.org/wiki/The_Well_of_Ascension',
+            'cover': 'https://upload.wikimedia.org/The Well of Ascension.jpg'})
+        self.assertNotIn('volumes', alone)
 
     def test_a_series_entry_carries_at_most_four_other_covers(self):
         works = {f'Book {number}': work(f'Q-{number}', 'Q-long', f'20{10 + number}-01-01T00:00:00Z') for number in range(1, 8)}
@@ -429,7 +438,8 @@ class VolumeTests(unittest.TestCase):
     @staticmethod
     def related(subject):
         def volume(id, name, cover=True):
-            return {'id': id, 'name': name, 'relation': '单行本', 'type': 1,
+            return {'id': id, 'name': f'薬屋のひとりごと {name}', 'name_cn': f'药屋少女的呢喃 {name}' if name != '6' else '',
+                    'relation': '单行本', 'type': 1,
                     'images': {'common': f'https://lain.bgm.tv/r/400/pic/cover/l/{subject}-{name}.jpg' if cover else ''}}
         return [{'id': 217552, 'name': '薬屋のひとりごと', 'relation': '书籍', 'type': 1,
                  'images': {'common': 'https://lain.bgm.tv/r/400/pic/cover/l/novel.jpg'}},
@@ -449,10 +459,16 @@ class VolumeTests(unittest.TestCase):
                 raise HTTPError(url, 404, 'Not Found', {}, None)
             return VolumeTests.related(subject)
 
-    def test_the_volumes_are_the_单行本_with_a_cover_in_bangumis_order(self):
-        self.assertEqual([cover.rsplit('/', 1)[1] for cover in builder.bangumi_volumes(self.related(156126))],
-                         ['156126-0.jpg', '156126-0-II.jpg', '156126-1.jpg', '156126-3.jpg', '156126-4.jpg',
-                          '156126-5.jpg', '156126-6.jpg'], 'not by id, and a volume without a cover is left out')
+    def test_the_volumes_are_the_单行本_in_bangumis_order(self):
+        volumes = builder.bangumi_volumes(self.related(156126))
+        self.assertEqual([volume['name'] for volume in volumes],
+                         [f'薬屋のひとりごと {name}' for name in ['0', '0-II', '1', '2', '3', '4', '5', '6']], 'not by id')
+        self.assertEqual(volumes[0], {'name': '薬屋のひとりごと 0', 'name_cn': '药屋少女的呢喃 0',
+                                      'cover': 'https://lain.bgm.tv/r/400/pic/cover/l/156126-0.jpg'})
+        self.assertIsNone(volumes[3]['cover'], 'a volume without a cover is still a volume')
+        self.assertEqual([cover.rsplit('/', 1)[1] for cover in builder.fanned_covers(volumes)],
+                         ['156126-0-II.jpg', '156126-1.jpg', '156126-3.jpg', '156126-4.jpg', '156126-5.jpg', '156126-6.jpg'],
+                         "the first is the work's own cover; one without a cover is not fanned")
 
     def test_a_matched_work_fans_its_volumes_after_the_first_asked_once_a_week(self):
         client = self.BangumiClient()
@@ -462,17 +478,19 @@ class VolumeTests(unittest.TestCase):
         store.set_finished('Q-unmatched', None, False, 'now')
         job = builder.Job(client, store, date(2026, 10, 27))
         qids = ['Q-yakuya', 'Q-removed', 'Q-unmatched', 'Q-never-asked']
-        covers = job.volume_covers(qids)
-        self.assertEqual(list(covers), ['Q-yakuya'])
-        self.assertEqual([cover.rsplit('/', 1)[1] for cover in covers['Q-yakuya']],
-                         ['156126-0-II.jpg', '156126-1.jpg', '156126-3.jpg', '156126-4.jpg', '156126-5.jpg', '156126-6.jpg'],
-                         "the first is the work's own cover")
+        series = job.bangumi_series(qids)
+        self.assertEqual(list(series), ['Q-yakuya'])
+        self.assertEqual(series['Q-yakuya'], builder.bangumi_volumes(self.related(156126)))
         self.assertEqual(client.asked, [156126, 9], 'a removed subject has no volumes; an unmatched work is not asked')
-        self.assertEqual(job.volume_covers(qids), covers)
+        self.assertEqual(job.bangumi_series(qids), series)
         self.assertEqual(client.asked, [156126, 9], 'kept a week')
         store.set_volumes(156126, [], (datetime.now(timezone.utc) - timedelta(days=8)).isoformat())
-        self.assertEqual(job.volume_covers(['Q-yakuya']), {'Q-yakuya': covers['Q-yakuya']})
+        self.assertEqual(job.bangumi_series(['Q-yakuya']), {'Q-yakuya': series['Q-yakuya']})
         self.assertEqual(client.asked, [156126, 9, 156126], 'asked again after a week')
+        # Covers alone, as kept until 2026-11-14: asked again for the volumes' names.
+        store.set_volumes(156126, ['https://lain.bgm.tv/r/400/pic/cover/l/a.jpg'], job.now)
+        self.assertEqual(job.bangumi_series(['Q-yakuya']), {'Q-yakuya': series['Q-yakuya']})
+        self.assertEqual(client.asked, [156126, 9, 156126, 156126])
 
     def test_a_whole_series_entry_carries_its_volumes_and_names_no_series(self):
         class Client:
@@ -481,12 +499,36 @@ class VolumeTests(unittest.TestCase):
         job = builder.Job(Client(), builder.Store(':memory:'), date(2026, 10, 27))
         works = {'薬屋のひとりごと': work('Q-yakuya'), '異世界食堂': work('Q-shokudo')}
         totals = {window: {'薬屋のひとりごと': 3, '異世界食堂': 2} for window in builder.WINDOWS}
-        volumes = {'Q-yakuya': [f'https://lain.bgm.tv/r/400/pic/cover/l/{number}.jpg' for number in range(2, 8)]}
+        volumes = {'Q-yakuya': builder.bangumi_volumes(self.related(156126))}
         lists = builder.build_region(job, 'ja', builder.REGIONS['ja'], works, {}, set(), totals, {}, {}, volumes)
         yakuya, shokudo = lists['year']
-        self.assertEqual(yakuya['seriesCovers'], volumes['Q-yakuya'][:builder.SERIES_COVERS])
+        self.assertEqual(yakuya['seriesCovers'], builder.fanned_covers(volumes['Q-yakuya'])[:builder.SERIES_COVERS])
         self.assertNotIn('series', yakuya, 'its title is the series')
         self.assertNotIn('seriesCovers', shokudo)
+        # Every volume for the series page, as Bangumi names it in Japanese; nothing of its own to open.
+        self.assertEqual([volume['title'] for volume in yakuya['volumes']],
+                         [f'薬屋のひとりごと {name}' for name in ['0', '0-II', '1', '2', '3', '4', '5', '6']])
+        self.assertEqual(yakuya['volumes'][0], {'title': '薬屋のひとりごと 0', 'author': yakuya['author'],
+                                                'cover': 'https://lain.bgm.tv/r/400/pic/cover/l/156126-0.jpg'})
+        self.assertNotIn('cover', yakuya['volumes'][3])
+        self.assertNotIn('volumes', shokudo)
+
+    def test_a_chinese_region_names_the_volumes_in_chinese_in_its_script(self):
+        class Client:
+            def json(self, url, params=None, body=None, headers=None):
+                if params and params.get('action') == 'parse':
+                    lines = [line for line in params['text'].split('\n\n')]
+                    return {'parse': {'text': ''.join(f'<p>{line.replace("药", "藥").replace("呢喃", "呢喃")}</p>' for line in lines)}}
+                return {'query': {'pages': []}}
+        job = builder.Job(Client(), builder.Store(':memory:'), date(2026, 11, 14))
+        works = {'药师少女的独语': work('Q-yakuya')}
+        totals = {window: {'药师少女的独语': 3} for window in builder.WINDOWS}
+        volumes = {'Q-yakuya': builder.bangumi_volumes(self.related(156126))}
+        region = next(name for name, region in builder.REGIONS.items() if region.variant == 'zh-tw')
+        lists = builder.build_region(job, region, builder.REGIONS[region], works, {}, set(), totals, {}, {}, volumes)
+        titles = [volume['title'] for volume in lists['year'][0]['volumes']]
+        self.assertEqual(titles[0], '藥屋少女的呢喃 0', "Bangumi's Chinese name, in the region's script")
+        self.assertEqual(titles[-1], '薬屋のひとりごと 6', 'as it is named where Bangumi has no Chinese name')
 
     def test_a_store_from_before_volumes_gains_them(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -497,8 +539,9 @@ class VolumeTests(unittest.TestCase):
             old.close()
             store = builder.Store(path)
             self.assertIsNone(store.volumes(156126))
-            store.set_volumes(156126, ['a.jpg'], 'now')
-            self.assertEqual(store.volumes(156126), (['a.jpg'], 'now'))
+            volumes = [{'name': '1', 'name_cn': '', 'cover': 'a.jpg'}]
+            store.set_volumes(156126, volumes, 'now')
+            self.assertEqual(store.volumes(156126), (volumes, 'now'))
 
 
 class ConvertingClient:

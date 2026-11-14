@@ -19,6 +19,15 @@ private struct PageUnderBars: View {
     }
 }
 
+/// What the app wraps a reader's page in, each of which can move a bottom bar after the page
+/// for VoiceOver.
+enum ReaderPageProbe: CaseIterable {
+    case backSwipeReservation
+    case rootTabBarTransitionCover
+    case rootTabBarHiding
+    case rootTabBarHiddenFromTab
+}
+
 private struct HostedPage: UIViewRepresentable {
     let page: UIView
     func makeUIView(context: Context) -> UIView { page }
@@ -139,12 +148,41 @@ struct NavigationBackSwipeReservationTests {
     /// Feedback #15: with the reservation in a background, VoiceOver's touch on a detail-pushed
     /// reader's bottom bar landed on the page (see `reservingNavigationBackSwipe`). XCUITest does
     /// not see this — its tree has its own order, and it called the bar hittable throughout — so
-    /// this reads the hosting view's own accessibility elements.
-    @Test("a reserved page leaves its bottom bar to VoiceOver's touch")
-    func reservationKeepsBottomBarTouchable() async throws {
+    /// this reads the hosting view's own accessibility elements. Everything else the app wraps
+    /// a reader's page in is held to the same, in a stack of its own and in a tab's.
+    @Test(
+        "a page the app wraps leaves its bottom bar to VoiceOver's touch",
+        arguments: ReaderPageProbe.allCases, [false, true]
+    )
+    func reservationKeepsBottomBarTouchable(_ probe: ReaderPageProbe, inTabView: Bool) async throws {
+        let hidden = RootTabBarVisibility()
+        hidden.setRequest(UUID(), hidesTabBar: true)
+        let order = try await voiceOverOrder(inTabView: inTabView) { page in
+            switch probe {
+            case .backSwipeReservation: PageUnderBars(page: page).reservingNavigationBackSwipe()
+            case .rootTabBarTransitionCover:
+                PageUnderBars(page: page).modifier(RootTabBarTransitionCovering(hidesTabBar: true))
+            // The whole of `hidesRootTabBar()`. Until 2026-11-14 an `accessibilityHidden` on
+            // the clear colour in its background put 設定 after the page here; the app's
+            // reader, built differently, was not affected.
+            case .rootTabBarHiding: PageUnderBars(page: page).hidesRootTabBar()
+            // What `ContentView` puts behind every tab while any page hides the bar.
+            case .rootTabBarHiddenFromTab: PageUnderBars(page: page).background { RootTabBarHider(visibility: hidden) }
+            }
+        }
+        #expect(try #require(order.firstIndex(of: "設定")) < (try #require(order.firstIndex(of: Self.pageLabel))), "\(order)")
+    }
+
+    private static let pageLabel = "正文"
+
+    /// The labels of a pushed page's accessibility elements, in the order VoiceOver's touch
+    /// tries them: the page built by `content` around a full-screen UIKit view labelled 正文.
+    private func voiceOverOrder<Content: View>(
+        inTabView: Bool, @ViewBuilder content: @escaping (UIView) -> Content
+    ) async throws -> [String] {
         let page = UIView()
         page.isAccessibilityElement = true
-        page.accessibilityLabel = "正文"
+        page.accessibilityLabel = Self.pageLabel
         // SwiftUI builds no accessibility elements until something reads them — VoiceOver, or
         // XCUITest's automation. Turned on here as XCUITest does it, and back off after.
         let accessibility = try #require(dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW))
@@ -156,11 +194,12 @@ struct NavigationBackSwipeReservationTests {
         setAutomationEnabled(true)
         defer { setAutomationEnabled(wasEnabled) }
 
-        let root = UIHostingController(rootView: NavigationStack(path: .constant([1])) {
-            Color.clear.navigationDestination(for: Int.self) { _ in
-                PageUnderBars(page: page).reservingNavigationBackSwipe()
-            }
-        })
+        let stack = NavigationStack(path: .constant([1])) {
+            Color.clear.navigationDestination(for: Int.self) { _ in content(page) }
+        }
+        let root: UIViewController = inTabView
+            ? UIHostingController(rootView: TabView { stack.tabItem { Label("One", systemImage: "1.circle") } })
+            : UIHostingController(rootView: stack)
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.rootViewController = root
@@ -189,9 +228,10 @@ struct NavigationBackSwipeReservationTests {
             found = hostedElements()
         }
         let elements = try #require(found, "the pushed page never reached the accessibility tree")
-        let pageIndex = try #require(elements.firstIndex { ($0 as? UIView).map(page.isDescendant(of:)) ?? false })
-        let settings = try #require(elements.first { $0.accessibilityLabel == "設定" })
-        #expect(elements.firstIndex(of: settings)! < pageIndex, "\(elements)")
+        return elements.map { element in
+            if let view = element as? UIView, page.isDescendant(of: view) { return Self.pageLabel }
+            return element.accessibilityLabel ?? String(describing: type(of: element))
+        }
     }
 
     @Test("root pages do not take over the system recognizer")

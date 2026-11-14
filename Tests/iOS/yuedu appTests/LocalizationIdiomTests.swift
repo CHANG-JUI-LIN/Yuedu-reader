@@ -74,6 +74,8 @@ struct LocalizationIdiomTests {
             ("一般", "設定分組：一般", "General"),
             ("資源", "設定分組：資源", "Resources"),
             ("閱讀", "設定分組：閱讀", "Reading"),
+            // 類型清單's section: 類型 alone is "Type".
+            ("類型", "欄目：類型", "Genres"),
         ]
         for pair in splits {
             #expect(try text(pair.split, "en") == pair.english, "\(pair.split)")

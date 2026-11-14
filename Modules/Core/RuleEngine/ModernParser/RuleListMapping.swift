@@ -23,6 +23,9 @@ struct RuleListFields: Sendable {
     var contentKind: String = ""
     /// A module's (format 3.0.1): the record's own id on the site.
     var id: String = ""
+    /// A module's (format 3.0.1): the books of the series the item stands for, each read with
+    /// these same rules.
+    var volumes: String = ""
 }
 
 /// One list item as its rules read it.
@@ -48,6 +51,10 @@ struct RuleListItem: Codable, Equatable, Sendable {
     var contentKind: String? = nil
     /// A module's (format 3.0.1): the record's own id on the site, nil without a rule.
     var id: String? = nil
+    /// A module's (format 3.0.1): the books of the series the item stands for, in series order,
+    /// nil without a rule. Each was read with the list's own rules; none lists volumes itself,
+    /// and one the list gives no link has an empty `bookUrl`.
+    var volumes: [RuleListItem]? = nil
     /// What the item's rules put (`@put`, `java.put`) on top of the list's own puts: Legado's
     /// `SearchBook.variable`, which travels with the book into its detail, TOC and content.
     /// Nil when nothing was put, or when the caller gave no item scope.
@@ -87,7 +94,8 @@ enum RuleListMapping {
         onMissingLink: ((_ name: String) -> Void)? = nil,
         itemScope: (() -> RuleDataInterface)? = nil,
         itemBook: (() -> LegadoBookBridge)? = nil,
-        onSelected: ((_ count: Int) -> Void)? = nil
+        onSelected: ((_ count: Int) -> Void)? = nil,
+        keepsUnlinked: Bool = false
     ) -> [RuleListItem] {
         guard !listRule.isEmpty else {
             onSelected?(0)
@@ -123,7 +131,11 @@ enum RuleListMapping {
             let coverUrl = engine.getOptionalURL(ruleStr: fields.coverUrl)
             book?.coverUrl = coverUrl
             let bookUrl: String
-            if let onMissingLink, !fields.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if keepsUnlinked {
+                // A series' volume (`fields.volumes`): one the list gives no link is still a
+                // volume, with no page of its own; never the list's own address.
+                bookUrl = engine.getOptionalURL(ruleStr: fields.bookUrl)
+            } else if let onMissingLink, !fields.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 bookUrl = engine.getOptionalURL(ruleStr: fields.bookUrl)
                 guard !bookUrl.isEmpty else {
                     onMissingLink(name)
@@ -133,6 +145,19 @@ enum RuleListMapping {
                 bookUrl = engine.getString(ruleStr: fields.bookUrl, isUrl: true)
             }
             book?.bookUrl = bookUrl
+            let aliases = values(engine, fields.aliases), tags = values(engine, fields.tags)
+            let publisher = value(engine, fields.publisher), isbn = value(engine, fields.isbn)
+            let series = value(engine, fields.series), seriesCovers = values(engine, fields.seriesCovers)
+            let contentKind = value(engine, fields.contentKind), id = value(engine, fields.id)
+            let language = fields.language.isEmpty ? "" : engine.getString(ruleStr: fields.language)
+            // Last: reading the volumes moves the engine onto each of them in turn.
+            var volumes: [RuleListItem]?
+            if !fields.volumes.isEmpty {
+                var own = fields
+                own.volumes = ""
+                volumes = Self.items(engine: engine, content: element, baseURL: baseURL, listRule: fields.volumes,
+                                     fields: own, keepsUnlinked: true)
+            }
             items.append(RuleListItem(
                 name: name,
                 author: author,
@@ -142,15 +167,16 @@ enum RuleListMapping {
                 wordCount: wordCount,
                 lastChapter: lastChapter,
                 kind: kind,
-                language: fields.language.isEmpty ? "" : engine.getString(ruleStr: fields.language),
-                aliases: values(engine, fields.aliases),
-                tags: values(engine, fields.tags),
-                publisher: value(engine, fields.publisher),
-                isbn: value(engine, fields.isbn),
-                series: value(engine, fields.series),
-                seriesCovers: values(engine, fields.seriesCovers),
-                contentKind: value(engine, fields.contentKind),
-                id: value(engine, fields.id),
+                language: language,
+                aliases: aliases,
+                tags: tags,
+                publisher: publisher,
+                isbn: isbn,
+                series: series,
+                seriesCovers: seriesCovers,
+                contentKind: contentKind,
+                id: id,
+                volumes: volumes,
                 runtimeVariables: scope.flatMap { $0.variableMap.isEmpty ? nil : $0.variableMap }
             ))
         }

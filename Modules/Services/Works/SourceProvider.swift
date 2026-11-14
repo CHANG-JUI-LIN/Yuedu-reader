@@ -163,6 +163,17 @@ enum CoverReference: Hashable, Codable, Sendable {
     case generated(seed: String)
 }
 
+/// One book of a series a list's item stands for (`WorkSummary.volumes`).
+struct WorkVolume: Hashable, Sendable, Identifiable {
+    let id: String
+    let title: String
+    /// Nil for a volume the list gives no artwork.
+    let cover: CoverReference?
+    /// The book as a work of its own, where the list gives it a page (趨勢's 英語 series: each
+    /// book has its article); nil for a volume that is only named, a print volume of one work.
+    let work: WorkDetailRoute?
+}
+
 /// What a row, card or result shows of an item. Bounded and plain when built (design §5;
 /// audit §11.5), so nothing a source sends can make layout expensive.
 struct WorkSummary: Hashable, Sendable {
@@ -182,6 +193,13 @@ struct WorkSummary: Hashable, Sendable {
     /// them without a `series` (趨勢's 華語 and 日本 works, maintainer 2026-10-27): its title is
     /// the series' name, which the author line would only repeat.
     var seriesCovers: [CoverReference]
+    /// The books of the series the item stands for, in series order, where the list names them
+    /// (趨勢, since 2026-11-14): the item's card opens the series' page, which lists them. Empty
+    /// for an item that is a book alone, and for a volume itself.
+    var volumes: [WorkVolume] = []
+    /// A module's genres of the item, bounded and plain (format 3.0.2): 作品詳情 links each to the
+    /// module's books of it. Empty for every other source, which names one `category` at most.
+    var tags: [String] = []
 
     static let titleLimit = 500
     static let authorLimit = 20
@@ -191,6 +209,7 @@ struct WorkSummary: Hashable, Sendable {
     static let seriesLimit = 100
     /// 作品詳情's fan shows two volumes a side.
     static let seriesCoverLimit = 4
+    static let volumeLimit = 60
 
     /// `blurb` and `category` must already be plain text; `OPDSClient.plainMetadata` turns HTML
     /// into it.

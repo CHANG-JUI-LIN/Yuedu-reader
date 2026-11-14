@@ -267,7 +267,7 @@ struct HomeListCardsTests {
         #expect(module.loads.count == 5)
         #expect(Set(module.loads.map(\.binding)) == [hot, empty, .latest, broken, new])
         #expect(module.loads.allSatisfy { $0.id == section.id && $0.layout == .collageCards })
-        #expect(group?.title == localized("清單"), "cards from several sources")
+        #expect(group?.title == localized("熱門精選"), "collages are named as the store names them, whatever their sources")
     }
 
     @Test("the section fails only when every card failed")
@@ -284,7 +284,7 @@ struct HomeListCardsTests {
         }
     }
 
-    @Test("a section of one module's lists is titled by the module; a layout change reloads, a layout of lists to another does not")
+    @Test("a section of one module's lists is named by its layout, never by the module; a layout change reloads, a layout of lists to another does not")
     func titleAndReload() async {
         let module = module()
         let home = HomeModel(providers: { [module] }, waitForSources: {})
@@ -292,11 +292,13 @@ struct HomeListCardsTests {
         await home.sync(with: HomePage(sections: [section]))
         for row in home.rows { home.load(row.id) }
         await until(home) { $0.allSatisfy(isSettled) }
-        #expect(home.groups(in: nil).first?.title == "m")
+        // The home does not print a module's name (maintainer, 2026-11-14); its header still opens the module.
+        #expect(home.groups(in: nil).first?.title == localized("熱門精選"))
         #expect(ExplorePlace.listsPage(home.rows) == .explore(.module(id: "m")))
 
         section.layout = .bannerCards
         await home.sync(with: HomePage(sections: [section]))
+        #expect(home.groups(in: nil).first?.title == localized("探索更多"))
         #expect(home.rows.allSatisfy(isSettled), "another layout of lists draws the same cards")
         #expect(module.loads.count == 2)
 

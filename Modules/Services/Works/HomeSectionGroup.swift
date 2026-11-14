@@ -28,9 +28,10 @@ struct HomeSectionGroup: Identifiable, Equatable {
 
     /// The section's name. A row of one source titled by that source (a feed, a category
     /// list with no title) keeps the source's name as its title; a section of lists from one
-    /// source, that source's own name.
+    /// source, that source's own name, but for 排行榜's one ranking, which the header names
+    /// (`HomeSection.headerNamesItsList`).
     var title: String {
-        if section.drawsLists {
+        if section.drawsLists, !section.headerNamesItsList {
             return section.displayTitle(sourceName: Set(rows.map(\.source)).count == 1 ? rows[0].providerName : "")
         }
         return section.displayTitle(sourceName: rows.count == 1 ? rows[0].sourceName : "")
@@ -77,6 +78,19 @@ struct HomeSectionGroup: Identifiable, Equatable {
     /// A card for each row, while the section loads.
     var loadingCards: [CollectionSummary] {
         rows.map(CollectionSummary.loading)
+    }
+
+    /// Whether 色帶書架 draws its band, header and all: while its books load and once it has some.
+    /// One that failed, or that holds no books (訂閱的最新文章's articles), is drawn without it.
+    /// The band is then the section's own ground on the home (`HomeSectionSlot`). Not AI 推薦's,
+    /// whose header stays on the page over its covers' band (`AIRecommendationRow`).
+    var drawsColorBand: Bool {
+        guard section.layout.style == .colorBand, section.binding != .aiRecommendations else { return false }
+        switch state {
+        case .idle, .loading: return true
+        case .failed: return false
+        case .loaded(let entries): return entries.contains { if case .item = $0 { true } else { false } }
+        }
     }
 
     /// Loaded with nothing in it: the home gives it no room. AI 推薦 is never settled empty:

@@ -44,7 +44,7 @@ struct LayoutPreviewTests {
     func counts() {
         let expected: [HomeLayoutStyle: Int] = [.featured: 3, .readingCard: 3, .compactReadingCard: 3, .list: 3,
                                                 .row: 6, .multiRow: 12, .coverGrid: 12, .largeRow: 4, .colorBand: 4,
-                                                .heroGrid: 6]
+                                                .heroGrid: 6, .heroCards: 3]
         #expect(HomeLayoutSample.books.mapValues(\.count) == expected)
     }
 
@@ -54,21 +54,25 @@ struct LayoutPreviewTests {
         #expect(HomeLayoutSample.lists.first { $0.id == "comics" }?.books.allSatisfy { $0.kind == .comic } == true)
     }
 
-    @Test("Each layout of lists has its own two lists, every artwork cover bundled")
+    @Test("Each layout of lists has its own lists, every artwork cover bundled")
     func lists() {
         let sample = HomeLayoutSample.standard
         let expected: [HomeLayoutStyle: [String]] = [.collection: ["漫畫", "東方經典"], .categoryCards: ["詩歌", "博物誌"],
                                                      .collageCards: ["推理", "冒險"], .bannerCards: ["奇幻", "歷史"],
-                                                     .chart: ["小說", "詩集"]]
+                                                     .chart: ["小說", "詩集"],
+                                                     .genreList: ["愛情", "懸疑", "科幻", "武俠"],
+                                                     .groupedShelves: ["童話", "怪談"]]
         for style in HomeLayoutStyle.allCases where style.drawsLists {
             #expect(sample.collections(for: style).map(\.title) == expected[style]?.map { localized($0) }, "\(style)")
         }
         for (style, collections) in sample.collections {
             for collection in collections {
-                // 拼貼卡片 draws five covers; 大圖卡片 none, its face drawn from the name; the others three.
+                // 拼貼卡片 draws five covers, as does each of 分組書架's shelves; 大圖卡片 and 類型清單
+                // none, a face or a symbol drawn from the name; the others three.
                 let drawn = switch style {
                 case .collageCards: CollectionSummary.collageLimit
-                case .bannerCards: 0
+                case .groupedShelves: 5
+                case .bannerCards, .genreList: 0
                 default: CollectionSummary.artworkLimit
                 }
                 #expect(collection.books.count == drawn, "\(collection.title)")
@@ -78,6 +82,10 @@ struct LayoutPreviewTests {
         for collection in sample.collections(for: .chart) {
             #expect(sample.listContents[collection.id]?.cards.map(\.title) == collection.books.map(\.title))
             #expect((sample.listContents[collection.id]?.cards.count ?? 0) == HomeChartColumns.places)
+        }
+        // 分組書架's shelves draw each list's books as its covers.
+        for collection in sample.collections(for: .groupedShelves) {
+            #expect(sample.listContents[collection.id]?.cards.map(\.title) == collection.books.map(\.title))
         }
         for collection in sample.collections.values.flatMap({ $0 }) {
             for book in collection.books {

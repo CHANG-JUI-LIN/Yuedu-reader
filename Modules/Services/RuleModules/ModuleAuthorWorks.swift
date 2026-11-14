@@ -60,7 +60,7 @@ enum ModuleAuthorWorks {
     static func byAuthor(_ entries: [CollectionEntry], author: String) -> [CollectionEntry] {
         entries.filter { entry in
             guard case .item(let record, _, _) = entry else { return false }
-            return WorkMatchKey.authorsCompatible([author], record.authors)
+            return WorkMatchKey.authorsSame([author], record.authors)
         }
     }
 }

@@ -50,6 +50,38 @@ struct WorkSourceFinderTests {
         #expect(found.compactMap(Self.url) == ["https://b.example/book/1", "https://c.example/book/9"])
     }
 
+    @Test("the work in its other form: a book's audiobook from an audio source, matched as its versions are, never among them")
+    func otherForm() {
+        let text = source("text")
+        var audio = source("audio")
+        audio.bookSourceType = 1
+        let tapped = WorkDetailRoute(.gutenberg(GutenbergBook(id: 2701, title: "Moby Dick", author: "Herman Melville")))
+        let results = [
+            SearchBook(name: "Moby Dick", author: "Herman Melville", origins: [origin(text, path: "1"), origin(audio, path: "7")]),
+            // An audiobook under its reader's name is not known to be the work.
+            SearchBook(name: "Moby Dick", author: "A Narrator", origins: [origin(audio, path: "narrated")]),
+        ]
+        let all = sources(text, audio)
+        #expect(WorkSourceFinder.matches(of: tapped, in: results, sources: all).compactMap(Self.url)
+                == ["https://text.example/book/1"])
+        let others = WorkSourceFinder.matches(of: tapped, in: results, sources: all, kind: .audio)
+        #expect(others.compactMap(Self.url) == ["https://audio.example/book/7"])
+        #expect(others.first?.record.contentKind == .audio)
+        // And the other way: an audiobook's page finds the book.
+        let listened = try! #require(others.first)
+        #expect(WorkSourceFinder.matches(of: listened, in: results, sources: all, kind: .text).compactMap(Self.url)
+                == ["https://text.example/book/1"])
+        // Stricter than a version (maintainer, 2026-11-14): the author by name, never a longer
+        // name that holds it, and never for a work that names no author.
+        let longer = [SearchBook(name: "Moby Dick", author: "Herman Melville Jr.", origins: [origin(audio, path: "jr")])]
+        #expect(WorkSourceFinder.matches(of: tapped, in: longer, sources: all, kind: .audio).isEmpty)
+        let unnamed = dataOnly("Moby Dick", by: "")
+        #expect(WorkSourceFinder.matches(of: unnamed, in: results, sources: all, kind: .audio).isEmpty)
+        #expect(ContentKind.text.otherForm == .audio)
+        #expect(ContentKind.audio.otherForm == .text)
+        #expect(ContentKind.comic.otherForm == nil && ContentKind.video.otherForm == nil)
+    }
+
     @Test("a found book joins after the listed versions, unless its source is listed already")
     func joined() {
         let a = source("a"), b = source("b"), c = source("c")

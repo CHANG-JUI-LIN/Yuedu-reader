@@ -25,7 +25,7 @@ enum SearchSourcePlaces {
         let libraries = LibraryListing.available(connections: connections, librariesAvailable: librariesAvailable)
             .filter { $0.key.type != .webDAV }
         let searching = modules.filter { $0.module.search != nil }.map {
-            LibraryListing(key: $0.instance, name: $0.module.title, systemImage: "puzzlepiece.extension")
+            LibraryListing(key: $0.instance, name: $0.module.title, systemImage: "puzzlepiece.extension", module: $0.module)
         }
         return libraries + searching
     }
@@ -101,7 +101,16 @@ struct SearchSourcesView: View {
                 ForEach(places) { place in
                     Toggle(isOn: Binding(get: { store.isShownInSearch(place.key) },
                                          set: { store.setShownInSearch($0, for: place.key) })) {
-                        SettingsRowLabel(place.name, systemImage: place.systemImage)
+                        if let module = place.module, module.icon != nil {
+                            Label {
+                                Text(place.name).foregroundStyle(DSColor.textPrimary)
+                            } icon: {
+                                RuleModuleSizedIcon(module: module, base: DSLayout.moduleRowIconSide)
+                            }
+                            .labelStyle(IconConsistentLabelStyle())
+                        } else {
+                            SettingsRowLabel(place.name, systemImage: place.systemImage)
+                        }
                     }
                     .accessibilityIdentifier("aggregation.search.\(place.key.type.rawValue).\(place.key.id)")
                 }

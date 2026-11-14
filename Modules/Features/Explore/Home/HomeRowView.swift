@@ -20,17 +20,21 @@ extension HomeSection {
         case .subscriptionArticles: return localized("訂閱的最新文章")
         case .aiRecommendations: return localized("AI 推薦")
         // In a layout of lists the cards name their categories: the section is its source's.
+        // 排行榜's one ranking has no card to name it (`headerNamesItsList`).
         case .sourceCategories(let categories):
-            return drawsLists ? sourceName : categories.first?.title ?? sourceName
-        // Lists from one source, by the source; from several, 清單.
-        case .lists: return sourceName.isEmpty ? localized("清單") : sourceName
+            return drawsLists && !headerNamesItsList ? sourceName : categories.first?.title ?? sourceName
+        // Lists by their layout where it has a name of its own (`layoutTitle`); else from one
+        // source, by the source; from several, 清單.
+        case .lists: return layoutTitle ?? (sourceName.isEmpty ? localized("清單") : sourceName)
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
         case .gutenbergLists: return localized("精選書單")
         case .gutenbergShelf(let id): return GutenbergShelf.shelf(id: id)?.title ?? sourceName
         case .aozoraNew: return localized(AozoraBrowseMode.newest.titleKey)
         case .aozoraIndex(let kind): return AozoraBrowseMode(rawValue: kind).map { localized($0.titleKey) } ?? sourceName
-        case .opdsFeed, .gutenbergFeed, .module, .myLibrary, .unknown: return sourceName
+        // A module's list among the lists of a layout that names itself is no module's section.
+        case .module: return drawsLists && !headerNamesItsList ? layoutTitle ?? sourceName : sourceName
+        case .opdsFeed, .gutenbergFeed, .myLibrary, .unknown: return sourceName
         }
     }
 
@@ -58,7 +62,7 @@ struct HomeRowContent {
     var articles: [SubscriptionArticle] = []
     /// 專題集合's lists (decision 37), a card each.
     var collections: [CollectionSummary] = []
-    /// Each list's own books, by the list's id, for 排行榜's columns (`CollectionSummary.bookEntries`);
+    /// Each list's own books, by the list's id, for 排行榜's columns and 分組書架's shelves (`CollectionSummary.bookEntries`);
     /// made only when asked for.
     var lists: [String: HomeRowContent] = [:]
 
@@ -94,7 +98,7 @@ struct HomeRowContent {
     }
 
     /// One pass over the shelf, for the copies this row shows.
-    /// - Parameter withLists: each list's own books too (`lists`), for 排行榜.
+    /// - Parameter withLists: each list's own books too (`lists`), for 排行榜 and 分組書架.
     @MainActor
     init(entries: [CollectionEntry], store: BookStore, withLists: Bool = false) {
         let lists = withLists ? entries.compactMap { entry -> CollectionSummary? in
@@ -171,16 +175,8 @@ struct HomeRowView: View {
         .task { load() }
     }
 
-    /// 色帶書架 draws its band while its covers load and once they have; one that failed, or
-    /// that holds no books (訂閱的最新文章's articles), is drawn without it.
-    private var drawsBand: Bool {
-        guard group.section.layout.style == .colorBand else { return false }
-        switch group.state {
-        case .idle, .loading: return true
-        case .failed: return false
-        case .loaded: return !(content?.cards.isEmpty ?? true)
-        }
-    }
+    /// 色帶書架's band (`HomeSectionGroup.drawsColorBand`, which the home's ground reads too).
+    private var drawsBand: Bool { group.drawsColorBand }
 
     // MARK: Header
 

@@ -255,6 +255,10 @@ struct RuleModuleValidatorTests {
         }) == .needsRequiredVersion(field: "modules[0].list.seriesCovers", minimum: "3.0"))
         #expect(rejection(v3 { editList(&$0, "seriesCovers", ".volume img@src") }) == nil)
         #expect(rejection(v3 { editList(&$0, "seriesCovers", "@js:'1'") }) == .javaScript(field: "modules[0].list.seriesCovers"))
+        // A series' books are 3.0.1's: a module that lists them must ask for it.
+        #expect(rejection(v3 { editList(&$0, "volumes", ".volume") })
+                == .needsRequiredVersion(field: "modules[0].list.volumes", minimum: "3.0.1"))
+        #expect(rejection(v3 { $0["requiredVersion"] = "3.0.1"; editList(&$0, "volumes", ".volume") }, appVersion: "3.0.1") == nil)
 
         #expect(rejection(v3 { editRequest(&$0, "bodyEncoding", "xml") })
                 == .unknownValue(field: "modules[0].request.bodyEncoding", value: "xml"))

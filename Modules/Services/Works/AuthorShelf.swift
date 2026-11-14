@@ -20,18 +20,36 @@ struct AuthorShelf: Hashable, Sendable {
 
     /// `more` after this shelf's own works, each by its kind (a video is neither), without a work
     /// the kind already has, by title. A book and its audiobook share a title and are both kept.
+    ///
+    /// A title is the author's work's own (`WorkMatchKey.title(_:by:)`): one a source wrote the
+    /// author's name before is the same work, and of the two the one written plainly is shown,
+    /// in the place the first had.
     func adding(_ more: [CollectionEntry], limit: Int = AuthorShelf.limit) -> AuthorShelf {
-        func title(_ entry: CollectionEntry) -> String? {
-            if case .item(let record, _, _) = entry { return WorkMatchKey.title(record.title) }
-            return nil
+        func keys(_ entry: CollectionEntry) -> (work: String, plain: Bool)? {
+            guard case .item(let record, _, _) = entry else { return nil }
+            let work = WorkMatchKey.title(record.title, by: record.authors)
+            return work.isEmpty ? nil : (work, work == WorkMatchKey.title(record.title))
         }
         var books = books, audiobooks = audiobooks
-        var bookTitles = Set(books.compactMap(title)), audioTitles = Set(audiobooks.compactMap(title))
+        func place(_ entry: CollectionEntry, in shelf: inout [CollectionEntry], _ placed: inout [String: (index: Int, plain: Bool)]) {
+            guard let key = keys(entry) else { return }
+            if let held = placed[key.work] {
+                guard key.plain, !held.plain else { return }
+                shelf[held.index] = entry
+                placed[key.work] = (held.index, true)
+            } else {
+                placed[key.work] = (shelf.count, key.plain)
+                shelf.append(entry)
+            }
+        }
+        var bookTitles: [String: (index: Int, plain: Bool)] = [:], audioTitles: [String: (index: Int, plain: Bool)] = [:]
+        for (index, entry) in books.enumerated() { if let key = keys(entry) { bookTitles[key.work] = bookTitles[key.work] ?? (index, key.plain) } }
+        for (index, entry) in audiobooks.enumerated() { if let key = keys(entry) { audioTitles[key.work] = audioTitles[key.work] ?? (index, key.plain) } }
         for entry in more {
-            guard case .item(let record, _, _) = entry, let key = title(entry) else { continue }
+            guard case .item(let record, _, _) = entry else { continue }
             switch record.contentKind {
-            case .text, .comic: if bookTitles.insert(key).inserted { books.append(entry) }
-            case .audio: if audioTitles.insert(key).inserted { audiobooks.append(entry) }
+            case .text, .comic: place(entry, in: &books, &bookTitles)
+            case .audio: place(entry, in: &audiobooks, &audioTitles)
             case .video: continue
             }
         }
@@ -209,13 +227,13 @@ final class AuthorPageModel: ObservableObject {
     }
 
     /// The search's books that are the author's and not yet on the page: a search matches titles
-    /// too, so only a book whose author is compatible with `author` is one, each title once a kind
+    /// too, so only a book whose author is `author` by name is one (`WorkMatchKey.authorsSame`), each title once a kind
     /// (`seen`), from the first source that has it.
     static func byAuthor(_ books: [OnlineBook], author: String, sources: [UUID: BookSource],
                          seen: inout Set<String>) -> [CollectionEntry] {
         var added: [CollectionEntry] = []
         for book in books {
-            guard WorkMatchKey.authorsCompatible([author], [book.author]), let source = sources[book.sourceId] else { continue }
+            guard WorkMatchKey.authorsSame([author], [book.author]), let source = sources[book.sourceId] else { continue }
             let entry = CollectionEntry.onlineBook(book, source: source)
             guard case .item(let record, _, _) = entry else { continue }
             let title = WorkMatchKey.title(record.title)

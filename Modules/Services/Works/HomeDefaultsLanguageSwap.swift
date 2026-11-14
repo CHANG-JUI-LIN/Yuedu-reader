@@ -17,6 +17,10 @@ import Foundation
 /// - The first list that comes in with covers takes the band, unless a band stays. なろう has
 ///   none, so Japanese has no band, as its defaults have none.
 ///
+/// Since 2026-11-14 the defaults hold the rankings as the columns of one 熱門排行榜
+/// (`HomePageDefaults.rankings`); on such a page that section's columns change (`swapRankings`),
+/// and the rules above are for a 預設 that still has the lists as sections of their own.
+///
 /// `HomePageStore` runs it on 預設 only, when the language is not the one 預設's lists are for
 /// (`HomeConfigurations.defaultsLanguages`): the reader's own 首頁配置 are theirs.
 enum HomeDefaultsLanguageSwap {
@@ -33,6 +37,7 @@ enum HomeDefaultsLanguageSwap {
     ///   - context: the defaults now: the language, and the mode and region they place lists for.
     static func apply(to sections: [HomeSection], from languages: [String], to context: HomePageDefaults.Context,
                       makeID: () -> UUID = UUID.init) -> Outcome {
+        if let swapped = swapRankings(in: sections, from: languages, to: context, makeID: makeID) { return swapped }
         let available = context.publicLibrariesAvailable
         let staying = Set(HomePageDefaults.officialModuleLists(languages: context.languages, publicLibrariesAvailable: available)
             .map(\.binding))
@@ -69,6 +74,53 @@ enum HomeDefaultsLanguageSwap {
         var swapped = kept
         swapped.insert(contentsOf: incoming, at: firstGone ?? defaultsPlace(in: kept, context: context))
         return Outcome(sections: swapped, removed: sections.count - kept.count, added: incoming.count)
+    }
+
+    /// The defaults since 2026-11-14 (`HomePageDefaults.page`) hold the languages' rankings as
+    /// the columns of one 熱門排行榜, not as sections of their own: that section's rankings give
+    /// way to the next language's, in its place and under its id. Nil for a 預設 that is not such
+    /// a page, which follows the language with its own sections (`apply`).
+    ///
+    /// - The section goes on while it is as the defaults made it: the last language's rankings,
+    ///   drawn as 排行榜, shown, with no title, subtitle or parameters. One the reader changed
+    ///   stays, and nothing is added beside it.
+    /// - A language with no rankings takes the section off; one coming after a language that
+    ///   had none puts it where the defaults do, after 本月熱門, on a page that still has the
+    ///   defaults' 熱門精選.
+    private static func swapRankings(in sections: [HomeSection], from languages: [String],
+                                     to context: HomePageDefaults.Context, makeID: () -> UUID) -> Outcome? {
+        let available = context.publicLibrariesAvailable
+        let held = HomePageDefaults.rankings(languages: languages, publicLibrariesAvailable: available)
+        let wanted = HomePageDefaults.rankings(languages: context.languages, publicLibrariesAvailable: available)
+        var swapped = sections
+        if !held.isEmpty {
+            // The page is the store's when it has 熱門排行榜 as the defaults made it. Without it —
+            // the reader changed it or took it off, or the page never had it — the page's own
+            // sections follow the language, which leaves a page without them as it is.
+            guard let index = sections.firstIndex(where: { section in
+                section.binding == .lists(held) && section.layout.style == .chart && section.isEnabled
+                    && section.title.isEmpty && section.subtitle.isEmpty && section.parameters.isEmpty
+            }) else { return nil }
+            if wanted.isEmpty {
+                swapped.remove(at: index)
+            } else {
+                swapped[index].binding = .lists(wanted)
+            }
+            return Outcome(sections: swapped, removed: held.count, added: wanted.count)
+        }
+        // The last language had no rankings, so the store's page has no 熱門排行榜 to take them:
+        // it is known by its 熱門精選, which no defaults before it had.
+        let picks = HomeSectionBinding.lists(HomePageDefaults.pickCards)
+        guard sections.contains(where: { $0.binding == picks }) else { return nil }
+        guard !wanted.isEmpty, !sections.contains(where: { $0.binding == .lists(wanted) }) else {
+            return Outcome(sections: sections, removed: 0, added: 0)
+        }
+        let before: [HomeSectionBinding] = [.module(moduleID: HomePageDefaults.trendsID, entryID: "month"),
+                                            .module(moduleID: HomePageDefaults.trendsID, entryID: "today"), picks]
+        let place = before.lazy.compactMap { binding in sections.firstIndex { $0.binding == binding } }.first.map { $0 + 1 }
+            ?? defaultsPlace(in: sections, context: context)
+        swapped.insert(HomeSection(id: makeID(), layout: .rankedRow, binding: .lists(wanted)), at: place)
+        return Outcome(sections: swapped, removed: 0, added: wanted.count)
     }
 
     /// Whose lists a 預設 saved before 2026-10-27 holds, which it did not say: each language with

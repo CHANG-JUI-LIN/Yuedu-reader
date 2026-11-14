@@ -67,6 +67,18 @@ enum RuleModuleValidator {
         // The first field a 3.0 app is needed for, and the first a 3.0.1 app is.
         var format3: String?
         var format301: String?
+        var format302: String?
+        func uses302(_ field: String) { if format302 == nil { format302 = field } }
+        if let icon = module.icon {
+            uses302("icon")
+            // A picture is a request too: an address on the module's own hosts, nothing to fill.
+            guard templateNames(in: icon).isEmpty else { throw .undeclaredTemplate(field: "icon", name: templateNames(in: icon)[0]) }
+            try checkHost(icon, field: "icon", hosts: RuleModuleHosts(module.hosts))
+        }
+        let globals = module.globalParams ?? []
+        if module.globalParams != nil { uses302("globalParams") }
+        try validateGlobals(globals, entries: [module.search, module.lookup, module.genre].compactMap { $0 } + module.modules)
+        let globalNames = Set(globals.map(\.name))
         if let attribution = module.attribution {
             format3 = "attribution"
             try requireText(attribution.text, "attribution.text")
@@ -111,10 +123,12 @@ enum RuleModuleValidator {
             guard isFileSafe(id) else { throw .invalidID(id) }
             guard seen.insert(id).inserted else { throw .duplicateEntryID(id) }
             try requireText(entry.title ?? "", "\(path).title")
-            try validate(entry, path: path, hosts: hosts, isSearch: false, format3: &format3, format301: &format301)
+            try validate(entry, path: path, hosts: hosts, isSearch: false, globals: globalNames, format3: &format3,
+                         format301: &format301, format302: &format302)
         }
         if let search = module.search {
-            try validate(search, path: "search", hosts: hosts, isSearch: true, format3: &format3, format301: &format301)
+            try validate(search, path: "search", hosts: hosts, isSearch: true, globals: globalNames, format3: &format3,
+                         format301: &format301, format302: &format302)
         }
         if let reading = module.reading {
             if format3 == nil { format3 = "reading" }
@@ -122,15 +136,48 @@ enum RuleModuleValidator {
         }
         if let lookup = module.lookup {
             if format3 == nil { format3 = "lookup" }
-            try validate(lookup, path: "lookup", hosts: hosts, isSearch: false, isLookup: true, format3: &format3,
-                         format301: &format301)
+            try validate(lookup, path: "lookup", hosts: hosts, isSearch: false, isLookup: true, globals: globalNames,
+                         format3: &format3, format301: &format301, format302: &format302)
+        }
+        let records = [module.search, module.lookup].compactMap { $0 }
+        if let detail = module.detail {
+            uses302("detail")
+            // The book's own address: some list must read one, and the page is that book's alone.
+            let listsURL = ([module.search].compactMap { $0 } + module.modules)
+                .contains { !($0.list.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let request = detail.request
+            guard templateNames(in: request.url + (request.body ?? "")).contains("url") else {
+                throw .missingField("detail.request.url {{url}}")
+            }
+            try validate(detail, of: "", hosts: hosts, isRecord: true, globals: globalNames, hasURLRule: listsURL)
+        }
+        if let related = module.related {
+            uses302("related")
+            try validate(related.request, path: "related", keyNames: ["id", "url"], records: records, hosts: hosts,
+                         globals: globalNames)
+            try validateListRules(related.list, path: "related.list")
+        }
+        if let genre = module.genre {
+            uses302("genre")
+            guard genre.detail == nil else { throw .unknownValue(field: "genre.detail", value: "detail") }
+            guard templateNames(in: genre.request.url + (genre.request.body ?? "")).contains("tag") else {
+                throw .missingField("genre.request.url {{tag}}")
+            }
+            try validate(genre, path: "genre", hosts: hosts, isSearch: false, globals: globalNames.union(["tag"]),
+                         format3: &format3, format301: &format301, format302: &format302)
         }
         if let reviews = module.reviews {
             if format301 == nil { format301 = "reviews" }
-            try validate(reviews, records: [module.search, module.lookup].compactMap { $0 }, hosts: hosts)
+            try validate(reviews, records: [module.search, module.lookup].compactMap { $0 }, hosts: hosts, globals: globalNames)
         }
 
         // The newest format it uses is the one it must ask for.
+        if let field = format302 {
+            let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
+            guard let declared, let minimum = RuleModuleVersion(RuleModuleFormat.version3_0_2), declared >= minimum else {
+                throw .needsRequiredVersion(field: field, minimum: RuleModuleFormat.version3_0_2)
+            }
+        }
         if let field = format301 {
             let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
             guard let declared, let minimum = RuleModuleVersion(RuleModuleFormat.version3_0_1), declared >= minimum else {
@@ -148,8 +195,8 @@ enum RuleModuleValidator {
     // MARK: - Entries
 
     private static func validate(_ entry: RuleModule.Entry, path: String, hosts: RuleModuleHosts,
-                                 isSearch: Bool, isLookup: Bool = false, format3: inout String?,
-                                 format301: inout String?) throws(RuleModuleRejection) {
+                                 isSearch: Bool, isLookup: Bool = false, globals: Set<String>, format3: inout String?,
+                                 format301: inout String?, format302: inout String?) throws(RuleModuleRejection) {
         func uses3(_ field: String) { if format3 == nil { format3 = field } }
         if let prefixes = entry.isbnPrefixes {
             uses3("\(path).isbnPrefixes")
@@ -183,9 +230,10 @@ enum RuleModuleValidator {
         }
         if entry.excludeTags != nil { uses3("\(path).excludeTags") }
 
-        var declared = pagingNames
+        var declared = pagingNames.union(globals)
         if isSearch { declared.insert("keyword") }
         if isLookup { declared.insert("isbn") }
+        try validateScope(entry.params, path: "\(path).params", format302: &format302)
         for (index, param) in entry.params.enumerated() {
             let field = "\(path).params[\(index)]"
             try requireText(param.name, "\(field).name")
@@ -246,6 +294,10 @@ enum RuleModuleValidator {
             if format301 == nil { format301 = "\(path).list.id" }
             try checkRule(id, field: "\(path).list.id", declared: [], innerRules: true)
         }
+        if let volumes = list.volumes {
+            if format301 == nil { format301 = "\(path).list.volumes" }
+            try checkRule(volumes, field: "\(path).list.volumes", declared: [], innerRules: true)
+        }
         for case let (name, rule?) in rules + format3Rules {
             // A list rule fills no parameters. Its `{{…}}` may only hold a rule, which the engine
             // reads in place (`{{$.id}}`, Legado's own); anything else would go to the JS evaluator.
@@ -255,7 +307,7 @@ enum RuleModuleValidator {
 
         if let detail = entry.detail {
             uses3("\(path).detail")
-            try validate(detail, of: path, hosts: hosts, isRecord: isSearch || isLookup,
+            try validate(detail, of: path, hosts: hosts, isRecord: isSearch || isLookup, globals: globals,
                          hasURLRule: !(entry.list.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
@@ -263,15 +315,15 @@ enum RuleModuleValidator {
     /// A record's own page: only a search's or a lookup's records are asked for one (a home
     /// list's rows never are), and it gives a description or tags.
     private static func validate(_ detail: RuleModule.Detail, of entryPath: String, hosts: RuleModuleHosts,
-                                 isRecord: Bool, hasURLRule: Bool) throws(RuleModuleRejection) {
-        let path = "\(entryPath).detail"
+                                 isRecord: Bool, globals: Set<String>, hasURLRule: Bool) throws(RuleModuleRejection) {
+        let path = entryPath.isEmpty ? "detail" : "\(entryPath).detail"
         guard isRecord else { throw .unknownValue(field: path, value: "detail") }
         let request = detail.request
         let method = (request.method ?? "GET").uppercased()
         guard method == "GET" || method == "POST" else {
             throw .unsupportedMethod(field: "\(path).request.method", method: request.method ?? "")
         }
-        let declared: Set<String> = ["url"]
+        let declared = globals.union(["url"])
         try requireText(request.url, "\(path).request.url")
         try checkRule(request.url, field: "\(path).request.url", declared: declared)
         if let body = request.body { try checkRule(body, field: "\(path).request.body", declared: declared) }
@@ -284,7 +336,7 @@ enum RuleModuleValidator {
         if hasOptionTail(request.url) { throw .urlOptions(field: "\(path).request.url") }
         // `{{url}}` with no url rule would be the list page's own address.
         let templates = templateNames(in: request.url + (request.body ?? "") + (request.headers ?? [:]).values.joined())
-        if templates.contains("url"), !hasURLRule { throw .missingField("\(entryPath).list.url") }
+        if templates.contains("url"), !hasURLRule { throw .missingField(entryPath.isEmpty ? "modules.list.url" : "\(entryPath).list.url") }
         // `{{url}}…` is the record's own address, read from the module's hosts; `send` refuses it
         // when it names another. Any other address is checked here.
         if !request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}") {
@@ -302,14 +354,15 @@ enum RuleModuleValidator {
     /// A record's reviews: asked of a record `search` or `lookup` found, by the keys its request
     /// names, so one of them must read every such key; each review has a text.
     private static func validate(_ reviews: RuleModule.Reviews, records: [RuleModule.Entry],
-                                 hosts: RuleModuleHosts) throws(RuleModuleRejection) {
+                                 hosts: RuleModuleHosts, globals: Set<String>) throws(RuleModuleRejection) {
         let path = "reviews"
         let request = reviews.request
         let method = (request.method ?? "GET").uppercased()
         guard method == "GET" || method == "POST" else {
             throw .unsupportedMethod(field: "\(path).request.method", method: request.method ?? "")
         }
-        let declared: Set<String> = ["id", "url"]
+        let keyNames: Set<String> = ["id", "url"]
+        let declared = globals.union(keyNames)
         try requireText(request.url, "\(path).request.url")
         try checkRule(request.url, field: "\(path).request.url", declared: declared)
         if let body = request.body { try checkRule(body, field: "\(path).request.body", declared: declared) }
@@ -322,7 +375,7 @@ enum RuleModuleValidator {
         if hasOptionTail(request.url) { throw .urlOptions(field: "\(path).request.url") }
         // Which record: without a key the page would be the same for every book.
         let keys = Set(templateNames(in: request.url + (request.body ?? "") + (request.headers ?? [:]).values.joined()))
-            .intersection(declared)
+            .intersection(keyNames)
         guard !keys.isEmpty else { throw .missingField("\(path).request.url {{id}}") }
         guard !records.isEmpty else { throw .missingField("search") }
         func reads(_ entry: RuleModule.Entry, _ key: String) -> Bool {
@@ -351,6 +404,121 @@ enum RuleModuleValidator {
         if let rating = reviews.rating { try requireText(rating.score, "\(path).rating.score") }
         for case let (name, rule?) in rules {
             try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
+        }
+    }
+
+    /// A request asked of a record `search` or `lookup` found (`related`; `reviews` has its own
+    /// copy of these checks): it names the record by `keyNames`, which one of those lists reads.
+    private static func validate(_ request: RuleModule.Request, path: String, keyNames: Set<String>,
+                                 records: [RuleModule.Entry], hosts: RuleModuleHosts,
+                                 globals: Set<String>) throws(RuleModuleRejection) {
+        let method = (request.method ?? "GET").uppercased()
+        guard method == "GET" || method == "POST" else {
+            throw .unsupportedMethod(field: "\(path).request.method", method: request.method ?? "")
+        }
+        let declared = globals.union(keyNames)
+        try requireText(request.url, "\(path).request.url")
+        try checkRule(request.url, field: "\(path).request.url", declared: declared)
+        if let body = request.body { try checkRule(body, field: "\(path).request.body", declared: declared) }
+        if let encoding = request.bodyEncoding, RuleModule.BodyEncoding(rawValue: encoding) == nil {
+            throw .unknownValue(field: "\(path).request.bodyEncoding", value: encoding)
+        }
+        for (name, value) in (request.headers ?? [:]).sorted(by: { $0.key < $1.key }) {
+            try checkRule(value, field: "\(path).request.headers.\(name)", declared: declared)
+        }
+        if hasOptionTail(request.url) { throw .urlOptions(field: "\(path).request.url") }
+        let keys = Set(templateNames(in: request.url + (request.body ?? "") + (request.headers ?? [:]).values.joined()))
+            .intersection(keyNames)
+        guard !keys.isEmpty else { throw .missingField("\(path).request.url {{id}}") }
+        guard !records.isEmpty else { throw .missingField("search") }
+        func reads(_ entry: RuleModule.Entry, _ key: String) -> Bool {
+            let rule = key == "id" ? entry.list.id : entry.list.url
+            return !(rule ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard records.contains(where: { entry in keys.allSatisfy { reads(entry, $0) } }) else {
+            throw .missingField("search.list.\(keys.sorted().first ?? "id")")
+        }
+        if !request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}") {
+            try checkHost(request.url, field: "\(path).request.url", hosts: hosts)
+        }
+    }
+
+    /// A list's rules read outside an entry (`related.list`): an item and its title, each a rule
+    /// with no parameter in it.
+    private static func validateListRules(_ list: RuleModule.ListRules, path: String) throws(RuleModuleRejection) {
+        try requireText(list.items, "\(path).items")
+        try requireText(list.title, "\(path).title")
+        let rules: [(String, String?)] = [
+            ("items", list.items), ("title", list.title), ("author", list.author), ("cover", list.cover),
+            ("intro", list.intro), ("url", list.url), ("kind", list.kind), ("language", list.language),
+            ("aliases", list.aliases), ("tags", list.tags), ("publisher", list.publisher), ("isbn", list.isbn),
+            ("series", list.series), ("seriesCovers", list.seriesCovers), ("contentKind", list.contentKind),
+            ("id", list.id), ("volumes", list.volumes),
+        ]
+        for case let (name, rule?) in rules {
+            try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
+        }
+    }
+
+    // MARK: - Global parameters, belongTo, placeholders (format 3.0.2)
+
+    /// The template names every request fills itself: no global may take one.
+    static let reservedNames: Set<String> = ["page", "offset", "keyword", "isbn", "id", "url", "tag"]
+
+    /// The module's own settings: a value the reader sets once (`input`, `count`, `enumeration`)
+    /// or a `constant`, named apart from every list's parameters and the names requests fill.
+    /// One that follows 中繼資料語言偏好推薦 has no language to follow outside a home section.
+    private static func validateGlobals(_ globals: [RuleModule.Param],
+                                        entries: [RuleModule.Entry]) throws(RuleModuleRejection) {
+        var unused: String?
+        try validateScope(globals, path: "globalParams", format302: &unused)
+        let listNames = Set(entries.flatMap { $0.params.map(\.name) })
+        var seen: Set<String> = []
+        for (index, param) in globals.enumerated() {
+            let field = "globalParams[\(index)]"
+            try requireText(param.name, "\(field).name")
+            guard let kind = param.kind else { throw .unknownParamType(field: "\(field).type", type: param.type) }
+            guard [.input, .count, .enumeration, .constant].contains(kind) else {
+                throw .unknownParamType(field: "\(field).type", type: param.type)
+            }
+            if kind == .enumeration, param.enumOptions?.isEmpty ?? true {
+                throw .enumerationWithoutOptions(field: "\(field).enumOptions")
+            }
+            if let follows = param.followsLanguage { throw .unknownValue(field: "\(field).followsLanguage", value: String(follows)) }
+            guard !reservedNames.contains(param.name), !listNames.contains(param.name), seen.insert(param.name).inserted else {
+                throw .unknownValue(field: "\(field).name", value: param.name)
+            }
+        }
+    }
+
+    /// One set of parameters (a list's, or `globalParams`): each `belongTo` names another of them
+    /// and no chain of them leads back to where it started; `placeholders` only on an `input`.
+    private static func validateScope(_ params: [RuleModule.Param], path: String,
+                                      format302: inout String?) throws(RuleModuleRejection) {
+        let byName = Dictionary(params.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        for (index, param) in params.enumerated() {
+            let field = "\(path)[\(index)]"
+            if let belongTo = param.belongTo {
+                if format302 == nil { format302 = "\(field).belongTo" }
+                guard belongTo.paramName != param.name, byName[belongTo.paramName] != nil, !belongTo.value.isEmpty else {
+                    throw .unknownValue(field: "\(field).belongTo", value: belongTo.paramName)
+                }
+                var visited: Set<String> = [param.name]
+                var next = byName[belongTo.paramName]
+                while let target = next {
+                    guard visited.insert(target.name).inserted else {
+                        throw .unknownValue(field: "\(field).belongTo", value: belongTo.paramName)
+                    }
+                    next = target.belongTo.flatMap { byName[$0.paramName] }
+                }
+            }
+            if let placeholders = param.placeholders {
+                if format302 == nil { format302 = "\(field).placeholders" }
+                guard param.kind == .input else { throw .unknownValue(field: "\(field).placeholders", value: param.type) }
+                for (offset, placeholder) in placeholders.enumerated() {
+                    try requireText(placeholder.title, "\(field).placeholders[\(offset)].title")
+                }
+            }
         }
     }
 

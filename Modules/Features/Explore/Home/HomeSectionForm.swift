@@ -661,7 +661,7 @@ struct HomeSectionForm: View {
 
     private func content(of group: HomeSectionGroup) -> HomeRowContent? {
         guard case .loaded(let entries) = group.state else { return nil }
-        return HomeRowContent(entries: entries, store: store, withLists: group.section.layout.style == .chart)
+        return HomeRowContent(entries: entries, store: store, withLists: group.section.layout.style.drawsListBooks)
     }
 }
 
@@ -797,10 +797,8 @@ extension RuleModuleLibrary {
 
 // MARK: - A module list's parameters
 
-/// A module list's parameters, written by name (Phase 6f), the section's or a card's: a choice
-/// is a `Picker`, a count a `Stepper`, typed text is kept once the reader is done with it. A
-/// choice that follows 中繼資料語言偏好推薦 offers that first, and picking it again clears the
-/// reader's own.
+/// A module list's parameters, written by name (Phase 6f), the section's or a card's
+/// (`RuleModuleParameterRows`): only those the values shown make visible (`belongTo`, 3.0.2).
 private struct HomeModuleParameters: View {
     let entry: RuleModule.Entry
     let values: [String: String]
@@ -808,76 +806,14 @@ private struct HomeModuleParameters: View {
     let set: (String, String?) -> Void
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
 
-    /// The picker's tag for following 中繼資料語言偏好推薦: no option's value.
-    private static let followsLanguageTag = "\u{1F}followsLanguage"
-
     var body: some View {
         Section {
-            ForEach(entry.editableParams, id: \.name) { param in
-                let title = param.title ?? param.name
-                let value = param.currentValue(in: values, language: aggregation.readingLanguages.language)
-                switch param.kind {
-                case .enumeration:
-                    let follows = param.followsLanguage == true
-                    let selection = follows && values[param.name] == nil ? Self.followsLanguageTag : value
-                    Picker(title, selection: Binding(get: { selection }, set: { picked in
-                        set(param.name, picked == Self.followsLanguageTag ? nil : picked)
-                    })) {
-                        if follows {
-                            Text(localized("跟隨中繼資料語言偏好推薦")).tag(Self.followsLanguageTag)
-                        }
-                        ForEach(param.enumOptions ?? [], id: \.value) { option in
-                            Text(option.title).tag(option.value)
-                        }
-                    }
-                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
-                case .count:
-                    let count = Int(value) ?? 1
-                    let binding = Binding(get: { count }, set: { set(param.name, String($0)) })
-                    Stepper(value: binding, in: 1...max(100, count)) {
-                        LabeledContent(title, value: String(count))
-                    }
-                    .accessibilityStepper(title, value: binding, in: 1...max(100, count), valueText: String(count))
-                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
-                default:
-                    HomeModuleTextParameter(title: title, committed: value) { set(param.name, $0) }
-                        .accessibilityIdentifier("homeSection.parameter.\(param.name)")
-                }
-            }
+            RuleModuleParameterRows(params: entry.shownParams(in: values, language: aggregation.readingLanguages.language),
+                                    values: values, identifier: "homeSection.parameter", set: set)
         } header: {
             Text(localized("篩選"))
         }
         .interfaceSectionSurface()
-    }
-}
-
-/// A module list's `input` parameter. Kept on submit or when the field loses focus, never on
-/// each keystroke: every value written reloads the preview with a real request.
-private struct HomeModuleTextParameter: View {
-    let title: String
-    let committed: String
-    let commit: (String?) -> Void
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        LabeledContent(title) {
-            TextField(title, text: $text)
-                .multilineTextAlignment(.trailing)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .focused($focused)
-                .onSubmit(save)
-        }
-        .onAppear { text = committed }
-        .onChange(of: committed) { _, value in if !focused { text = value } }
-        .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
-    }
-
-    private func save() {
-        guard text != committed else { return }
-        commit(text.isEmpty ? nil : text)
     }
 }
 

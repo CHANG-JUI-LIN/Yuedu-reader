@@ -56,11 +56,14 @@ struct ModuleListPage: View {
         case .loaded:
             let cards = cards
             if cards.isEmpty {
-                ContentUnavailableView { UnavailableLabel(localized("此目錄沒有內容"), systemImage: "books.vertical") }
+                ContentUnavailableView {
+                    UnavailableLabel(localized(route.tag == nil ? "此目錄沒有內容" : "這個分類沒有其他作品"),
+                                     systemImage: "books.vertical")
+                }
             } else {
                 HomeSectionCards(layout: HomeSectionLayout(style: .coverGrid), cards: cards,
                                  rowID: "module.list.\(route.moduleID).\(route.entryID)", hasShowAll: false) { card, _ in
-                    if let work = card.route { push?(.work(work)) }
+                    if let work = card.route { push?(.item(work)) }
                 }
             }
             if let error = model.loadMoreError {

@@ -169,7 +169,7 @@ enum HomeDesignFixtureData {
         }
         var content = HomeRowContent(entries: entries, status: status, shelfBooks: [:])
         // 排行榜's columns, each its list's books (`HomeRowContent.lists`).
-        if group.section.layout.style == .chart {
+        if group.section.layout.style.drawsListBooks {
             content.lists = Dictionary(entries.compactMap { entry -> (String, HomeRowContent)? in
                 guard case .collection(let list) = entry else { return nil }
                 return (list.id, HomeRowContent(entries: list.bookEntries, status: status, shelfBooks: [:]))

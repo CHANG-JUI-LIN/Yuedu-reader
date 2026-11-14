@@ -32,6 +32,9 @@ SCHEMA_VERSION = 1
 LIST_LENGTH = 50
 # A series' entry carries its other books' covers for 作品詳情's fan, two a side (app, 2026-10-26).
 SERIES_COVERS = 4
+# A series' entry lists its books for the app's series page, which a card opens first
+# (maintainer, 2026-11-14): this many at most.
+SERIES_VOLUMES = 60
 # A list's works: Wikidata's classes for a written story. A page in a pool's categories whose
 # item is something else (most often the TV series adapted from it) is left out.
 WORK_CLASSES = {
@@ -310,10 +313,18 @@ def bangumi_cover(subject):
 
 
 def bangumi_volumes(related):
-    """A series subject's volumes' covers, from its related subjects: each 单行本 with a cover, in
-    the order Bangumi's editors keep them, the series' own (はたらく魔王さま!'s (0) and 0-II before
-    its (1); 11 of the 81 listed series are not in id order, measured 2026-10-27)."""
-    return [cover for item in related if item.get('relation') == '单行本' and (cover := bangumi_cover(item))]
+    """A series subject's volumes, from its related subjects: each 单行本 as its name, its Chinese
+    name and its cover (None without one), in the order Bangumi's editors keep them, the series'
+    own (はたらく魔王さま!'s (0) and 0-II before its (1); 11 of the 81 listed series are not in id
+    order, measured 2026-10-27). So a volume's place is not its number: its name says which it is."""
+    return [{'name': item.get('name') or '', 'name_cn': item.get('name_cn') or '', 'cover': bangumi_cover(item)}
+            for item in related if item.get('relation') == '单行本' and (item.get('name') or item.get('name_cn'))]
+
+
+def fanned_covers(volumes):
+    """The covers a whole series' entry fans behind its own: its volumes' after the first with
+    one, which the work's own cover stands for."""
+    return [volume['cover'] for volume in volumes if volume['cover']][1:]
 
 
 def narou_pick(title, codes, novels):
@@ -1005,24 +1016,26 @@ class Job:
             self.store.set_finished(qid, subject['id'] if subject else None, bool(subject and bangumi_ended(subject)), self.now,
                                     bangumi_cover(subject) if subject else None)
 
-    def volume_covers(self, qids):
-        """`{qid: [cover, …]}` for works that are a whole series and were matched on Bangumi: its
-        volumes' covers after the first, which the work's own cover stands for. Each subject's
-        volumes are asked once a week."""
-        covers, asked = {}, 0
+    def bangumi_series(self, qids):
+        """`{qid: [volume, …]}` for works that are a whole series and were matched on Bangumi: its
+        volumes (`bangumi_volumes`), where it has more than one. Each subject's volumes are asked
+        once a week; an answer kept from before their names were (covers alone, until 2026-11-14)
+        is asked again."""
+        series, asked = {}, 0
         for qid in qids:
             subject = (self.store.finished(qid) or (None,))[0]
             if not subject:
                 continue
             known = self.store.volumes(subject)
-            if not known or datetime.fromisoformat(known[1]) < datetime.now(timezone.utc) - REFRESH_VOLUMES:
+            if (not known or any(isinstance(volume, str) for volume in known[0])
+                    or datetime.fromisoformat(known[1]) < datetime.now(timezone.utc) - REFRESH_VOLUMES):
                 self.store.set_volumes(subject, bangumi_volumes(bangumi_related(self.client, subject)), self.now)
                 asked += 1
-            later = self.store.volumes(subject)[0][1:]
-            if later:
-                covers[qid] = later
-        self.say(f'volumes: {len(qids)} entries, {asked} subjects asked, {len(covers)} with other volumes')
-        return covers
+            volumes = self.store.volumes(subject)[0]
+            if len(volumes) > 1:
+                series[qid] = volumes
+        self.say(f'volumes: {len(qids)} entries, {asked} subjects asked, {len(series)} with other volumes')
+        return series
 
     def narou_finished(self, pool, works):
         """`{qid: finished}` for the works whose article links their 小説家になろう page, asked
@@ -1087,14 +1100,34 @@ class Job:
 def build_region(job, name, region, pool_works, details, done, totals, groups, series_names, volumes):
     """The region's lists: `{list: [work, …]}`, from each window's `totals`, where a series is
     one entry under its head (`groups`), and `done` the entries finished. A work that is a whole
-    series (`volumes`: `{qid: its other volumes' covers}`) fans them and names no series: its
-    title is the series'."""
+    series (`volumes`: `{qid: its volumes}`, `Job.bangumi_series`) fans them and names no series:
+    its title is the series'. Either kind of series lists its books (`volumes`) for the app's
+    series page: a series of the pool's books each as an entry of its own, which the app can
+    open; a whole series' as Bangumi names them, in the region's language and script."""
     pool = POOLS[region.pool]
     wiki = pool.wiki
     variant_key = region.variant
 
     def title_of(title, work):
         return work['variants'].get(variant_key) or title if variant_key else title
+
+    # A volume's name: Bangumi's Chinese one on a Chinese wiki's pool, where it has one, in the
+    # region's script as the wiki's own converter writes it; else as the volume is named.
+    def named(volume):
+        return volume['name_cn'] or volume['name'] if wiki.startswith('zh.') else volume['name'] or volume['name_cn']
+
+    names = {named(volume) for listed in volumes.values() for volume in listed}
+    shown_as = convert_variant(job.client, wiki, names, region.variant) if region.variant and names else {}
+
+    def book(title, authors, covers):
+        """A book of a series as an entry of its own, without the text the app reads on its page."""
+        work = pool_works[title]
+        listed = {'title': strip_disambiguation(title_of(title, work)),
+                  'author': details.get(work['qid'], {}).get('authors', {}).get(name, [])[:5] or authors,
+                  'url': article_url(wiki, title, region.variant), 'wikidata': work['qid']}
+        if work['qid'] in covers:
+            listed['cover'] = covers[work['qid']]
+        return listed
 
     def entry(title, work, intro, covers):
         detail = details.get(work['qid'], {})
@@ -1106,12 +1139,19 @@ def build_region(job, name, region, pool_works, details, done, totals, groups, s
         series = series_names.get(groups[title][0], {}).get(name) if title in groups else None
         if series:
             listed['series'] = series
-            others = [covers[pool_works[other]['qid']] for other in series_volumes(title, groups, pool_works)
-                      if pool_works[other]['qid'] in covers]
+            books = series_volumes(title, groups, pool_works)
+            others = [covers[pool_works[other]['qid']] for other in books if pool_works[other]['qid'] in covers]
             if others:
                 listed['seriesCovers'] = others[:SERIES_COVERS]
+            if books:
+                listed['volumes'] = [book(other, listed['author'], covers) for other in [title] + books][:SERIES_VOLUMES]
         elif work['qid'] in volumes:
-            listed['seriesCovers'] = volumes[work['qid']][:SERIES_COVERS]
+            fanned = fanned_covers(volumes[work['qid']])
+            if fanned:
+                listed['seriesCovers'] = fanned[:SERIES_COVERS]
+            listed['volumes'] = [{'title': shown_as.get(named(volume), named(volume)), 'author': listed['author'],
+                                  **({'cover': volume['cover']} if volume['cover'] else {})}
+                                 for volume in volumes[work['qid']]][:SERIES_VOLUMES]
         if work['qid'] in covers:
             listed['cover'] = covers[work['qid']]
         return listed
@@ -1304,7 +1344,7 @@ def run(job, output, regions):
                                            for title in shown
                                            if title in groups and groups[title][0] in series_items}, pool.wiki, asked)
             # Where works were matched on Bangumi (華語, 日本), a work is a whole series.
-            volumes = job.volume_covers([works[title]['qid'] for title in shown if title not in groups]) \
+            volumes = job.bangumi_series([works[title]['qid'] for title in shown if title not in groups]) \
                 if asks_bangumi else {}
             for name in names:
                 for list_name, entries in build_region(job, name, REGIONS[name], works, details, done, totals,

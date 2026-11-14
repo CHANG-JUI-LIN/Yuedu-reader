@@ -337,7 +337,7 @@ struct RSSFeedView: View {
         }
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .rss)
-        .hidesRootTabBar()
+        .hidesRootTabBar(hasBottomBar: true)
         .navigationDestination(item: $selectedArticleID) { articleID in
             RSSArticleReaderView(articleID: articleID)
         }

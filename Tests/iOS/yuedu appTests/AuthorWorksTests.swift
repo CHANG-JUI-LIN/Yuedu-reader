@@ -362,6 +362,53 @@ struct AuthorWorksModelTests {
                    lastChapter: "", kind: "", sourceId: source, sourceName: "測試來源")
     }
 
+    @Test("an author is the author by name, in either script: never a name that only holds it")
+    func strictAuthor() {
+        // The maintainer's page of 飞天鱼, 2026-11-14: it listed these three's works too.
+        for other in ["飛天魚兒", "驕傲的飛天魚", "Yuky飛天魚", "飞天鱼儿"] {
+            #expect(!WorkMatchKey.authorsSame(["飞天鱼"], [other]), "\(other)")
+            #expect(WorkMatchKey.authorsCompatible(["飞天鱼"], [other]), "a work's versions still take a longer name: \(other)")
+        }
+        for same in ["飛天魚", "飞天鱼", "作者：飛天魚", "飛天魚 著", "飛天魚、別人", " 飞天鱼 "] {
+            #expect(WorkMatchKey.authorsSame(["飞天鱼"], [same]), "\(same)")
+        }
+        #expect(WorkMatchKey.authorsSame(["Terry Pratchett", "Neil Gaiman"], ["neil gaiman"]))
+        #expect(!WorkMatchKey.authorsSame(["飞天鱼"], [""]) && !WorkMatchKey.authorsSame([], ["飞天鱼"]))
+
+        let id = UUID()
+        let books = [
+            Self.online("萬古神帝", "飛天魚", "https://example.com/b/1", source: id),
+            Self.online("飛天魚兒的新書", "飛天魚兒", "https://example.com/b/2", source: id),
+            Self.online("雜文", "Yuky飛天魚", "https://example.com/b/3", source: id),
+            Self.online("万古神帝", "飞天鱼", "https://example.com/b/4", source: id),
+        ]
+        #expect(AuthorWorks.sameAuthor(books, author: "飞天鱼", excludingTitle: "", bookURL: "", limit: 12).map(\.name) == ["萬古神帝"],
+                "the author's own, once: the two scripts' titles are one work")
+        var source = BookSource()
+        source.id = id
+        var seen = Set<String>()
+        #expect(AuthorPageModel.byAuthor(books, author: "飞天鱼", sources: [id: source], seen: &seen).count == 1)
+
+        // A source that writes the author into the title: the same work, once, written plainly.
+        #expect(WorkMatchKey.title("飛天魚萬古神帝", by: ["飞天鱼"]) == WorkMatchKey.title("万古神帝"))
+        #expect(WorkMatchKey.title("飛天魚", by: ["飛天魚"]) == WorkMatchKey.title("飛天魚"), "a title that is the name alone")
+        #expect(WorkMatchKey.title("天帝傳", by: ["飛天魚"]) == WorkMatchKey.title("天帝傳"))
+        let named = [
+            Self.online("飛天魚萬古神帝", "飛天魚", "https://example.com/b/9", source: id),
+            Self.online("萬古神帝", "飛天魚", "https://example.com/b/1", source: id),
+            Self.online("飛天魚天帝傳", "飛天魚", "https://example.com/b/8", source: id),
+        ]
+        #expect(AuthorWorks.sameAuthor(named, author: "飛天魚", excludingTitle: "", bookURL: "", limit: 12).count == 2)
+        func entries(_ books: [OnlineBook]) -> [CollectionEntry] { books.map { CollectionEntry.onlineBook($0, source: source) } }
+        func titles(_ shelf: AuthorShelf) -> [String] {
+            shelf.books.compactMap { if case .item(let record, _, _) = $0 { record.title } else { nil } }
+        }
+        let shelf = AuthorShelf(books: [], audiobooks: []).adding(entries(named))
+        #expect(titles(shelf) == ["萬古神帝", "飛天魚天帝傳"], "the plain title takes the first one's place; one with no plain twin stays")
+        #expect(titles(shelf.adding(entries([Self.online("天帝傳", "飛天魚", "https://example.com/b/7", source: id)])))
+                == ["萬古神帝", "天帝傳"])
+    }
+
     @Test("a source's search for an author keeps that author's other books, each title once")
     func sameAuthor() {
         let id = UUID()

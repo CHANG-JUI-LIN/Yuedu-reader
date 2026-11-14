@@ -15,6 +15,7 @@ import SwiftUI
 // 2026-10-27: the colour band left 呈現方式 (the 頂部輪播圖 until 2026-11-12), and its boldly coloured Japanese
 // and Chinese first editions went to 大圖卡片's two lists (日本裝幀, 新文學), whose cards take their
 // first cover's colour.
+// 2026-11-14: 類型清單, as 大圖卡片, draws no covers: four lists named for kinds of book.
 
 /// One book a preview is drawn with: its cover, bundled as `layout-sample-<cover>.jpg`, and its
 /// title and author as its edition has them. Every cover is in the public domain worldwide:
@@ -128,6 +129,11 @@ struct HomeLayoutSample {
             .init(cover: "my-queen", title: "My Queen, No. 8, 1900", work: "My Queen", author: "Grace Shirley", language: "en"),
             .init(cover: "varney-the-vampire", title: "Varney the Vampire", work: "Varney the Vampire", author: "James Malcolm Rymer", language: "en"),
         ],
+        .heroCards: [
+            .init(cover: "blue-flower", title: "The Blue Flower", work: "The Blue Flower", author: "Henry van Dyke", language: "en"),
+            .init(cover: "chinese-fairy-book", title: "The Chinese Fairy Book", work: "The Chinese Fairy Book", author: "Richard Wilhelm", language: "en"),
+            .init(cover: "inaka-genji", title: "偐紫田舎源氏", work: "偐紫田舎源氏", author: "柳亭種彦", language: "ja"),
+        ],
     ]
 
     /// Each layout of lists' sample: two lists of the books no layout has. They open nothing (a
@@ -184,6 +190,26 @@ struct HomeLayoutSample {
             .init(cover: "hongzhu", title: "紅燭", work: "紅燭", author: "聞一多", language: "zh"),
             .init(cover: "haru-to-shura", title: "春と修羅", work: "春と修羅", author: "宮沢賢治", language: "ja"),
             .init(cover: "tsuki-ni-hoeru", title: "月に吠える", work: "月に吠える", author: "萩原朔太郎", language: "ja"),
+        ]),
+        // 類型清單 draws no covers either, a symbol from each list's name: four kinds of book, a row each.
+        (style: .genreList, id: "romanceGenre", titleKey: "愛情", sourceName: nil, books: []),
+        (style: .genreList, id: "mysteryGenre", titleKey: "懸疑", sourceName: nil, books: []),
+        (style: .genreList, id: "scienceFictionGenre", titleKey: "科幻", sourceName: nil, books: []),
+        (style: .genreList, id: "martialArtsGenre", titleKey: "武俠", sourceName: nil, books: []),
+        // 分組書架 draws each list as a shelf of its own, the fifth cover running off the edge.
+        (style: .groupedShelves, id: "fairyTales", titleKey: "童話", sourceName: nil, books: [
+            .init(cover: "peter-rabbit", title: "The Tale of Peter Rabbit", work: "Peter Rabbit", author: "Beatrix Potter", language: "en"),
+            .init(cover: "kattresan", title: "Kattresan", work: "Kattresan", author: "Ivar Arosenius", language: "sv"),
+            .init(cover: "andersen-nightingale", title: "Соловей", work: "Соловей", author: "Г. Х. Андерсен", language: "ru"),
+            .init(cover: "wind-in-the-willows", title: "The Wind in the Willows", work: "The Wind in the Willows", author: "Kenneth Grahame", language: "en"),
+            .init(cover: "blue-fairy-book", title: "The Blue Fairy Book", work: "The Blue Fairy Book", author: "Andrew Lang", language: "en"),
+        ]),
+        (style: .groupedShelves, id: "ghostStories", titleKey: "怪談", sourceName: nil, books: [
+            .init(cover: "the-beetle", title: "The Beetle: A Mystery", work: "The Beetle", author: "Richard Marsh", language: "en"),
+            .init(cover: "le-horla", title: "Le Horla", work: "Le Horla", author: "Guy de Maupassant", language: "fr"),
+            .init(cover: "more-ghost-stories", title: "More Ghost Stories", work: "More Ghost Stories", author: "M. R. James", language: "en"),
+            .init(cover: "the-raven", title: "The Raven", work: "The Raven", author: "Edgar Allan Poe", language: "en"),
+            .init(cover: "new-ghost-stories", title: "New Ghost Stories", work: "New Ghost Stories", author: "L. Galbraith", language: "en"),
         ]),
     ]
 

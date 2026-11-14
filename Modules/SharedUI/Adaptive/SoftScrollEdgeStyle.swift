@@ -44,6 +44,33 @@ struct HiddenScrollEdges: ViewModifier {
     }
 }
 
+/// Drops the bottom scroll edge effect of a page that hides the root tab bar.
+///
+/// For one real case (maintainer, 2026-11-14, iOS 27.2 simulator): a tab bar SwiftUI has
+/// hidden still counts as a bar at the bottom of the scroll views above it. The hierarchy
+/// kept a bottom `ScrollEdgeEffectView` 126pt tall whose only element was the hidden bar's
+/// `_UIScrollPocketBarInteraction`, with `isTabBarHidden` true, so the last lines of a page
+/// with nothing at its bottom (作品詳情's 目錄) were blurred. Delete this when a hidden
+/// tab bar no longer leaves that effect behind. A no-op before iOS 26, which has no edge effect.
+struct HiddenBottomScrollEdge: ViewModifier {
+    let isHidden: Bool
+    /// False for a page with a bar of its own at the bottom. Fixed for a page, so the branch
+    /// below never changes and the page keeps its identity.
+    let appliesToPage: Bool
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), appliesToPage {
+            content.scrollEdgeEffectHidden(isHidden, for: .bottom)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
 extension View {
     /// Gives vertical scroll views an explicit soft top/bottom edge on iOS 26+.
     func softScrollEdges(hidingTop hidesTopEdge: Bool = false) -> some View {

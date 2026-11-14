@@ -20,6 +20,8 @@ private enum WorkDetailPush: Hashable {
     case authorPage(AuthorPageRequest)
     /// A genre's works on this device, from a copy's genre link or 同題材's title.
     case genre(String)
+    /// A module book's genre: the module's books of it (format 3.0.2).
+    case moduleTag(ModuleListRoute)
 }
 
 /// When 作品詳情 reads its series: for the versions read, again when they change.
@@ -93,6 +95,9 @@ struct WorkDetailView: View {
     let searchResults: [SourceItemKey: SearchBook]
     /// The work's other members 搜索 found (4c-3), listed with the versions this device knows.
     let searchVersions: [WorkDetailRoute]
+    /// Set when a list's series page opened the page (`ListedSeriesPage`): the series the book
+    /// belongs to, named on the hero as a shelf copy's is, and the way back to its page.
+    let listedSeries: WorkDetailListedSeries?
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @Environment(\.scenePhase) private var scenePhase
@@ -106,6 +111,10 @@ struct WorkDetailView: View {
     @StateObject private var reviews = WorkReviewsModel()
     /// A copy's genres and 同題材 (`ShelfGenresModel`).
     @StateObject private var shelfGenres = ShelfGenresModel()
+    /// 相關作品: what a module's site relates to the work (`WorkRelated`, format 3.0.2).
+    @StateObject private var related = WorkRelatedModel()
+    /// A module book's description and genres from its module's `detail` (format 3.0.2).
+    @StateObject private var moduleDetail = ModuleBookDetailModel()
     /// 「尋找可用來源」 (7b-2): the books its search found of the work join `versions`. It runs on
     /// its own once the work's page shows (2026-10-17); a work with nothing to read takes on the
     /// first one found (2026-10-24).
@@ -144,8 +153,10 @@ struct WorkDetailView: View {
     @State private var versionsRevision = 0
 
     init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil, readerContext: WorkDetailReaderContext? = nil,
-         searchResults: [SourceItemKey: SearchBook] = [:], searchVersions: [WorkDetailRoute] = []) {
+         searchResults: [SourceItemKey: SearchBook] = [:], searchVersions: [WorkDetailRoute] = [],
+         listedSeries: WorkDetailListedSeries? = nil) {
         self.route = route
+        self.listedSeries = listedSeries
         self.onRemoveFromShelf = onRemoveFromShelf
         self.readerContext = readerContext
         self.searchResults = searchResults
@@ -175,6 +186,7 @@ struct WorkDetailView: View {
 
     var body: some View {
         page
+            .environment(\.bookDetailOtherForm, otherFormCard)
             .task(id: VersionsLoad(idle: actions.action == nil, revision: versionsRevision,
                                    hasAozoraCatalog: aozora.catalog != nil)) {
                 // Again after each action: a book added to the shelf is a version of its own.
@@ -196,9 +208,9 @@ struct WorkDetailView: View {
                 if chosen == nil, let shown = selected, onlineBook(of: shown) != nil { chosen = shown.nodeKey }
             }
             .task(id: selected?.nodeKey) { await prepare(selected) }
-            .task(id: findsOnOpen) {
-                guard findsOnOpen else { return }
-                findSources(onOpen: true)
+            .task(id: openSearch) {
+                guard let openSearch else { return }
+                findSources(onOpen: true, keepsVersions: openSearch == .versions)
             }
             .task(id: tocLoad) {
                 await toc.load(copy: tocLoad.flatMap { _ in selected.flatMap(tocCopy(of:)) }, store: store,
@@ -212,6 +224,8 @@ struct WorkDetailView: View {
             }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
             .task(id: reviewsQuery) { await reviews.load(reviewsQuery) }
+            .task(id: reviewsQuery) { await related.load(reviewsQuery) }
+            .task(id: moduleRecord) { await moduleDetail.load(moduleRecord) }
             .task(id: genreVersions?.map(\.nodeKey)) { await shelfGenres.load(genreVersions, store: store) }
             .task(id: seriesLoad) {
                 guard let seriesLoad else {
@@ -231,7 +245,9 @@ struct WorkDetailView: View {
                 UIAccessibility.post(notification: .screenChanged, argument: nil)
             }
             .onChange(of: finder.state) { _, state in
-                // The search ran on its own; say how it ended, as the row now does.
+                // The search ran on its own; say how it ended, as the row now does. Not a book
+                // source's page's, which looks for the other form alone and has no such row.
+                guard finder.keepsVersions else { return }
                 switch state {
                 case .done, .failed, .noSources:
                     UIAccessibility.post(notification: .announcement, argument: searchStatus)
@@ -252,8 +268,7 @@ struct WorkDetailView: View {
                            onRemoveFromShelf: readerContext.removedFromShelf,
                            onContinueReading: { chapterIndex in
                                readerContext.continueReading(chapterIndex.map { ReaderTOCTarget(spineIndex: $0, fragment: nil) })
-                           },
-                           seriesFan: seriesFan)
+                           })
                 .environmentObject(store)
                 // The reader's own navigator, unlike the other branch: its detail returns to it.
                 .id(version.nodeKey)
@@ -262,8 +277,7 @@ struct WorkDetailView: View {
                 onlineEntry(of: version, book: book),
                 shelfCopyId: version.shelfCopyID,
                 onRemoveFromShelf: { leftShelf(version) },
-                workVersions: versionChoice(version),
-                seriesFan: seriesFan
+                workVersions: versionChoice(version)
             )
             .environmentObject(store)
             // Never the shelf's card coordinator: closing a reader onto a pushed page through
@@ -275,14 +289,6 @@ struct WorkDetailView: View {
         }
     }
 
-    /// The series fanned behind the cover: the shelf's and libraries' volumes (同系列), else
-    /// those the list's item gave (趨勢's). Every page 作品詳情 shows draws it, a book source's
-    /// too: a 趨勢 work is shown as the first source found, as soon as one is.
-    private var seriesFan: SeriesFan? {
-        series.flatMap { SeriesFan($0, store: store) }
-            ?? SeriesFan(route.summary, session: HomeCardContent.session(for: route.opening, connections: .shared))
-    }
-
     private var workPage: some View {
         BookDetailScaffold(title: title, compactAction: primaryAction) {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
@@ -291,7 +297,8 @@ struct WorkDetailView: View {
                            // fan behind the cover is silent to VoiceOver. The series link replaces it.
                            meta: route.summary.series.map { display?.text($0) ?? $0 } ?? "",
                            primary: primaryAction, secondary: secondaryAction,
-                           authorActions: authorLinks, links: heroLinks, seriesFan: seriesFan,
+                           authorActions: authorLinks, links: heroLinks,
+                           openOtherForm: { pushed = .work($0) },
                            source: selected.map(heroSource))
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
@@ -319,6 +326,7 @@ struct WorkDetailView: View {
                 }
                 BookDetailShelfGenreSection(related: shelfGenres.related, onShowAll: { pushed = .genre($0) },
                                             onSelect: { pushed = .work($0) })
+                BookDetailModuleRelatedSection(related: related.related, onSelect: { pushed = .work($0) })
                 BookDetailAuthorWorksSection(
                     state: authorWorks.state,
                     // Its title opens the author's page, as the author's name does (2026-11-14).
@@ -399,6 +407,8 @@ struct WorkDetailView: View {
                 AuthorPageView(request: request).environmentObject(store)
             case .genre(let genre):
                 ShelfGenreWorksPage(genre: genre).environmentObject(store)
+            case .moduleTag(let route):
+                WorkDetailModuleTagPage(route: route).environmentObject(store)
             }
         }
     }
@@ -572,8 +582,17 @@ struct WorkDetailView: View {
                 BookDetailLink(id: "genre.\(genre)", title: genre, action: { pushed = .genre(genre) })
             }
         }
+        if let moduleRecord {
+            links += moduleTags.map { tag in
+                BookDetailLink(id: "moduleTag.\(tag)", title: tag,
+                               action: { pushed = .moduleTag(.tag(tag, moduleID: moduleRecord.instance.id)) })
+            }
+        }
         if let series {
             links.append(BookDetailLink(id: "series", title: series.line, action: { pushed = .series(series) },
+                                        hint: localized("顯示這個系列的作品")))
+        } else if let listedSeries {
+            links.append(BookDetailLink(id: "series", title: listedSeries.name, action: listedSeries.open,
                                         hint: localized("顯示這個系列的作品")))
         }
         return links
@@ -587,6 +606,30 @@ struct WorkDetailView: View {
         switch selected.opening {
         case .copy, .opdsEntry, .webDAVFile: return listed
         case .aozora, .gutenberg, .onlineBook, .moduleBook, .bibliographic: return nil
+        }
+    }
+
+    /// The module book shown, whose module's `detail` and genres the page reads (format 3.0.2):
+    /// by its record, read or data only (a module with no `reading` opens its books as
+    /// `.bibliographic`); not a shelf copy, whose genres are this device's (`genreVersions`), nor
+    /// the page a reader opened (decision 32).
+    private var moduleRecord: SourceItemKey? {
+        guard readerContext == nil, let selected, selected.record.key.instance.type == .module else { return nil }
+        if case .copy = selected.opening { return nil }
+        return selected.record.key
+    }
+
+    /// A module book's genres: its list's, then its own page's (`detail`), each once. Only where a
+    /// genre opens a page: the module has a `genre` list or a `search` (maintainer, 2026-11-14:
+    /// a genre opens a page of its own, never the search screen).
+    private var moduleTags: [String] {
+        guard let moduleRecord, let selected,
+              let module = RuleModuleLibrary.shared.installed(id: moduleRecord.instance.id)?.module,
+              ModuleProvider(module: module).opensTags else { return [] }
+        var seen: Set<String> = []
+        return (selected.summary.tags + (moduleDetail.detail?.tags ?? [])).compactMap { tag in
+            let tag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !tag.isEmpty && seen.insert(tag).inserted ? tag : nil
         }
     }
 
@@ -701,14 +744,21 @@ struct WorkDetailView: View {
         BookDetailResume.detail(chapterIndex: nil, progress: readingCopy?.currentPosition)
     }
 
-    /// 加入書架 for the version shown; 已在書架 once its copy is on the shelf.
+    /// 加入書架 for the version shown; 已在書架 once its copy is on the shelf. A work with no
+    /// source to read keeps the button, disabled beside 開始閱讀, rather than losing it
+    /// (maintainer, 2026-11-14).
     private var secondaryAction: BookDetailAction? {
-        guard let version = selected else { return nil }
+        let unavailable = BookDetailAction(title: localized("加入書架"), systemImage: "plus", isEnabled: false,
+                                           dimsWhenUnavailable: true, action: {})
+        guard let version = selected else { return unavailable }
         let added = BookDetailAction(title: localized("已在書架"), systemImage: "checkmark", isEnabled: false, action: {})
         switch version.opening {
         case .copy(let id):
             return copy(id)?.isInBookshelf == true ? added : nil
-        case .onlineBook, .bibliographic:
+        case .bibliographic:
+            return unavailable
+        case .onlineBook:
+            // Drawn by the source's own page instead (see `page`).
             return nil
         case .gutenberg where shelfCopy(of: version) != nil:
             return added
@@ -863,24 +913,56 @@ struct WorkDetailView: View {
                                       hasReadable: WorkVersions.primary(in: versions) != nil)
     }
 
-    /// The work's own page searches once its versions are read: not a reader's page, which shows
-    /// that reader's book only, and not a book source's page, whose 換源 searches for itself.
-    private var findsOnOpen: Bool {
-        guard readerContext == nil, versionsLoaded, let selected else { return false }
-        return onlineBook(of: selected) == nil
+    /// What the page's own search looks for.
+    private enum OpenSearch {
+        /// The work's versions, and the work in its other form with them.
+        case versions
+        /// Its other form alone (檢視有聲書, 檢視書籍).
+        case otherForm
     }
 
-    private func findSources() { findSources(onOpen: false) }
+    /// The page searches once its versions are read (maintainer, 2026-11-14: a book source's
+    /// page too, one search more for 檢視有聲書): the work's own page for its versions; a book
+    /// source's for the other form alone, since its 換源 searches for itself. Not a reader's
+    /// page, which shows that reader's book only.
+    ///
+    /// A book source's page that 搜索 opened does not search: 搜索 has just asked every source,
+    /// and a second fan-out beside it is what `Technotes/iOS17SearchWatchdogPostmortem.md`
+    /// keeps out of that path. Every source is asked, not only those of the other kind: a
+    /// book's kind is inferred book by book (`OnlineBook.inferredContentKind`), and a text
+    /// source can list an audiobook.
+    private var openSearch: OpenSearch? {
+        guard readerContext == nil, versionsLoaded, let selected else { return nil }
+        if onlineBook(of: selected) == nil { return .versions }
+        return searchResults.isEmpty && searchVersions.isEmpty ? .otherForm : nil
+    }
 
-    private func findSources(onOpen: Bool) {
+    /// The work in its other form, as the first source found has it: 檢視有聲書 on a book's page,
+    /// 檢視書籍 on an audiobook's. The page that shows it opens the book on top of itself.
+    private var otherFormCard: BookDetailOtherForm? {
+        guard readerContext == nil, let other = finder.otherForm.first else { return nil }
+        let shown = versions.map(\.summary.title) + versions.compactMap { onlineBook(of: $0)?.name }
+        let by = other.summary.authors.joined(separator: "、")
+        return BookDetailOtherForm(
+            titles: Set(shown + [title, route.summary.title]),
+            title: localized(other.record.contentKind == .audio ? "檢視有聲書" : "檢視書籍"),
+            cover: .reference(other.summary.cover, session: HomeCardContent.session(for: other.opening, connections: .shared)),
+            isSquare: other.record.contentKind == .audio,
+            lines: [by, sourceName(of: other)].filter { !$0.isEmpty },
+            work: other)
+    }
+
+    private func findSources() { findSources(onOpen: false, keepsVersions: finder.keepsVersions) }
+
+    private func findSources(onOpen: Bool, keepsVersions: Bool = true) {
         // A version that reads stays shown, whatever the search finds. With none, the first book
         // found is shown instead (`WorkSourceFinder.shownOnFinding`, maintainer, 2026-10-24).
         if chosen == nil, let selected, selected.isReadable { chosen = selected.nodeKey }
         finder.setPresentationActive(scenePhase == .active)
         if onOpen {
-            finder.findOnOpen(route, sources: BookSourceStore.shared.sources)
+            finder.findOnOpen(route, sources: BookSourceStore.shared.sources, keepsVersions: keepsVersions)
         } else {
-            finder.find(route, sources: BookSourceStore.shared.sources)
+            finder.find(route, sources: BookSourceStore.shared.sources, keepsVersions: keepsVersions)
         }
     }
 
@@ -944,7 +1026,9 @@ struct WorkDetailView: View {
             return store.copyMetadata(of: copy, sidecar: copySidecar, liveIntro: itemText, display: readingDisplay).intro
                 .map { $0.isUnavailable ? .unavailable($0.text) : .text($0.text) }
         }
-        let text = (itemText ?? route.summary.blurb).flatMap { $0.isEmpty ? nil : $0 }
+        // A module book whose list gives no description: its own page's (`detail`, format 3.0.2).
+        let listed = (itemText ?? route.summary.blurb).flatMap { $0.isEmpty ? nil : $0 }
+        let text = listed ?? moduleDetail.detail.flatMap { $0.intro.isEmpty ? nil : $0.intro }
         return readingDisplay.blurb(text)
     }
 
@@ -1029,7 +1113,7 @@ struct WorkDetailView: View {
         switch push {
         case .reader(let id, _): id
         case .aozoraReader(let work): readCopy(of: SourceRecord.derived(from: work).key)?.id
-        case .editor, .work, .series, .aozoraClassification, .reviews, .authorPage, .genre: nil
+        case .editor, .work, .series, .aozoraClassification, .reviews, .authorPage, .genre, .moduleTag: nil
         }
     }
 

@@ -7,7 +7,7 @@ title has no book, so the simulator's other shelf copies are not filled from her
 `/cover.png?t=<title>` is a cover image, at an address of each title's own, so the app's
 cover cache never answers for a run's. `/log` lists the paths asked for since the server started.
 
-    python3 -I scripts/work_fill_fixture.py
+    python3 -I scripts/work_fill_fixture.py [port]
 """
 
 import html
@@ -71,4 +71,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    # A second copy on a port of its own is a second source (WorkOtherFormUITests' audio one).
+    import sys
+    ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else PORT), Handler).serve_forever()

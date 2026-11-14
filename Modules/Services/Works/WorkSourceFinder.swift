@@ -22,6 +22,13 @@ final class WorkSourceFinder: ObservableObject {
     @Published private(set) var state: State = .idle
     /// The work's books found so far, in the search's order.
     @Published private(set) var found: [WorkDetailRoute] = []
+    /// The work in its other form, found by the same search: a book's audiobooks, an
+    /// audiobook's books (maintainer, 2026-11-14: 「文字和有聲書互相顯示」, 作品詳情's 檢視有聲書).
+    /// Never among `found`: another form is not a version of the work.
+    @Published private(set) var otherForm: [WorkDetailRoute] = []
+    /// Whether the search's books of the work's own kind are kept (`found`). A book source's
+    /// page searches for the other form alone: its 換源 finds its versions itself.
+    private(set) var keepsVersions = true
 
     private let aggregator = SearchAggregator()
     private var work: WorkDetailRoute?
@@ -41,15 +48,17 @@ final class WorkSourceFinder: ObservableObject {
     }
 
     /// Searches `sources`' enabled ones for `work` — again from the start when it was searched.
-    func find(_ work: WorkDetailRoute, sources: [BookSource]) {
+    func find(_ work: WorkDetailRoute, sources: [BookSource], keepsVersions: Bool = true) {
         let enabled = sources.filter(\.enabled)
         guard !enabled.isEmpty else {
             state = .noSources
             return
         }
         self.work = work
+        self.keepsVersions = keepsVersions
         self.sources = Dictionary(enabled.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         found = []
+        otherForm = []
         state = .searching
         aggregator.search(query: work.summary.title, sources: enabled, origin: .changeSource)
     }
@@ -58,11 +67,13 @@ final class WorkSourceFinder: ObservableObject {
     /// is not told to enable them on every page they open (the row's tap still says so).
     /// Leaving the page ends the search: the aggregator goes with this finder, and its fan-out
     /// stops at the next answer (`SearchAggregator.runSearch`).
-    func findOnOpen(_ work: WorkDetailRoute, sources: [BookSource]) {
+    func findOnOpen(_ work: WorkDetailRoute, sources: [BookSource], keepsVersions: Bool = true) {
         guard !searchedOnOpen else { return }
         searchedOnOpen = true
         guard sources.contains(where: \.enabled) else { return }
-        find(work, sources: sources)
+        // A work with no other form (a comic, a video) has nothing to find for its source's page.
+        guard keepsVersions || work.record.contentKind.otherForm != nil else { return }
+        find(work, sources: sources, keepsVersions: keepsVersions)
     }
 
     /// Asks the sources a paused search had not reached.
@@ -85,19 +96,31 @@ final class WorkSourceFinder: ObservableObject {
 
     private func update() {
         guard state == .searching, let work else { return }
-        found = Self.matches(of: work, in: aggregator.results, sources: sources)
+        // The results' books once, for both readings of them.
+        let books = Self.books(in: aggregator.results)
+        let versions = keepsVersions ? WorkOffers.books(of: work, in: books, sources: sources) : []
+        if versions != found { found = versions }
+        let others = work.record.contentKind.otherForm
+            .map { WorkOffers.books(of: work, in: books, sources: sources, kind: $0) } ?? []
+        if others != otherForm { otherForm = others }
         guard !aggregator.isSearching else { return }
         state = Self.outcome(paused: aggregator.isPaused, progress: aggregator.progress)
-        AppLogger.info("works.findSources done state=\(state) found=\(found.count) "
+        AppLogger.info("works.findSources done state=\(state) found=\(found.count) otherForm=\(otherForm.count) "
                        + "completed=\(aggregator.progress.completed) failedAsEmpty=\(aggregator.progress.failedAsEmpty) "
                        + "failed=\(aggregator.progress.failed) timedOut=\(aggregator.progress.timedOut)")
     }
 
     /// The search's books of `work`: each origin as its source's own version, kept by
     /// `WorkOffers.books`' rule.
-    static func matches(of work: WorkDetailRoute, in results: [SearchBook], sources: [UUID: BookSource]) -> [WorkDetailRoute] {
-        let books = results.flatMap { result in result.origins.map { OnlineBook(detailOrigin: $0, in: result) } }
-        return WorkOffers.books(of: work, in: books, sources: sources)
+    /// `kind`: the work's own unless given; its other form's for 檢視有聲書.
+    static func matches(of work: WorkDetailRoute, in results: [SearchBook], sources: [UUID: BookSource],
+                        kind: ContentKind? = nil) -> [WorkDetailRoute] {
+        WorkOffers.books(of: work, in: books(in: results), sources: sources, kind: kind)
+    }
+
+    /// Each origin of each result as its source's own book.
+    private static func books(in results: [SearchBook]) -> [OnlineBook] {
+        results.flatMap { result in result.origins.map { OnlineBook(detailOrigin: $0, in: result) } }
     }
 
     /// `listed` and, after them, each found book whose source none of them is from: a source

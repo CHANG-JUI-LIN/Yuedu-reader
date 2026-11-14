@@ -184,6 +184,14 @@ enum DSColor {
     static let homeEditorFrame = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark ? .systemFill : .tertiarySystemFill
     })
+    /// What a section of 探索's home deepens to at its foot, from nothing at its head, so each
+    /// section stands apart from the next (maintainer, 2026-11-14, after Apple Books' store: its
+    /// sections run #FEFEFE to #EEEEEE, measured from a recording). Laid over the page, so a
+    /// theme's page colour or picture shows through. Dark has no reference: a lightening of the
+    /// same perceived step (L* about 6).
+    static let homeSectionShade = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.07) : UIColor(white: 0, alpha: 0.065)
+    })
 
     /// Ring and check of the selection mark on a shelf cover — white, as Apple Books
     /// draws it, whatever the cover and appearance.
@@ -757,6 +765,33 @@ enum DSLayout {
     /// A layout a card or a group to a page (一大四小, 大圖卡片): the next one shows this much
     /// past it, as Apple Books' Customer Favorites and More to Explore have it.
     static let homePagePeek: CGFloat = 16
+    /// 類型清單's rows, as the 類型 at the foot of Apple Books' store (maintainer, 2026-11-14,
+    /// measured from a recording on a 440pt phone): a row this tall at the least, its symbol in a
+    /// column this wide, scaled with Dynamic Type, so the names line up.
+    static let homeGenreRowHeight: CGFloat = 48
+    static let homeGenreSymbolWidth: CGFloat = 28
+    /// 分組書架's covers, as Apple Books' Recent Bestsellers by Genre draws them (82pt on a 440pt
+    /// phone, four and a part to a screen), every gap `DSSpacing.lg`. Not scaled: covers alone.
+    static let homeGroupedCoverWidth: CGFloat = 82
+    /// A volume's cover on the series page (`WorkDetailSeriesPage`), as Apple Books draws a
+    /// book in a series' list (47pt on a 402pt phone).
+    static let seriesVolumeCoverWidth: CGFloat = 48
+    /// The series page's own cover, smaller than a book's page draws it so the fan stands clear
+    /// on both sides (Apple Books: 136×204pt on a 402pt phone).
+    static let seriesHeroCoverHeight: CGFloat = 204
+    /// The series named over a book's title on 作品詳情: its letters set apart, as the store's.
+    static let bookDetailSeriesLinkTracking: CGFloat = 1
+    /// The other form's artwork on 作品詳情's 檢視有聲書 card (Apple Books: 36pt square).
+    static let bookDetailOtherFormCoverHeight: CGFloat = 44
+    /// The series page's fan, upright: each volume's centre from the cover's, in cover widths,
+    /// and how far its foot stands above the cover's, in cover heights (Apple Books: 0.32 and
+    /// 0.59 widths out, 20 and 43 px up on a 468 px cover).
+    static let seriesPageFanOffsets: [CGFloat] = [0.32, 0.59]
+    static let seriesPageFanLifts: [CGFloat] = [0.043, 0.092]
+    /// 主打卡片's card, as the carousel at the head of Apple Books' store (376×256pt on a 440pt
+    /// phone), and how much of its height the cover standing in it takes (204pt of 256).
+    static let homeHeroCardAspect: CGFloat = 376.0 / 256.0
+    static let homeHeroCoverShare: CGFloat = 0.8
     /// 一大四小 (maintainer, 2026-10-27: 1:1 with Apple Books' Customer Favorites): the large cover
     /// this many times as wide as a small one (180pt and 82pt on a 440pt phone), every gap
     /// `DSSpacing.lg`. Not scaled.
@@ -820,6 +855,10 @@ enum DSLayout {
     /// follow Dynamic Type.
     static let exploreCardArtworkSide: CGFloat = 36
     static let exploreCardArtworkSize: CGFloat = 18
+    /// A module's `icon` beside its name in a section header (format 3.0.2).
+    static let moduleHeaderIconSide: CGFloat = 20
+    /// A module's `icon` leading a list row, in the 28pt slot a row's symbol has.
+    static let moduleRowIconSide: CGFloat = 24
     /// The soft shadow lifting a 資源庫 card off the page.
     static let exploreCardShadowRadius: CGFloat = 8
     static let exploreCardShadowY: CGFloat = 2
@@ -894,13 +933,10 @@ enum DSLayout {
     static let bookDetailGenreLimit = 3
     static let bookDetailCoverShadowRadius: CGFloat = 12
     static let bookDetailCoverShadowOffsetY: CGFloat = 6
-    /// 作品詳情's series fan (Apple Books' series header): the volumes behind the hero's cover,
-    /// by how far back they stand, each smaller (a fraction of the cover), further out (its
-    /// centre from the cover's, in cover widths) and tilted further (degrees, from its foot).
-    /// Two a side, the outermost about 155pt from the centre: inside a 320pt-wide screen.
+    /// A series page's fan (Apple Books' series header): the volumes behind the hero's cover, by
+    /// how far back they stand, each smaller (a fraction of the cover); two a side. Where each
+    /// stands: `seriesPageFanOffsets`, `seriesPageFanLifts`.
     static let bookDetailSeriesFanScales: [CGFloat] = [0.84, 0.7]
-    static let bookDetailSeriesFanOffsets: [CGFloat] = [0.4, 0.72]
-    static let bookDetailSeriesFanAngles: [Double] = [4, 8]
     /// Gap between a shelf-grid cover and the title under it.
     static let bookshelfGridCoverTitleSpacing: CGFloat = 6
     /// A group's folder on the shelf, as shares of its width: the margin around its four

@@ -60,7 +60,12 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `lookup` |  | 以 ISBN 查一本書（§5），用來補資料。3.0。 |
 | `reading` |  | 怎麼讀它的書（§6）。沒有它，模組的書只有資料、不能讀。3.0。 |
 | `reviews` |  | 讀者對一本書的評論和評分（§5.2），顯示在作品詳情的「讀者評論」。3.0.1。 |
+| `detail` |  | 打開這個模組的書時，那本書自己的頁面（§5.3）：補清單沒給的簡介和標籤。3.0.2。 |
+| `related` |  | 網站列的相關作品（§5.4），顯示在作品詳情的「相關作品」。3.0.2。 |
+| `genre` |  | 一個分類的書（§5.5）：作品詳情點這個模組的書的分類時打開。3.0.2。 |
 | `attribution` |  | 網站條款要求的署名（§7）。3.0。 |
+| `icon` |  | 模組圖示的網址，主機必須在 `hosts`，不能用 `{{…}}`。顯示在資源庫的模組卡片、模組頁、選擇內容來源和搜尋來源清單；沒有或讀不到時用大家共用的拼圖符號。3.0.2。 |
+| `globalParams` |  | 整個模組的參數（§3.1，寫法相同），讀者在模組頁的「設定」改一次。清單、搜尋、`lookup`、`detail`、`reviews` 的請求都能用 `{{name}}` 取它（`reading` 的頁面不帶）。只能是 `input`、`count`、`enumeration`、`constant`，不能 `followsLanguage`；名稱不能跟任何清單的參數相同，也不能是 `page`、`offset`、`keyword`、`isbn`、`id`、`url`、`tag`。3.0.2。 |
 | `localizations` |  | 其他語言的名稱和說明（§7）。3.0。 |
 
 `modules`、`search`、`lookup` 至少要有一個，不然會被拒絕（「模組沒有任何清單」）。
@@ -97,6 +102,8 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `value` |  | 預設值。數字會讀成文字。`page`／`offset` 參數的 `value` 是**第一頁的位置**（整數，3.0）；不寫時 `page` 從 1、`offset` 從 0 開始。 |
 | `enumOptions` | `enumeration` ✓ | 選項陣列：`{ "title": "顯示名稱", "value": "送出的值" }`。選項可以加 `language`（語言標籤，3.0），見下方「跟隨語言」。 |
 | `followsLanguage` |  | 只用在 `enumeration`：`true` 時，讀者沒選過就用讀者「中繼資料語言偏好推薦」那個語言的選項。3.0。 |
+| `belongTo` |  | 只在另一個參數是某些值時才顯示：`{ "paramName": "sort", "value": ["genre"] }`。`paramName` 必須是同一份清單（或同在 `globalParams`）的另一個參數，不能指回自己或繞成一圈。藏起來時送它的預設值，不送讀者之前填的。3.0.2。 |
+| `placeholders` |  | 只用在 `input`：建議值陣列 `{ "title": "顯示名稱", "value": "填入的值" }`，欄位旁的選單點了就填入。3.0.2。 |
 
 | `type` | 意思 |
 |--------|------|
@@ -153,6 +160,7 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 | `seriesCovers` |  | 同系列其他冊的封面網址（可多個值），照系列順序排在這一筆後面：這一筆代表整個系列（趨勢用系列第一冊）。作品詳情把它們扇形疊在封面後面，最多 4 張。只從 `hosts` 載入。這一筆本身就是整個系列時（書名就是系列名）可以不給 `series`。3.0。 |
 | `contentKind` |  | 讀到 `comic` 時這本是漫畫，其他值照清單的 `contentKind`。3.0。 |
 | `id` |  | 這筆紀錄在網站上的代號。有些網站查評論用的是代號、不是書的網址；`reviews` 的請求用 `{{id}}` 取它（§5.2）。3.0.1。 |
+| `volumes` |  | 這一筆代表一個系列時，系列裡的每一冊（含這一筆自己那一冊），照系列順序。寫一條在這一筆裡面選出各冊的規則（例如 `$.volumes[*]`），每一冊再用這份 `list` 自己的規則讀（`title`、`author`、`cover`、`url`…）。有 `volumes` 的卡片點下去先開系列頁、列出各冊；有 `url` 的那一冊可以點進去當成一部作品，沒有的只列出書名和封面。最多 60 冊；一冊裡面再寫的 `volumes` 不讀。3.0.1。 |
 
 規則裡的 `{{…}}` 只能放一條規則（例如 `https://ncode.syosetu.com/{{$.ncode}}/`），由規則引擎就地讀出；
 不能放參數。
@@ -275,6 +283,41 @@ App 照這個順序找紀錄：
 一次最多留 100 則。使用者在 設定 → 聚合設定 → 資料來源 取消勾選這個模組，或在模組頁按「停用」，就不會問它。
 請在模組的 `description` 寫明：打開作品詳情時會把 ISBN 或書名送到你的網站。
 
+### 5.3 打開一本書 `detail`（頂層）
+
+點開這個模組列出的書時，「閱讀」會用頂層的 `detail` 讀那本書自己的頁面，補上清單沒給的簡介和標籤
+（Forward 的 `loadDetail`）。跟 §5.1 寫法一樣，另外：
+
+- `request` 必須用 `{{url}}`（那本書的 `url`，所以至少一份清單要有 `list.url`），也可以用 `globalParams`。
+- `cacheDuration`：秒數，這段時間內同一本書直接用上次讀到的。只有頂層的 `detail` 讀它。
+- 只問「從這個模組打開的那一本」，每次打開一次；請求失敗就照清單給的顯示。
+
+### 5.4 相關作品 `related`
+
+```json
+"related": {
+  "request": { "url": "https://example.com/api/books/{{id}}/related" },
+  "cacheDuration": 86400,
+  "list": { "items": "$.works[*]", "title": "$.title", "author": "$.author", "cover": "$.cover", "url": "$.href" }
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `request` | ✓ | 跟 `reviews` 一樣：只能用 `{{id}}`、`{{url}}`（至少一個）和 `globalParams`。 |
+| `cacheDuration` |  | 秒數：這段時間內同一本書直接用上次的結果。 |
+| `list` | ✓ | 每一部相關作品，跟 §3.3 的規則一樣（`items`、`title` 必填）。 |
+
+找「哪一本書」的方式跟讀者評論（§5.2）相同。最多 30 部；那本書自己會被拿掉；網站沒給就整區不出現。
+
+### 5.5 分類 `genre`
+
+作品詳情會把這個模組的書的 `tags` 列成可以點的分類。點了打開一頁，列出這個模組那個分類的書：
+
+- 有 `genre`：它是一份清單（§3，沒有 `id`），`request` 必須用 `{{tag}}`（分類的文字），可以有 `page`／`offset` 分頁。
+- 沒有 `genre`：用模組的 `search` 搜這個詞（關鍵字太短、不到 `minKeywordLength` 的不搜）。
+- 兩個都沒有：分類只顯示、不能點。
+
 ---
 
 ## 6. 在 App 內讀書 `reading`
@@ -352,7 +395,10 @@ App 照這個順序找紀錄：
 `attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、`detail`、
 `minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`、`followsLanguage`、選項的 `language`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`seriesCovers`、`contentKind`。
 
-格式 3.0.1 才有的（要 `"requiredVersion": "3.0.1"` 以上）：`reviews`、`searchesAuthors`，以及 `list` 的 `id`。
+格式 3.0.1 才有的（要 `"requiredVersion": "3.0.1"` 以上）：`reviews`、`searchesAuthors`，以及 `list` 的 `id`、`volumes`。
+
+格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`，以及參數的 `belongTo`、`placeholders`。
+舊版 App 會拒絕用了 `globalParams` 的模組（它看不懂那些 `{{…}}`），其他幾個會被忽略。
 
 ---
 

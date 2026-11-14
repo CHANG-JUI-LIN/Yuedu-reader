@@ -16,6 +16,9 @@ struct BookDetailAction {
     var systemImage: String
     var isBusy = false
     var isEnabled = true
+    /// Dims the hero's second button as its unavailable 開始閱讀 is dimmed: 加入書架 on a
+    /// work with no source to read. Not for a disabled button that states a fact (已在書架).
+    var dimsWhenUnavailable = false
     /// Where reading resumes, in grey after the title: 「第 12 章」 or 「已讀 32%」
     /// (`BookDetailResume`). Read by VoiceOver as the button's value.
     var detail: String? = nil
@@ -49,6 +52,33 @@ struct BookDetailAuthorAction: Identifiable {
 
 /// A genre, series or subject under the title, as plain text that leads somewhere: the
 /// way Apple Books' editorial pages link, not a row of coloured tags.
+/// The work in its other form, on the hero under the actions as Apple Books' store has 檢視有聲書
+/// (maintainer, 2026-11-14: 「文字和有聲書互相顯示」): a book's audiobook, an audiobook's book, as
+/// one source has it. 作品詳情 finds it and puts it in the environment for whichever page shows
+/// the work, its own or a book source's; that page opens it (`BookDetailHero.openOtherForm`),
+/// through its own one destination. The card was first given an action of 作品詳情's own, which
+/// did nothing on a book source's page: 作品詳情's destination is its own page's, not there
+/// while a source's page is shown (maintainer's phone, 2026-11-14: 「我怎麼點不過去」).
+struct BookDetailOtherForm: Equatable {
+    /// The titles the work's pages write. A hero shows the card only under one of them, so a
+    /// page pushed from the work's, which inherits its environment, never shows another work's.
+    let titles: Set<String>
+    /// 「檢視有聲書」 or 「檢視書籍」.
+    let title: String
+    let cover: HomeCardContent.Cover
+    let isSquare: Bool
+    /// Who it is by, as its source says (an audiobook's is often its reader), then the source.
+    let lines: [String]
+    /// The book itself, for the page that shows the card to open.
+    let work: WorkDetailRoute
+
+    /// The cover aside, which the book names.
+    static func == (lhs: BookDetailOtherForm, rhs: BookDetailOtherForm) -> Bool {
+        lhs.titles == rhs.titles && lhs.title == rhs.title && lhs.isSquare == rhs.isSquare && lhs.lines == rhs.lines
+            && lhs.work == rhs.work
+    }
+}
+
 struct BookDetailLink: Identifiable {
     let id: String
     let title: String
@@ -131,6 +161,8 @@ extension EnvironmentValues {
     /// How far the status bar and the navigation bar reach down over a hero laid from the
     /// top edge of the screen (`BookDetailScaffold.heroUnderBars`); 0 for every other hero.
     @Entry var bookDetailHeroBarInset: CGFloat = 0
+    /// The work in its other form, for the hero of the page that shows the work (`BookDetailOtherForm`).
+    @Entry var bookDetailOtherForm: BookDetailOtherForm? = nil
 }
 
 /// Scroll container, background and navigation chrome shared by the detail pages.
@@ -564,11 +596,19 @@ struct BookDetailHero<Cover: View>: View {
     /// The series' other volumes, fanned behind the cover (`SeriesCoverFan`); nil for a book
     /// alone. Drawn behind the artwork's frame, so the hero's size never changes with it.
     var seriesFan: SeriesFan? = nil
+    /// Draws `primary` as the second action is drawn, quiet on the block with its icon, and
+    /// alone: the series page's one button, which leads to a volume and reads nothing itself
+    /// (Apple Books' 「免費試讀第 1 冊」).
+    var quietPrimary = false
+    /// Opens the work in its other form (`BookDetailOtherForm`, 檢視有聲書) through the page's own
+    /// destination; the card is drawn only where the page can.
+    var openOtherForm: ((WorkDetailRoute) -> Void)? = nil
     /// The source the page reads from, on the panel over the actions; nil where the page has
     /// one place only and nothing to say of it.
     var source: BookDetailHeroSource? = nil
 
     @Environment(\.bookDetailEmbedding) private var embedding
+    @Environment(\.bookDetailOtherForm) private var otherForm
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The average colour of the cover on screen, as its view reports it; nil until then.
@@ -591,6 +631,10 @@ struct BookDetailHero<Cover: View>: View {
                 .padding(.top, isCard ? DSLayout.cardCarouselCoverTitleSpacing : DSSpacing.xl)
             panel
                 .padding(.top, DSSpacing.lg)
+            if let otherForm, let openOtherForm, otherForm.titles.contains(title) {
+                otherFormCard(otherForm, open: openOtherForm)
+                    .padding(.top, DSSpacing.md)
+            }
         }
         .padding(.horizontal, DSSpacing.lg)
         // On a card the cover sits where Apple Books puts it, under the card's header.
@@ -625,6 +669,50 @@ struct BookDetailHero<Cover: View>: View {
     }
 
     private var isCard: Bool { embedding != nil }
+
+    /// 檢視有聲書, or 檢視書籍: a panel like the source's under it, the whole of it one button to
+    /// the work in its other form.
+    private func otherFormCard(_ other: BookDetailOtherForm, open: @escaping (WorkDetailRoute) -> Void) -> some View {
+        Button { open(other.work) } label: {
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(other.title)
+                        .font(DSFont.headline)
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.subheadline.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(primaryText)
+                HStack(spacing: DSSpacing.md) {
+                    HomeCardCover(cover: other.cover, title: title, author: author,
+                                  size: CGSize(width: DSLayout.bookDetailOtherFormCoverHeight
+                                                * (other.isSquare ? 1 : DSLayout.discoverCoverAspectRatio),
+                                               height: DSLayout.bookDetailOtherFormCoverHeight))
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                        ForEach(Array(other.lines.enumerated()), id: \.offset) { index, line in
+                            Text(line)
+                                .font(DSFont.subheadline)
+                                .foregroundStyle(index == 0 ? primaryText : secondaryText)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(DSSpacing.lg)
+            .background(veil(DSLayout.bookDetailSourcePanelOpacity),
+                        in: RoundedRectangle(cornerRadius: DSLayout.bookDetailSourcePanelRadius, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, DSLayout.bookDetailSourcePanelInset)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(other.title)
+        .accessibilityValue(other.lines.joined(separator: ", "))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("detail.otherForm")
+    }
 
     /// White on the block; a card's own ink on its paper.
     private var primaryText: Color { embedding?.tone.ink ?? DSColor.textOnFixedFill }
@@ -668,8 +756,45 @@ struct BookDetailHero<Cover: View>: View {
         }
     }
 
+    /// The series the book belongs to, the link `series` among `links`.
+    private var seriesLink: BookDetailLink? { links.first { $0.id == "series" } }
+    /// The links of the line under the author: every one but the series'.
+    private var genreLinks: [BookDetailLink] { links.filter { $0.id != "series" } }
+
+    /// The series over the title, as Apple Books' store names a book's (maintainer, 2026-11-14,
+    /// from its page: 「第 4 冊, 6:20 MAN ›」): small capitals over a rule, the whole a button to
+    /// the series' page.
+    private func seriesButton(_ link: BookDetailLink) -> some View {
+        Button(action: link.action) {
+            HStack(spacing: DSSpacing.xs) {
+                Text(link.title)
+                    .textCase(.uppercase)
+                    .tracking(DSLayout.bookDetailSeriesLinkTracking)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+            }
+            .font(DSFont.footnote.weight(.semibold))
+            .foregroundStyle(primaryText)
+            .padding(.bottom, DSSpacing.xs)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(secondaryText).frame(height: 1)
+            }
+            .frame(minHeight: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(link.title)
+        .accessibilityHint(link.hint ?? "")
+        .accessibilityIdentifier("detail.link.\(link.id)")
+    }
+
     private var titleBlock: some View {
         VStack(spacing: DSSpacing.xs) {
+            if let seriesLink {
+                seriesButton(seriesLink)
+            }
             Text(title)
                 .font(DSFont.title2.weight(.semibold))
                 .foregroundStyle(primaryText)
@@ -729,10 +854,11 @@ struct BookDetailHero<Cover: View>: View {
                     }
                 }
                 .padding(.top, DSSpacing.sm)
-            } else if !links.isEmpty {
+            } else if !genreLinks.isEmpty {
                 genreLine
                     .padding(.top, DSSpacing.sm)
-            } else if !meta.isEmpty {
+            } else if links.isEmpty, !meta.isEmpty {
+                // Links replace it, the series' over the title among them.
                 Text(meta)
                     .font(DSFont.footnote)
                     .foregroundStyle(secondaryText)
@@ -749,8 +875,8 @@ struct BookDetailHero<Cover: View>: View {
     /// are shown where they do not fit the line.
     private var genreLine: some View {
         ViewThatFits(in: .horizontal) {
-            genreRow(shown: min(links.count, DSLayout.bookDetailGenreLimit))
-            genreRow(shown: min(links.count, DSLayout.bookDetailGenreLimit - 1))
+            genreRow(shown: min(genreLinks.count, DSLayout.bookDetailGenreLimit))
+            genreRow(shown: min(genreLinks.count, DSLayout.bookDetailGenreLimit - 1))
             genreRow(shown: 1)
         }
         // The 44pt tap targets would push the line away from the author; the text keeps its rhythm.
@@ -759,7 +885,7 @@ struct BookDetailHero<Cover: View>: View {
 
     private func genreRow(shown: Int) -> some View {
         HStack(spacing: DSSpacing.sm) {
-            ForEach(Array(links.prefix(shown).enumerated()), id: \.element.id) { index, link in
+            ForEach(Array(genreLinks.prefix(shown).enumerated()), id: \.element.id) { index, link in
                 if index > 0 {
                     Text(verbatim: "·")
                         .accessibilityHidden(true)
@@ -774,20 +900,20 @@ struct BookDetailHero<Cover: View>: View {
                 .accessibilityHint(link.hint ?? localized("顯示這個分類的作品"))
                 .accessibilityIdentifier("detail.link.\(link.id)")
             }
-            if links.count > shown {
+            if genreLinks.count > shown {
                 Menu {
-                    ForEach(links.dropFirst(shown)) { link in
+                    ForEach(genreLinks.dropFirst(shown)) { link in
                         Button(link.title, action: link.action)
                     }
                 } label: {
-                    Text(verbatim: "+\(links.count - shown)")
+                    Text(verbatim: "+\(genreLinks.count - shown)")
                         .monospacedDigit()
                         .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(localized("其他分類"))
-                .accessibilityValue((links.count - shown).formatted())
+                .accessibilityValue((genreLinks.count - shown).formatted())
                 .accessibilityIdentifier("detail.link.more")
             }
         }
@@ -921,8 +1047,12 @@ struct BookDetailHero<Cover: View>: View {
     /// stacking them is what the maintainer rejected (2026-10-12); a title truncates instead.
     private var actions: some View {
         HStack(spacing: DSSpacing.md) {
-            if let secondary { secondaryButton(secondary) }
-            primaryButton
+            if quietPrimary {
+                secondaryButton(primary)
+            } else {
+                if let secondary { secondaryButton(secondary) }
+                primaryButton
+            }
         }
     }
 
@@ -945,6 +1075,7 @@ struct BookDetailHero<Cover: View>: View {
         }
         .buttonStyle(BookDetailCardActionStyle(fill: veil(DSLayout.bookDetailSecondaryActionOpacity), label: primaryText))
         .disabled(!secondary.isEnabled || secondary.isBusy)
+        .opacity(secondary.dimsWhenUnavailable && !secondary.isEnabled ? DSLayout.bookDetailUnavailableActionOpacity : 1)
         .accessibilityLabel(secondary.title)
         .removalConfirmation(secondary.removalConfirmation)
     }

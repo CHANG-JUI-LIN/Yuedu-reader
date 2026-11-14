@@ -42,14 +42,9 @@ extension RuleModule.Entry {
     /// it has none, the option in `language` when it follows it), the reader's own for this
     /// section, then the page's position.
     func values(_ parameters: [String: String], position: Int, keyword: String? = nil, language: String?) -> [String: String] {
-        var values: [String: String] = [:]
-        for param in params {
-            switch param.kind {
-            case .page, .offset:
-                values[param.name] = String(position)
-            default:
-                values[param.name] = param.currentValue(in: parameters, language: language)
-            }
+        var values = RuleModule.Param.currentValues(of: params, in: parameters, language: language)
+        for param in params where param.kind == .page || param.kind == .offset {
+            values[param.name] = String(position)
         }
         if let keyword { values["keyword"] = keyword }
         return values
@@ -59,9 +54,73 @@ extension RuleModule.Entry {
     var editableParams: [RuleModule.Param] {
         params.filter { [.input, .count, .enumeration].contains($0.kind) }
     }
+
+    /// The editable parameters the values shown make visible (`belongTo`, format 3.0.2).
+    func shownParams(in parameters: [String: String], language: String?) -> [RuleModule.Param] {
+        let values = RuleModule.Param.currentValues(of: params, in: parameters, language: language)
+        return editableParams.filter { $0.isShown(among: values) }
+    }
+}
+
+extension RuleModule {
+    /// What each `globalParams` entry is now, by name: the reader's own, which
+    /// `RuleModuleLibrary` wrote into its `value`, else its default. Merged into every request's
+    /// values; the validator lets no list parameter share a global's name.
+    func globalValues(language: String?) -> [String: String] {
+        RuleModule.Param.currentValues(of: globalParams ?? [], in: [:], language: language)
+    }
+
+    /// `values` with the global ones added: the template values of any request of the module.
+    func withGlobalValues(_ values: [String: String], language: String?) -> [String: String] {
+        guard globalParams?.isEmpty == false else { return values }
+        return globalValues(language: language).merging(values) { _, own in own }
+    }
+
+    /// The module with the reader's own value for each global parameter (by name) as its `value`.
+    /// A name the module no longer has is left out; a value no option of an enumeration has
+    /// any longer leaves its default.
+    func applyingGlobalValues(_ values: [String: String]) -> RuleModule {
+        guard !values.isEmpty, var params = globalParams else { return self }
+        for (index, param) in params.enumerated() {
+            guard let value = values[param.name] else { continue }
+            if param.kind == .enumeration, !(param.enumOptions ?? []).contains(where: { $0.value == value }) { continue }
+            if param.kind == .constant { continue }
+            params[index].value = value
+        }
+        var module = self
+        module.globalParams = params
+        return module
+    }
 }
 
 extension RuleModule.Param {
+    /// Each parameter's value by name: the reader's own, else as `currentValue` defaults it; a
+    /// parameter its `belongTo` hides sends its default instead (Forward hides it the same way).
+    /// Whether a parameter is hidden follows from the values its target sends, so a chain is
+    /// settled one link per pass; the validator refuses a cycle.
+    static func currentValues(of params: [RuleModule.Param], in parameters: [String: String],
+                              language: String?) -> [String: String] {
+        let own = Dictionary(params.map { ($0.name, $0.currentValue(in: parameters, language: language)) },
+                             uniquingKeysWith: { first, _ in first })
+        var values = own
+        for _ in 0..<max(params.count, 1) {
+            var next = own
+            for param in params where !param.isShown(among: values) {
+                next[param.name] = param.currentValue(in: [:], language: language)
+            }
+            if next == values { break }
+            values = next
+        }
+        return values
+    }
+
+    /// Visible while the parameter its `belongTo` names has one of the listed values; always
+    /// without a `belongTo`.
+    func isShown(among values: [String: String]) -> Bool {
+        guard let belongTo else { return true }
+        return belongTo.value.contains(values[belongTo.paramName] ?? "")
+    }
+
     /// The section's own value, else the option in `language` (the reader's 中繼資料語言偏好推薦,
     /// a `MetadataLanguage` tag) for a parameter that follows it, else the default, else an
     /// enumeration's first option.
@@ -103,6 +162,7 @@ struct RuleModuleClient: Sendable {
     ///   one file per keyword would pile up.
     func page(of entry: RuleModule.Entry, in module: RuleModule, values: [String: String],
               keepsForHome: Bool = false) async throws -> RuleModulePage {
+        let values = module.withGlobalValues(values, language: nil)
         let entryID = entry.id ?? "search"
         let cacheFile = cacheFile(module: module.id, entry: entryID, values: values)
         let duration = TimeInterval(max(entry.cacheDuration ?? 0, 0))
@@ -124,6 +184,7 @@ struct RuleModuleClient: Sendable {
     /// draws while `page` fetches it again. Off the main actor: it reads and decodes a file.
     @concurrent
     func savedPage(of entry: RuleModule.Entry, in module: RuleModule, values: [String: String]) async -> RuleModulePage? {
+        let values = module.withGlobalValues(values, language: nil)
         guard let saved = cached(RuleModulePage.self, at: cacheFile(module: module.id, entry: entry.id ?? "search", values: values)),
               saved.version == module.version else { return nil }
         return saved
@@ -149,7 +210,7 @@ struct RuleModuleClient: Sendable {
     /// the start of the address, percent-encoded anywhere else.
     func detailed(_ item: RuleListItem, by detail: RuleModule.Detail, in module: RuleModule) async throws -> RuleListItem {
         let request = detail.request
-        let values = ["url": item.bookUrl]
+        let values = module.withGlobalValues(["url": item.bookUrl], language: nil)
         let leading = request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
         let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
         let started = SourcePerfTrace.now
