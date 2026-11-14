@@ -76,16 +76,16 @@ struct AIPhase3CharacterMemoryTests {
         #expect(record.mentions[0].evidence.quote == text)
         #expect(record.mentions[0].evidence.span.text(in: source) == text)
         #expect(record.mentions[0].evidence.span.end == text.utf16.count)
-        #expect(throws: AIMemoryFailure.invalidEvidence) {
+        #expect(throws: AIMemoryFailure.surfaceNotInEvidence) {
             try AIMemoryExtraction.validate(raw: raw(surface: "未出現的人"), input: input, source: source)
         }
-        #expect(throws: AIMemoryFailure.invalidEvidence) {
+        #expect(throws: AIMemoryFailure.evidenceSegment) {
             try AIMemoryExtraction.validate(raw: raw(segment: "s999"), input: input, source: source)
         }
-        #expect(throws: AIMemoryFailure.invalidEvidence) {
+        #expect(throws: AIMemoryFailure.evidenceQuote) {
             try AIMemoryExtraction.validate(raw: raw(quote: "柳青"), input: input, source: source)
         }
-        #expect(throws: AIMemoryFailure.invalidEvidence) {
+        #expect(throws: AIMemoryFailure.evidenceQuote) {
             try AIMemoryExtraction.validate(raw: raw(quote: "柳青說了原文沒有的話"), input: input, source: source)
         }
     }
