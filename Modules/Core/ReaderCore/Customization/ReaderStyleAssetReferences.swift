@@ -73,3 +73,30 @@ enum ReaderStyleAssetReferences {
         return values.filter { seen.insert($0).inserted }
     }
 }
+
+/// Every font a reading setup names by PostScript name — the reading face and the faces
+/// chosen inside the chapter-title design, the highlight rules and the dialogue bubbles.
+/// 匯出閱讀設定 packs the imported ones among these, so a shared setup reads in the same
+/// type on the receiving device instead of falling back to the system face.
+enum ReaderStyleFontReferences {
+    static func postScriptNames(in settings: AppearanceThemeReadingSettings) -> [String] {
+        var values: [String?] = [settings.fontPostScript]
+        if let title = settings.chapterTitleStyle {
+            values += [title.numberFontPostScript, title.nameFontPostScript]
+            for layer in title.design?.layers ?? [] {
+                values += [
+                    layer.lightStyle.ruleStyle.text.fontPostScriptName,
+                    layer.darkStyle.ruleStyle.text.fontPostScriptName,
+                ]
+            }
+        }
+        for rule in settings.regexHighlights?.rules ?? [] {
+            values += [rule.lightStyle.text.fontPostScriptName, rule.darkStyle.text.fontPostScriptName]
+        }
+        if let bubble = settings.dialogueBubbleStyle {
+            values += ReaderDialogueBubbleSide.allCases.map { bubble.side($0).fontPostScriptName }
+        }
+        var seen: Set<String> = []
+        return values.compactMap { $0 }.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+}

@@ -2801,7 +2801,7 @@
 "iOS 會列出尚未下載的語音，選了不會有聲音。標示「此裝置未安裝」的到系統設定下載。" = "iOS lists voices that haven't been downloaded, and they make no sound when selected. Download voices marked “Not Installed on This Device” in Settings.";
 "授權後，你錄製的個人語音會出現在下方。" = "After you allow access, your recorded Personal Voice appears below.";
 "啟動與切背景時自動同步書庫、來源配置、替換規則、書檔、閱讀設定、氣泡樣式與自訂閱讀背景。多台裝置會合併，不會互相覆蓋。" = "Your library, sources, replacement rules, book files, reading settings, bubble styles, and custom reading backgrounds sync automatically when the app opens or moves to the background. Changes from multiple devices are merged instead of overwriting each other.";
-"包含排版、章節標題樣式與正則高亮。匯入也接受 legado 的 readConfig.json。" = "Includes layout, chapter title styles, and regex highlights. Import also accepts Legado's readConfig.json.";
+"ReaderSettings.Backup.Footer" = "Includes every reading setting except Layout Scope, along with the fonts, background images and custom bubbles it uses. Import also accepts Legado's readConfig.json.";
 "系統設計建議玻璃只用於浮動控制項，所以預設關閉。" = "Apple's design guidelines recommend using glass only for floating controls, so this is off by default.";
 "包含這次啟動的完整紀錄，不受下方篩選影響。" = "Includes the complete log for this launch, regardless of the filters below.";
 "App 在使用中結束，不是被系統回收。詳細內容下次啟動後才會送達。" = "The app quit while in use, rather than being closed by the system. Details arrive after the next launch.";

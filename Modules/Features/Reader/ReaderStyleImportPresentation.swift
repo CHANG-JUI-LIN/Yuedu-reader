@@ -213,7 +213,7 @@ private struct ReaderStyleImportPresentationModifier: ViewModifier {
                 // page turn, header/footer — so it is confirmed first, in words that say
                 // so. A page's own 匯入 (章節標題、正則高亮、對話氣泡) never carries one and
                 // changes only what that page is about.
-                guard plan.layout != nil else {
+                guard plan.replacesReadingSetup else {
                     apply(plan)
                     return
                 }
@@ -221,7 +221,7 @@ private struct ReaderStyleImportPresentationModifier: ViewModifier {
                     plan: plan,
                     prompt: .readingSettings(
                         named: plan.name,
-                        parts: ReadingSetupPart.parts(in: plan.readingSettings),
+                        parts: ReadingSetupPart.parts(in: plan),
                         themeName: GlobalSettings.shared.readingImportThemeName(for: plan.readingSettings.items)
                     )
                 )

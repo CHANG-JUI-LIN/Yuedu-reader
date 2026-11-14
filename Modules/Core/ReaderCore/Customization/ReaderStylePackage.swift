@@ -9,6 +9,34 @@ struct ReaderStylePackageManifest: Codable, Equatable, Sendable {
     var version: Int
     var payload: ReaderStylePackagePayload
     var assets: [ReaderStylePackageAsset]
+    /// Files the payload names by `ReaderStylePackageFile.id` that are not reader-style
+    /// images: font files and saved reading-background pictures, which belong to stores of
+    /// their own (2026-11-14, 匯出閱讀設定 carrying everything). Nil in packages written
+    /// before; a build that predates the key ignores it and the files under `files/`.
+    var files: [ReaderStylePackageFile]? = nil
+}
+
+/// One `files/` entry of a package, as the manifest lists it.
+struct ReaderStylePackageFile: Codable, Equatable, Sendable {
+    var id: String
+    var relativePath: String
+    var sha256: String
+    var byteCount: Int
+}
+
+/// A `files/` entry's bytes: what an export is handed and what an import gives back,
+/// keyed by the id the payload refers to it by.
+struct ReaderStylePackageAttachment: Equatable, Sendable {
+    var id: String
+    /// Lower-case extension without the dot, kept so a font importer can tell TTF from OTF.
+    var fileExtension: String
+    var data: Data
+}
+
+/// An imported package: the payload and every attachment it carried, by id.
+struct ReaderStylePackageContents: Sendable {
+    var payload: ReaderStylePackagePayload
+    var attachments: [String: ReaderStylePackageAttachment]
 }
 
 struct ReaderStylePackageAsset: Codable, Equatable, Sendable {
@@ -66,10 +94,12 @@ enum ReaderStylePackage {
 
     private static let manifestPath = "manifest.json"
     private static let assetDirectory = "assets"
+    private static let fileDirectory = "files"
 
     static func export(
         _ payload: ReaderStylePackagePayload,
-        assetStore: ReaderStyleAssetStore
+        assetStore: ReaderStyleAssetStore,
+        attachments: [ReaderStylePackageAttachment] = []
     ) async throws -> Data {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("reader-style-export-\(UUID().uuidString)", isDirectory: true)
@@ -109,10 +139,33 @@ enum ReaderStylePackage {
             )
         }
 
+        var packageFiles: [ReaderStylePackageFile] = []
+        if !attachments.isEmpty {
+            let fileRoot = temporaryRoot.appendingPathComponent(fileDirectory, isDirectory: true)
+            try FileManager.default.createDirectory(at: fileRoot, withIntermediateDirectories: true)
+        }
+        var seenAttachmentIDs: Set<String> = []
+        for (index, attachment) in attachments.enumerated()
+        where seenAttachmentIDs.insert(attachment.id).inserted {
+            // Named by position, not by id: an id is the payload's to choose and may not be
+            // a safe file name.
+            let ext = attachment.fileExtension.lowercased().filter { $0.isLetter || $0.isNumber }
+            let relativePath = "\(fileDirectory)/\(index)" + (ext.isEmpty ? "" : ".\(ext)")
+            let outputURL = try containedURL(for: relativePath, under: temporaryRoot)
+            try attachment.data.write(to: outputURL, options: .atomic)
+            packageFiles.append(ReaderStylePackageFile(
+                id: attachment.id,
+                relativePath: relativePath,
+                sha256: sha256(attachment.data),
+                byteCount: attachment.data.count
+            ))
+        }
+
         let manifest = ReaderStylePackageManifest(
             version: ReaderStylePackageManifest.currentVersion,
             payload: payload,
-            assets: packageAssets
+            assets: packageAssets,
+            files: packageFiles.isEmpty ? nil : packageFiles
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -126,10 +179,10 @@ enum ReaderStylePackage {
             fileURL: manifestURL,
             compressionMethod: .deflate
         )
-        for asset in packageAssets {
-            let fileURL = try containedURL(for: asset.relativePath, under: temporaryRoot)
+        for relativePath in packageAssets.map(\.relativePath) + packageFiles.map(\.relativePath) {
+            let fileURL = try containedURL(for: relativePath, under: temporaryRoot)
             try await archive.addEntry(
-                with: asset.relativePath,
+                with: relativePath,
                 fileURL: fileURL,
                 compressionMethod: .deflate
             )
@@ -142,6 +195,21 @@ enum ReaderStylePackage {
         assetStore: ReaderStyleAssetStore,
         expectedKind: ReaderStylePackageKind? = nil
     ) async throws -> ReaderStylePackagePayload {
+        try await importContents(
+            archiveData,
+            assetStore: assetStore,
+            expectedKind: expectedKind
+        ).payload
+    }
+
+    /// `import` plus the package's `files/` attachments, read into memory. Nothing is
+    /// installed from them here: what they are for is the payload's to say, and its
+    /// importer installs them only once the user has confirmed.
+    static func importContents(
+        _ archiveData: Data,
+        assetStore: ReaderStyleAssetStore,
+        expectedKind: ReaderStylePackageKind? = nil
+    ) async throws -> ReaderStylePackageContents {
         guard archiveData.count <= maximumExpandedBytes else {
             throw ReaderStylePackageError.expandedDataTooLarge(archiveData.count)
         }
@@ -228,7 +296,16 @@ enum ReaderStylePackage {
             manifest.assets,
             from: contentRoot
         )
-        return manifest.payload
+        var attachments: [String: ReaderStylePackageAttachment] = [:]
+        for file in manifest.files ?? [] {
+            let fileURL = try containedURL(for: file.relativePath, under: contentRoot)
+            attachments[file.id] = ReaderStylePackageAttachment(
+                id: file.id,
+                fileExtension: (file.relativePath as NSString).pathExtension.lowercased(),
+                data: try Data(contentsOf: fileURL)
+            )
+        }
+        return ReaderStylePackageContents(payload: manifest.payload, attachments: attachments)
     }
 
     static func validateEntryPaths(_ paths: [String]) throws {
@@ -258,8 +335,11 @@ enum ReaderStylePackage {
         extractionRoot: URL
     ) throws {
         let assetIDs = manifest.assets.map(\.id)
-        let assetPaths = manifest.assets.map(\.relativePath)
+        let files = manifest.files ?? []
+        let fileIDs = files.map(\.id)
+        let assetPaths = manifest.assets.map(\.relativePath) + files.map(\.relativePath)
         guard Set(assetIDs).count == assetIDs.count,
+              Set(fileIDs).count == fileIDs.count,
               Set(assetPaths).count == assetPaths.count else {
             throw ReaderStylePackageError.malformedManifest
         }
@@ -289,6 +369,27 @@ enum ReaderStylePackage {
             }
             guard sha256(data) == asset.sha256.lowercased() else {
                 throw ReaderStylePackageError.hashMismatch(asset.relativePath)
+            }
+        }
+
+        for file in files {
+            guard file.relativePath.hasPrefix("\(fileDirectory)/"),
+                  file.byteCount >= 0,
+                  fileEntryPaths.contains(file.relativePath) else {
+                throw ReaderStylePackageError.malformedManifest
+            }
+            let fileURL = try containedURL(for: file.relativePath, under: extractionRoot)
+            let data: Data
+            do {
+                data = try Data(contentsOf: fileURL)
+            } catch {
+                throw ReaderStylePackageError.malformedManifest
+            }
+            guard data.count == file.byteCount else {
+                throw ReaderStylePackageError.malformedManifest
+            }
+            guard sha256(data) == file.sha256.lowercased() else {
+                throw ReaderStylePackageError.hashMismatch(file.relativePath)
             }
         }
     }

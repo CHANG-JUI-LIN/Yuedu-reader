@@ -48,10 +48,10 @@ enum SharedCustomizationImportService {
             case .appearance:
                 return nil
             case .reader(let plan):
-                guard plan.layout != nil else { return nil }
+                guard plan.replacesReadingSetup else { return nil }
                 return .readingSettings(
                     named: plan.name,
-                    parts: ReadingSetupPart.parts(in: plan.readingSettings),
+                    parts: ReadingSetupPart.parts(in: plan),
                     themeName: GlobalSettings.shared.readingImportThemeName(for: plan.readingSettings.items)
                 )
             case .qiTheme:
@@ -76,7 +76,8 @@ enum SharedCustomizationImportService {
                 document.data, format: .qiReader, fallbackName: nil
             ))
         case .nativePackage:
-            let payload = try await ReaderStylePackage.import(document.data, assetStore: .shared)
+            let contents = try await ReaderStylePackage.importContents(document.data, assetStore: .shared)
+            let payload = contents.payload
             if payload.kind == .appearance {
                 let bundle = try payload.decode(AppearanceCustomizationBundle.self)
                 guard bundle.format == AppearanceCustomizationBundle.formatIdentifier else {
@@ -84,7 +85,10 @@ enum SharedCustomizationImportService {
                 }
                 return .appearance(payload.encodedModel)
             }
-            return .reader(try ReaderSettingsImportService.plan(from: payload))
+            return .reader(try ReaderSettingsImportService.plan(
+                from: payload,
+                attachments: contents.attachments
+            ))
         }
     }
 

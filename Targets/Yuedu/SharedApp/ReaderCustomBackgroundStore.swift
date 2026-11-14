@@ -241,28 +241,24 @@ extension GlobalSettings {
     ) -> UUID? {
         if let saved = bundle.savedReaderBackgrounds, !saved.isEmpty {
             for payload in saved {
-                var imageFileName: String?
+                var imageData: Data?
                 if let image = payload.image {
                     guard let data = Data(base64Encoded: image.base64) else {
                         AppLogger.error("⟐ bundle reading background picture undecodable", context: ["name": payload.name])
                         continue
                     }
-                    do {
-                        imageFileName = try ReaderCustomBackgroundStorageManager.shared.importBackground(data: data)
-                    } catch {
-                        AppLogger.error("⟐ bundle reading background picture unreadable", error: error)
-                        continue
-                    }
+                    imageData = data
                 }
-                saveReaderCustomBackground(ReaderCustomBackground(
+                if restoreSavedReaderBackground(
                     id: payload.id,
                     name: payload.name,
                     colorHex: payload.colorHex,
-                    imageFileName: imageFileName,
                     textColorHex: payload.textColorHex,
-                    isDark: payload.isDark
-                ))
-                summary.restoredReaderBackground = true
+                    isDark: payload.isDark,
+                    imageData: imageData
+                ) {
+                    summary.restoredReaderBackground = true
+                }
             }
             return bundle.wornReaderBackgroundID.flatMap { readerCustomBackground(id: $0)?.id }
         }
@@ -301,6 +297,40 @@ extension GlobalSettings {
         }
         summary.restoredReaderBackground = true
         return saveReaderCustomBackground(background).id
+    }
+
+    /// Puts one saved background that arrived in a file into the list under its own id —
+    /// replacing one with the same id, so importing a file twice lists it once — with its
+    /// picture copied into the reading-backgrounds folder. The one install route for
+    /// 匯出全部自訂 bundles and 匯出閱讀設定 files. False when the picture could not be
+    /// stored; the background is then not added, rather than added as a blank.
+    @discardableResult
+    func restoreSavedReaderBackground(
+        id: UUID,
+        name: String,
+        colorHex: UInt32,
+        textColorHex: UInt32?,
+        isDark: Bool,
+        imageData: Data?
+    ) -> Bool {
+        var imageFileName: String?
+        if let imageData {
+            do {
+                imageFileName = try ReaderCustomBackgroundStorageManager.shared.importBackground(data: imageData)
+            } catch {
+                AppLogger.error("⟐ imported reading background picture unreadable", error: error, context: ["name": name])
+                return false
+            }
+        }
+        saveReaderCustomBackground(ReaderCustomBackground(
+            id: id,
+            name: name,
+            colorHex: colorHex,
+            imageFileName: imageFileName,
+            textColorHex: textColorHex,
+            isDark: isDark
+        ))
+        return true
     }
 
     // MARK: - iCloud

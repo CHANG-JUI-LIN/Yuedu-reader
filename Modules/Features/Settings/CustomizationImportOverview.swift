@@ -17,6 +17,12 @@ enum ReadingSetupPart: CaseIterable, Hashable {
     case dialogueBubble
     case regexHighlights
     case textDecoration
+    // How the reader behaves (`ReaderBehaviorSettings`): only a 匯入閱讀設定 file carries
+    // these, and no 排版生效範圍 row speaks for them.
+    case textConversion
+    case bookSpacing
+    case pagingGestures
+    case brightness
 
     var titleKey: String {
         switch self {
@@ -32,6 +38,10 @@ enum ReadingSetupPart: CaseIterable, Hashable {
         case .dialogueBubble: return "對話氣泡"
         case .regexHighlights: return "正則高亮"
         case .textDecoration: return "文字顏色與底線"
+        case .textConversion: return "繁簡轉換"
+        case .bookSpacing: return "套用書本間距"
+        case .pagingGestures: return "翻頁與手勢"
+        case .brightness: return "亮度"
         }
     }
 
@@ -49,6 +59,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
         case .dialogueBubble: return [.dialogueBubble]
         case .regexHighlights: return [.regexHighlight]
         case .textDecoration: return [.textColor, .textUnderline]
+        case .textConversion, .bookSpacing, .pagingGestures, .brightness: return []
         }
     }
 
@@ -66,6 +77,11 @@ enum ReadingSetupPart: CaseIterable, Hashable {
         case .dialogueBubble: return ReadingSettingsScopeItem.dialogueBubble.systemImage
         case .regexHighlights: return ReadingSettingsScopeItem.regexHighlight.systemImage
         case .textDecoration: return ReadingSettingsScopeItem.textUnderline.systemImage
+        // The symbols 閱讀設定 gives these rows.
+        case .textConversion: return "character.book.closed"
+        case .bookSpacing: return "text.book.closed"
+        case .pagingGestures: return "hand.tap"
+        case .brightness: return "sun.max"
         }
     }
 
@@ -73,6 +89,29 @@ enum ReadingSetupPart: CaseIterable, Hashable {
     static func parts(in reading: AppearanceThemeReadingSettings) -> [ReadingSetupPart] {
         let items = reading.items
         return allCases.filter { !$0.scopeItems.isDisjoint(with: items) }
+    }
+
+    /// The behaviour rows a file carries, in 閱讀設定's order.
+    static func parts(in behavior: ReaderBehaviorSettings?) -> [ReadingSetupPart] {
+        guard let behavior else { return [] }
+        var parts: [ReadingSetupPart] = []
+        if behavior.textConversion != nil { parts.append(.textConversion) }
+        if behavior.usesBookSpacing != nil { parts.append(.bookSpacing) }
+        if behavior.spreadMode != nil || behavior.tapBothSidesNextPage != nil
+            || behavior.swipeUpToExit != nil || behavior.pullDownToBookmark != nil
+            || behavior.touchZonesLeftToRight != nil || behavior.touchZonesRightToLeft != nil {
+            parts.append(.pagingGestures)
+        }
+        if behavior.followsSystemBrightness != nil || behavior.brightness != nil
+            || behavior.keepsScreenAwake != nil {
+            parts.append(.brightness)
+        }
+        return parts
+    }
+
+    /// Everything a reading-settings file changes: its page look, then its behaviour rows.
+    static func parts(in plan: ReaderSettingsImportPlan) -> [ReadingSetupPart] {
+        parts(in: plan.readingSettings) + parts(in: plan.behavior)
     }
 
     /// 「字體、排版和頁首頁尾」 — joined the way the current language joins a list.
@@ -275,6 +314,15 @@ extension CustomizationImportOverview {
     @MainActor
     init(readingSettings plan: ReaderSettingsImportPlan, placement: ReadingPlacement) {
         readingItems = Self.readingItems(in: plan.readingSettings, fontName: nil)
+            + ReadingSetupPart.parts(in: plan.behavior).map {
+                Item(titleKey: $0.titleKey, systemImage: $0.systemImage)
+            }
+        // The behaviour rows always land in 全域, so a setup otherwise all on the theme
+        // is split.
+        var placement = placement
+        if case .theme(let name) = placement, !(plan.behavior?.isEmpty ?? true) {
+            placement = .split(themeName: name)
+        }
         readingPlacement = readingItems.isEmpty ? nil : placement
         notes = plan.notes
     }

@@ -86,13 +86,17 @@ struct RegexHighlightExportPayload: Transferable {
 /// once it is asked for and handed to `SystemShareSheet` (2026-09-29).
 enum ReaderSettingsExportFile {
     static func write(_ inputs: ReaderSettingsExportInputs, named name: String) async throws -> URL {
-        let bundle = try inputs.makeBundle()
+        let (bundle, attachments) = try inputs.makePackage()
         let stylePayload = try ReaderStylePackagePayload.encode(
             bundle,
             kind: .readerSettings,
             assetIDs: bundle.assetIDs
         )
-        let data = try await ReaderStylePackage.export(stylePayload, assetStore: .shared)
+        let data = try await ReaderStylePackage.export(
+            stylePayload,
+            assetStore: .shared,
+            attachments: attachments
+        )
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(ReaderStyleExportFilename.make(name))
         try data.write(to: url, options: .atomic)
