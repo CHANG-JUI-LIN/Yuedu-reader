@@ -37,6 +37,13 @@ final class AutoReadRevealView: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
+        // Drawn above its siblings wherever it sits among them. A 仿真 page view
+        // controller adds each page it is handed as a new subview on top of the ones
+        // already there, so after the first turn the page covered the curtain and
+        // 自動閱讀 only jumped from page to page (a 滑動／覆蓋 one keeps its pages inside
+        // one scroll view and never did). Re-ordering after every stack write would
+        // have to chase UIKit's own turns as well; this does not depend on the order.
+        layer.zPosition = 1
 
         pageImageView.contentMode = .scaleToFill
         pageImageView.frame = bounds

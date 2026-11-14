@@ -1947,8 +1947,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         var lastAppliedPageBarsRevision: UInt = 0
 
-        /// Sits above every page, outside `UIPageViewController`'s own hierarchy,
-        /// exactly like `coverOverlayView`. It never receives touches.
+        /// A subview of the page view controller's view, drawn above every page it
+        /// holds (`AutoReadRevealView` says how). It never receives touches.
         let autoReadRevealView = AutoReadRevealView()
 
         /// A turn 自動閱讀 asked for that the executor has taken and that has not landed.
