@@ -13,6 +13,7 @@ struct BookSourceRuleDebugView: View {
     @State private var keyword: String = ""
     @State private var inputURL: String = ""
     @State private var page: Int = 1
+    @State private var showCopiedAlert = false
     @Environment(\.dismiss) private var dismiss
     @Bindable private var gs = GlobalSettings.shared
 
@@ -136,6 +137,23 @@ struct BookSourceRuleDebugView: View {
                     }
                     .accessibilityLabel(localized("關閉"))
                 }
+                // The whole run as plain text, to paste somewhere else (FB-194). A single
+                // row is copied from its own context menu.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        UIPasteboard.general.string = DebugLogEntry.plainText(of: engine.logs)
+                        showCopiedAlert = true
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .accessibilityLabel(localized("複製全部日誌"))
+                    .disabled(engine.logs.isEmpty)
+                }
+            }
+            .alert(localized("已複製"), isPresented: $showCopiedAlert) {
+                Button(localized("好"), role: .cancel) {}
+            } message: {
+                Text(localized("除錯紀錄已複製到剪貼簿。"))
             }
         }
     }
@@ -196,6 +214,7 @@ private struct DebugLogRow: View {
                 Text(detail)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(DSColor.textSecondary)
+                    .textSelection(.enabled)
                     .padding(.leading, 28)
                     .padding(.vertical, 4)
                     .padding(.horizontal, 8)
@@ -213,6 +232,15 @@ private struct DebugLogRow: View {
             }
         }
         .padding(.vertical, 2)
+        // Copies the entry whole — the summary past its two lines and the detail whether or
+        // not the row is expanded (FB-194).
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = entry.plainText
+            } label: {
+                Label(localized("複製"), systemImage: "doc.on.doc")
+            }
+        }
     }
 
     private var icon: String {
@@ -242,4 +270,18 @@ private struct DebugLogRow: View {
         initialTab: .content,
         initialURL: "https://example.com/book/1/chapter/2.html"
     )
+}
+
+#Preview("日誌列：長按複製") {
+    List {
+        DebugLogRow(entry: DebugLogEntry(level: .info, step: "請求", summary: "GET https://example.com/book/1/chapter/2.html"))
+        DebugLogRow(entry: DebugLogEntry(
+            level: .success,
+            step: "正文",
+            summary: String(repeating: "取得正文，畫面上只顯示兩行，複製出去的是全文。", count: 4),
+            detail: "<div id=\"content\">\n  <p>第一段</p>\n  <p>第二段</p>\n</div>"
+        ))
+        DebugLogRow(entry: DebugLogEntry(level: .error, step: "淨化", summary: "規則沒有取到內容"))
+    }
+    .listStyle(.plain)
 }

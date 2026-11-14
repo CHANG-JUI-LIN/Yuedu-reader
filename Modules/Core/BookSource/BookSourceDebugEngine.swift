@@ -28,6 +28,33 @@ struct DebugLogEntry: Identifiable {
     }
 }
 
+// MARK: - Plain text (copying a log out of the app)
+
+extension DebugLogEntry {
+    /// The entry as it is copied: time, level and step on one line, then the whole summary and
+    /// the whole detail — nothing the row truncates or folds away is left out (FB-194).
+    ///
+    /// The level is written as its name: the row shows it as a colour and an emoji, and
+    /// neither says much once pasted.
+    var plainText: String {
+        let time = timestamp.formatted(.verbatim(
+            "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
+            timeZone: .current,
+            calendar: .current
+        ))
+        var lines = ["\(time) [\(level.rawValue)] \(step)", summary]
+        if let detail, !detail.isEmpty {
+            lines.append(detail)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// A run's log in the order it happened, entries separated by a blank line.
+    static func plainText(of entries: [DebugLogEntry]) -> String {
+        entries.map(\.plainText).joined(separator: "\n\n")
+    }
+}
+
 // MARK: - Engine
 
 /// Wraps `ModernParserBridge` to provide structured, per-step debug logs
