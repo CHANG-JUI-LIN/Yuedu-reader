@@ -174,6 +174,59 @@ final class ShelfProvider: CollectionBrowsing {
         return entries
     }
 
+    /// The genres of the page's versions, as their metadata names them (`WorkIndexEntry.tags`), each
+    /// once, in the versions' order: a copy's genre links (2026-11-14).
+    func genres(of versions: [WorkDetailRoute]) async -> [String] {
+        let index = await store.workIndex.current()
+        let nodes = Set(versions.map(\.nodeKey))
+        var seen = Set<String>(), genres: [String] = []
+        for entry in index.entries where nodes.contains(entry.nodeKey) {
+            for (tag, key) in zip(entry.tags, entry.tagKeys) where seen.insert(key).inserted { genres.append(tag) }
+        }
+        return Array(genres.prefix(WorkIndexEntry.tagLimit))
+    }
+
+    /// 同題材 for a copy (2026-11-14): the other works on the shelf and in the WebDAV index that
+    /// share `genre`, leaving out the works of `versions`.
+    func works(ofGenre genre: String, excluding versions: [WorkDetailRoute], limit: Int) async -> [CollectionEntry] {
+        let key = WorkMatchKey.title(genre)
+        guard !key.isEmpty else { return [] }
+        let started = SourcePerfTrace.now
+        let index = await store.workIndex.current()
+        let files = store.workIndex.indexedFiles
+        // Read after the refresh, so a copy removed meanwhile is not offered.
+        let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
+        let excluding = Set(versions.map(\.nodeKey))
+        let picked = await Task.detached(priority: .userInitiated) {
+            RelatedWorks.byGenre(in: index, genreKey: key, excluding: excluding, shown: shown, limit: limit)
+        }.value
+        let entries = entries(for: picked, shelf: shelf, files: files)
+        SourcePerfTrace.record("works.detail.genre.shelf", "shown=\(entries.count)", since: started, thresholdMs: 0)
+        return entries
+    }
+
+    /// What this device has by `author`, by kind (`AuthorShelf`): the shelf's copies and the WebDAV
+    /// index's files, the page's own work among them.
+    func shelf(ofAuthor author: String, limit: Int) async -> AuthorShelf {
+        let key = WorkMatchKey.author(author)
+        guard !key.isEmpty, !WorkMatchKey.knownAuthors([author]).isEmpty else { return AuthorShelf(books: [], audiobooks: []) }
+        let started = SourcePerfTrace.now
+        let index = await store.workIndex.current()
+        let files = store.workIndex.indexedFiles
+        // Read after the refresh, so a copy removed meanwhile is not offered.
+        let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
+        let picked = await Task.detached(priority: .userInitiated) {
+            RelatedWorks.byAuthorKinds(in: index, authorKeys: [key], shown: shown, limit: limit)
+        }.value
+        let found = AuthorShelf(books: entries(for: picked.books, shelf: shelf, files: files),
+                                audiobooks: entries(for: picked.audiobooks, shelf: shelf, files: files))
+        SourcePerfTrace.record("works.detail.authorShelf", "books=\(found.books.count) audiobooks=\(found.audiobooks.count)",
+                               since: started, thresholdMs: 0)
+        return found
+    }
+
     /// 作品詳情's 同系列 (Editorial Minimalism, 2026-10-12): the series of the page's versions
     /// and its volumes on the shelf and in the WebDAV index, by `SeriesWorks`; nil when no
     /// version records a series. The series' name is read back from the metadata that named

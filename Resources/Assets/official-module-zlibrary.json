@@ -1,0 +1,96 @@
+{
+  "id": "zlibrary",
+  "title": "Z-Library",
+  "description": "Z-Library 的讀者評論、書目資料和作者其他作品；不需要登入，不提供下載或閱讀。搜尋時會把關鍵字送到 zh.zlib.bz；打開作品詳情時會把書的 ISBN 或書名、以及作者名送去查詢。",
+  "author": "閱讀",
+  "site": "https://zh.zlib.bz",
+  "version": "1.1",
+  "requiredVersion": "3.0.1",
+  "hosts": [
+    "zh.zlib.bz",
+    "s3proxy-alp2-covers.cdn-zlib.sk"
+  ],
+  "rateLimit": "1/1000",
+  "localizations": {
+    "zh-Hans": {
+      "description": "Z-Library 的读者评论、书目资料和作者其他作品；不需要登录，不提供下载或阅读。搜索时会把关键字发送到 zh.zlib.bz；打开作品详情时会把书的 ISBN 或书名、以及作者名发送去查询。"
+    },
+    "en": {
+      "description": "Reader comments, book records and an author's other works from Z-Library. No sign-in, no downloads, no reading. Searches send the keyword to zh.zlib.bz; opening a work sends its ISBN or title, and its author's name."
+    },
+    "ja": {
+      "description": "Z-Library の読者コメント、書誌データ、著者のほかの作品。サインイン不要で、ダウンロードや閲覧はできません。検索ではキーワードを zh.zlib.bz に送ります。作品の詳細を開くと、ISBN または書名と著者名を送って調べます。"
+    },
+    "ko": {
+      "description": "Z-Library의 독자 댓글, 도서 정보, 저자의 다른 작품. 로그인이 필요 없고 다운로드나 읽기는 제공하지 않습니다. 검색할 때 검색어를 zh.zlib.bz로 보내고, 작품 상세를 열면 ISBN 또는 제목과 저자 이름을 보내 조회합니다."
+    }
+  },
+  "modules": [],
+  "search": {
+    "request": {
+      "url": "https://zh.zlib.bz/eapi/book/search",
+      "method": "POST",
+      "body": "message={{keyword}}&page=1&limit=20",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        "Accept": "application/json, text/plain, */*"
+      }
+    },
+    "cacheDuration": 3600,
+    "searchesAuthors": true,
+    "list": {
+      "items": "$.books[*]",
+      "title": "$.title",
+      "author": "$.author",
+      "cover": "$.cover",
+      "url": "$.href",
+      "intro": "$.description",
+      "isbn": "$.identifier",
+      "publisher": "$.publisher",
+      "series": "$.series",
+      "id": "$.id"
+    }
+  },
+  "lookup": {
+    "request": {
+      "url": "https://zh.zlib.bz/eapi/book/search",
+      "method": "POST",
+      "body": "message={{isbn}}&page=1&limit=5",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        "Accept": "application/json, text/plain, */*"
+      }
+    },
+    "cacheDuration": 3600,
+    "list": {
+      "items": "$.books[*]",
+      "title": "$.title",
+      "author": "$.author",
+      "cover": "$.cover",
+      "url": "$.href",
+      "intro": "$.description",
+      "isbn": "$.identifier",
+      "publisher": "$.publisher",
+      "series": "$.series",
+      "id": "$.id"
+    }
+  },
+  "reviews": {
+    "request": {
+      "url": "https://zh.zlib.bz/papi/comments/book/{{id}}/0?limit=100",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Accept": "application/json, text/plain, */*"
+      }
+    },
+    "cacheDuration": 86400,
+    "list": {
+      "items": "$.comments[?(@.parent_id == null)]",
+      "text": "$.text",
+      "author": "$.user.name",
+      "date": "$.date"
+    }
+  }
+}

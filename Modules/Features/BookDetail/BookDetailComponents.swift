@@ -213,7 +213,11 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                     if let pageTint {
                         pageTint.ignoresSafeArea()
                     } else {
-                        PageBackgroundView(scope: .global).ignoresSafeArea()
+                        // A white page, as Apple Books' store draws a book's (maintainer,
+                        // 2026-11-14: 「也改成白底」, after 讀者評論's own page): the quiet grey
+                        // cards read on it as they do there. A theme's own page colour and
+                        // picture still paint it.
+                        PageBackgroundView(scope: .global, base: DSColor.background).ignoresSafeArea()
                     }
                 }
                 .pageBackgroundToolbar(for: .global)
@@ -1248,7 +1252,8 @@ struct BookDetailRecommendationSection: View {
                     .foregroundStyle(DSColor.textSecondary)
                     .padding(.horizontal, DSSpacing.sm)
                     .padding(.vertical, DSSpacing.xs)
-                    .background(DSColor.surfaceTertiary, in: Capsule())
+                    // On the white page a system-background capsule would not show.
+                    .background(DSColor.quietCardFill, in: Capsule())
             }
             Text(verbatim: reason)
                 .font(DSFont.subheadline)

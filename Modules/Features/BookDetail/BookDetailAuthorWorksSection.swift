@@ -90,6 +90,8 @@ struct BookDetailCoverShelf: View {
         .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
         .scrollClipDisabled()
+        // The row is lazy and below the fold: its covers are fetched once it has its works.
+        .prefetchingCovers(of: cards)
     }
 }
 

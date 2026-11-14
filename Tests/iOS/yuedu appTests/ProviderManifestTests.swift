@@ -105,6 +105,7 @@ struct ProviderManifestTests {
             ModuleProvider.instanceKey(moduleID: "openlibrary"),
             ModuleProvider.instanceKey(moduleID: "narou"),
             ModuleProvider.instanceKey(moduleID: "trends"),
+            ModuleProvider.instanceKey(moduleID: "zlibrary"),
             AIRecommendationProvider.instanceKey,
             SourceInstanceKey(type: .bookSource, id: "https://explore.example"),
         ], "a source with no explore rule puts nothing on the home")
@@ -115,7 +116,8 @@ struct ProviderManifestTests {
                                                firstPages: firstPages(f.folder))
         #expect(!inChina.contains { [.gutenberg, .aozora].contains($0.instance.type) })
         #expect(!inChina.contains { $0.instance == ModuleProvider.instanceKey(moduleID: "narou") })
-        #expect(inChina.count == providers.count - 3)
+        #expect(!inChina.contains { $0.instance == ModuleProvider.instanceKey(moduleID: "zlibrary") })
+        #expect(inChina.count == providers.count - 4)
     }
 
     // MARK: - Manifests

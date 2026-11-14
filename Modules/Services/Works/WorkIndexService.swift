@@ -280,7 +280,8 @@ final class WorkIndexService {
                 let series = series(in: file.values ?? [], for: file.record)
                 entries.append(WorkIndexEntry(record: file.record, extraIdentifiers: file.identifiers ?? [],
                                               language: language ?? LanguageTag(file.record.language),
-                                              series: series?.name, seriesIndex: series?.number))
+                                              series: series?.name, seriesIndex: series?.number,
+                                              tags: tags(in: file.values ?? [], for: file.record)))
             }
         }
 
@@ -305,8 +306,21 @@ final class WorkIndexService {
             extraIdentifiers: sidecar?.identifiers ?? [],
             language: sidecar.flatMap { language(in: $0, for: record) } ?? LanguageTag(record.language),
             series: series?.name,
-            seriesIndex: series?.number
+            seriesIndex: series?.number,
+            tags: sidecar.map { tags(in: $0.values, for: record) } ?? []
         )
+    }
+
+    /// The genres the values give, by `MetadataResolver`'s precedence, as `series` reads the
+    /// series. The reader's override and lock are left out, as they are from the whole index.
+    nonisolated static func tags(in values: [MetadataValue], for record: SourceRecord) -> [String] {
+        let resolved = MetadataResolver.resolve(.tags, anchor: record.copyKey ?? record.key, copySource: record.key.instance,
+                                                copyValue: nil, values: values, decisions: [])
+        switch resolved?.value {
+        case .text(let text): return [text]
+        case .texts(let texts): return texts
+        case .number, .date, nil: return []
+        }
     }
 
     /// The series name the values give, by `MetadataResolver`'s precedence, and the number the
@@ -392,7 +406,8 @@ struct WorkIndexFile: Codable, Hashable, Sendable {
     /// `seriesIndex` (5d-6b). 5: `authorKeys` without 「未知作者」 (2026-10-17), which an
     /// unchanged copy's saved entry would otherwise keep. A file of an older version is
     /// discarded and rebuilt; the index is derived.
-    static let currentSchemaVersion = 5
+    /// 6: `tags` and `tagKeys` (2026-11-14).
+    static let currentSchemaVersion = 6
 
     /// What each copy's entry was built from. A copy whose record and sidecar stamp are the
     /// same next time keeps its entry.

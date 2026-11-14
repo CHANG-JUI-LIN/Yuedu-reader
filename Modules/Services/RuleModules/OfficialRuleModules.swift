@@ -10,7 +10,7 @@ import Foundation
 enum OfficialRuleModules {
     /// Bundled, or planned and reserved so that an import cannot take the id first. Listed in
     /// this order.
-    static let ids = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "trends", "rakuten-books"]
+    static let ids = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "trends", "zlibrary", "rakuten-books"]
     static let reservedIDs = Set(ids)
     /// Open Library, which replaced the app's own Open Library search and fill (OL3).
     nonisolated static let openLibraryID = "openlibrary"
@@ -18,10 +18,11 @@ enum OfficialRuleModules {
     /// `Resources/Assets/official-module-<id>.json`.
     static let filePrefix = "official-module-"
 
-    /// Storefront policy, the app's and never a manifest's: なろう is hidden where Gutenberg and
-    /// 青空文庫 are (`PublicLibraryAvailability`).
+    /// Storefront policy, the app's and never a manifest's: なろう and Z-Library (reviews and
+    /// records only; maintainer, 2026-11-14) are hidden where Gutenberg and 青空文庫 are
+    /// (`PublicLibraryAvailability`).
     static func isAvailable(_ id: String, librariesAvailable: Bool) -> Bool {
-        id != "narou" || librariesAvailable
+        !["narou", "zlibrary"].contains(id) || librariesAvailable
     }
 
     /// The bundled files. The resources folder is flattened into the bundle, so they are found by

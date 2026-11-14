@@ -46,7 +46,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
-| `id` | ✓ | 代號，只能用 `A-Z a-z 0-9 . _ -`，最長 128 字。它是模組資料夾的名字，也是更新時認同一個模組的依據。官方模組的代號（`bangumi`、`anilist`、`openbd`、`narou`、`rakuten-books`）不能用。 |
+| `id` | ✓ | 代號，只能用 `A-Z a-z 0-9 . _ -`，最長 128 字。它是模組資料夾的名字，也是更新時認同一個模組的依據。官方模組的代號（`bangumi`、`anilist`、`openbd`、`openlibrary`、`narou`、`trends`、`zlibrary`、`rakuten-books`）不能用。 |
 | `title` | ✓ | 名稱。 |
 | `description` |  | 一兩句說明，顯示在模組頁和倉庫列表。 |
 | `author` |  | 作者。 |
@@ -59,6 +59,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `search` |  | 搜尋（§3，沒有 `id`），會加進統一搜尋。 |
 | `lookup` |  | 以 ISBN 查一本書（§5），用來補資料。3.0。 |
 | `reading` |  | 怎麼讀它的書（§6）。沒有它，模組的書只有資料、不能讀。3.0。 |
+| `reviews` |  | 讀者對一本書的評論和評分（§5.2），顯示在作品詳情的「讀者評論」。3.0.1。 |
 | `attribution` |  | 網站條款要求的署名（§7）。3.0。 |
 | `localizations` |  | 其他語言的名稱和說明（§7）。3.0。 |
 
@@ -83,6 +84,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `isbnPrefixes` |  | 只用在 `lookup`（§5）。3.0。 |
 | `detail` |  | 只用在 `search` 和 `lookup`：那本書自己的頁面，補清單沒給的簡介或標籤（§5.1）。3.0。 |
 | `minKeywordLength` |  | 只用在 `search`：關鍵字至少幾個字才送出（Open Library 是 `3`）。更短的不送：搜尋時這個模組不出現，補資料時也不用書名查。3.0。 |
+| `searchesAuthors` |  | 只用在 `search`：寫 `true` 表示關鍵字可以是作者名、會搜出這位作者的書。作品詳情的「作者其他作品」會用作品的第一位作者搜一次，只留作者相同的結果。不寫就只用書名搜。3.0.1。 |
 
 ### 3.1 參數 `params[]`
 
@@ -146,10 +148,11 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 | `aliases` |  | 其他書名（可多個值）。3.0。 |
 | `tags` |  | 題材、標籤（可多個值）。3.0。 |
 | `publisher` |  | 出版社。3.0。 |
-| `isbn` |  | ISBN-10 或 -13；檢查碼不對的會被丟掉。可以讀到好幾個值（一個版本的 ISBN-10 和 -13），`lookup` 時任一個跟書架那本相同就算；搜尋結果最多留 5 個。3.0。 |
+| `isbn` |  | ISBN-10 或 -13；檢查碼不對的會被丟掉。可以讀到好幾個值（一個版本的 ISBN-10 和 -13），`lookup` 時任一個跟書架那本相同就算；搜尋結果最多留 5 個。網站把幾個 ISBN 寫在同一個值裡（`9787309138856,7309138856`，用 `,` `;` `/` `|` 隔開）也會分開讀。3.0。 |
 | `series` |  | 系列。3.0。 |
 | `seriesCovers` |  | 同系列其他冊的封面網址（可多個值），照系列順序排在這一筆後面：這一筆代表整個系列（趨勢用系列第一冊）。作品詳情把它們扇形疊在封面後面，最多 4 張。只從 `hosts` 載入。這一筆本身就是整個系列時（書名就是系列名）可以不給 `series`。3.0。 |
 | `contentKind` |  | 讀到 `comic` 時這本是漫畫，其他值照清單的 `contentKind`。3.0。 |
+| `id` |  | 這筆紀錄在網站上的代號。有些網站查評論用的是代號、不是書的網址；`reviews` 的請求用 `{{id}}` 取它（§5.2）。3.0.1。 |
 
 規則裡的 `{{…}}` 只能放一條規則（例如 `https://ncode.syosetu.com/{{$.ncode}}/`），由規則引擎就地讀出；
 不能放參數。
@@ -204,6 +207,73 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 - 只在補資料時、而且只對確定是那本書的那一筆結果請求一次，不會每一列都開；
   清單已經給了簡介和標籤、或書架那本不缺這兩項時就不請求。
 - 首頁清單（`modules[]`）不能用 `detail`。舊版 App 會忽略它，只是補不到這兩項。
+
+### 5.2 讀者評論 `reviews`
+
+作品詳情打開時，「閱讀」會問模組有沒有這本書的評論，有就在簡介和目錄下面顯示「讀者評論」，
+點標題進去看全部。**只畫網站有給的東西**：沒有 `rating` 規則的評論不畫星星，沒有 `title` 就沒有標題，
+沒有評論（或請求失敗）整個區段不出現。
+
+```json
+"reviews": {
+  "request": { "url": "https://example.com/api/books/{{id}}/reviews?limit=100" },
+  "cacheDuration": 86400,
+  "ratingScale": 10,
+  "list": {
+    "items": "$.reviews[*]",
+    "text": "$.content",
+    "title": "$.headline",
+    "author": "$.user.name",
+    "date": "$.created_at",
+    "rating": "$.score",
+    "likes": "$.helpful"
+  },
+  "rating": {
+    "score": "$.summary.average",
+    "count": "$.summary.total",
+    "distribution": "$.summary.stars[*]"
+  }
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `request` | ✓ | 跟 §3.2 一樣，但只能用 `{{id}}`（那筆紀錄的 `list.id`）和 `{{url}}`（它的 `list.url`），至少要用一個。`{{url}}` 放在網址開頭時照原樣代入。代入後的網址一樣只能連到 `hosts`。 |
+| `cacheDuration` |  | 秒數：這段時間內同一本書直接用上次的結果，「沒有評論」也算。建議設一天以上，否則每次打開作品詳情都會請求。 |
+| `ratingScale` |  | 網站的評分滿分是多少（Bangumi 是 `10`），預設 `5`。App 一律換算成五顆星顯示。 |
+| `list` | ✓ | 每一則評論的規則，見下表。 |
+| `rating` |  | 這本書的整體評分，在同一頁上直接讀（沒有 `items`），見下表。 |
+
+`list`：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `items` | ✓ | 每一則評論。想排除「回覆別人的留言」就在這裡篩掉。 |
+| `text` | ✓ | 內文。會轉成純文字，最長 2000 字；空的那一則略過。 |
+| `title` |  | 評論自己的標題。 |
+| `author` |  | 寫的人，照網站顯示的名稱。 |
+| `date` |  | 日期：`2025-01-02 15:43:23`、ISO 8601、`2025-01-02`，或 1970 年起的秒數（毫秒也可以）。讀不懂的格式就不顯示日期。 |
+| `rating` |  | 這位讀者給的分數，數字，滿分是 `ratingScale`。0 當作沒評分。 |
+| `likes` |  | 多少人覺得有幫助，數字。有的話評論頁可以依「最有幫助」排序。 |
+
+`rating`：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `score` | ✓ | 平均分，數字，滿分是 `ratingScale`。 |
+| `count` |  | 評分人數。 |
+| `distribution` |  | 每一種星數各有幾人，**五個值、五星在前**。不是剛好五個值就不畫分佈條。 |
+
+**哪一本書**：模組必須有 `search` 或 `lookup`，而且其中至少一個讀得到請求用到的 `{{id}}`／`{{url}}`。
+App 照這個順序找紀錄：
+
+1. 這本書本來就是從這個模組開的：直接用那一筆。
+2. 書架那本有 ISBN：用 `lookup` 查，ISBN 相同的那一筆。
+3. 用書名搜 `search`：書名（或 `aliases`）相同、作者相容、同一種內容的結果，**最多前 3 筆**，評論合在一起
+   （同一本書的不同版本或不同上傳）。沒有作者的書不搜：只有書名不足以認定是同一本。
+
+一次最多留 100 則。使用者在 設定 → 聚合設定 → 資料來源 取消勾選這個模組，或在模組頁按「停用」，就不會問它。
+請在模組的 `description` 寫明：打開作品詳情時會把 ISBN 或書名送到你的網站。
 
 ---
 
@@ -281,6 +351,8 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 
 `attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、`detail`、
 `minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`、`followsLanguage`、選項的 `language`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`seriesCovers`、`contentKind`。
+
+格式 3.0.1 才有的（要 `"requiredVersion": "3.0.1"` 以上）：`reviews`、`searchesAuthors`，以及 `list` 的 `id`。
 
 ---
 

@@ -3,13 +3,17 @@ import SwiftUI
 // MARK: - Genre and author taps
 
 /// A book-source detail page's genre links and author link, for a source that does not take
-/// those taps itself (`BookDetailSourceGestures`): a genre opens the source's category of that
-/// name, else searches the source for it; the author searches the source for their books.
+/// those taps itself (`BookDetailSourceGestures`). Each opens a page of its own, never the
+/// search screen (maintainer, 2026-11-14): a genre the source's category of that name, else
+/// the source's books for it (`SourceTagWorksPage`); the author the author's page
+/// (`AuthorPageView`).
 @MainActor
 struct BookDetailSourceLinks {
     let source: BookSource?
     let genres: SourceGenreLinks
     let openCategory: (ExploreCategoryReference) -> Void
+    let openTag: (SourceTagPage) -> Void
+    let openAuthor: (AuthorPageRequest) -> Void
 
     func links(for tags: [String]) -> [BookDetailLink] {
         tags.map { tag in BookDetailLink(id: tag, title: tag, action: { open(tag) }) }
@@ -17,23 +21,113 @@ struct BookDetailSourceLinks {
 
     func authorActions(_ author: String) -> [BookDetailAuthorAction] {
         let name = author.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let source, !name.isEmpty, name != localized("未知作者") else { return [] }
-        let sourceKey = SearchSourceScope.sourceKey(for: source)
-        return [BookDetailAuthorAction(id: "source", name: name, action: {
-            SourceCallBackService.requestSearch(keyword: name, sourceURL: sourceKey)
-        })]
+        guard let source, !WorkMatchKey.knownAuthors([name]).isEmpty else { return [] }
+        let request = AuthorPageRequest(name: name, context: .source(source.id))
+        return [BookDetailAuthorAction(id: "source", name: name, action: { openAuthor(request) })]
     }
 
     private func open(_ tag: String) {
         let source = source
-        let sourceKey = source.map(SearchSourceScope.sourceKey(for:))
         Task {
             switch await genres.destination(for: tag, in: source) {
             case .category(let reference):
                 openCategory(reference)
             case .search(let keyword):
-                SourceCallBackService.requestSearch(keyword: keyword, sourceURL: sourceKey)
+                // No category of that name: the source's books for the word, on a page of their own.
+                guard let source else { return }
+                openTag(SourceTagPage(sourceID: source.id, tag: keyword))
             }
+        }
+    }
+}
+
+// MARK: - Genre without a category
+
+/// A genre the source lists no category for: the source and the word.
+struct SourceTagPage: Hashable, Sendable {
+    let sourceID: UUID
+    let tag: String
+}
+
+/// The source's books for a genre it has no category of (maintainer, 2026-11-14: a genre opens
+/// a page of its own, never the search screen): what the source's own search finds for the word,
+/// as a grid of covers. A book opens its detail on top.
+struct SourceTagWorksPage: View {
+    let page: SourceTagPage
+    @EnvironmentObject private var bookStore: BookStore
+    @State private var state: LoadState = .loading
+    @State private var pushedBook: OnlineBook?
+
+    private enum LoadState {
+        case loading
+        case loaded([CollectionEntry])
+        case failed
+    }
+
+    var body: some View {
+        content
+            .background(PageBackgroundView(scope: .global, base: DSColor.background).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .global)
+            .navigationTitle(page.tag)
+            .toolbarTitleDisplayMode(.inline)
+            .task(id: page) { await load() }
+            .navigationDestination(item: $pushedBook) { book in
+                BookDetailRelatedBookDestination(book: book).environmentObject(bookStore)
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .loading:
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel(localized("載入中…"))
+        case .loaded(let works) where works.isEmpty:
+            ContentUnavailableView {
+                UnavailableLabel(localized("這個分類沒有其他作品"), systemImage: "books.vertical")
+            }
+        case .loaded(let works):
+            ScrollView {
+                // Not in a lazy stack: the grid measures its own width (`HomeSectionCards`).
+                HomeSectionCards(layout: .coverGrid, cards: HomeRowContent(entries: works, store: bookStore).cards,
+                                 rowID: "detail.tag", hasShowAll: false,
+                                 open: { card, _ in
+                                     if case .onlineBook(let frozen)? = card.route?.opening { pushedBook = frozen.book }
+                                 })
+                    .padding(.vertical, DSSpacing.lg)
+            }
+        case .failed:
+            ContentUnavailableView {
+                UnavailableLabel(localized("載入失敗，點按重試"), systemImage: "arrow.clockwise")
+            } actions: {
+                Button(localized("重試")) { Task { await load() } }
+            }
+        }
+    }
+
+    private func load() async {
+        state = .loading
+        guard let source = BookSourceStore.shared.source(id: page.sourceID), !source.searchUrl.isEmpty else {
+            state = .loaded([])
+            return
+        }
+        do {
+            // Through the source's own search, as 搜索 asks it (`BookSourceSession` under it).
+            switch try await BookSourceFetcher.shared.searchOutcome(query: page.tag, in: source) {
+            case .results(let books):
+                state = .loaded(books.prefix(AuthorShelf.limit).map { CollectionEntry.onlineBook($0, source: source) })
+            case .empty:
+                state = .loaded([])
+            case .failed(let failure):
+                throw failure
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            AppLogger.network("⟐ genre page: source search failed", error: SourceFailure.loggable(error),
+                              context: ["source": page.sourceID.uuidString])
+            state = .failed
         }
     }
 }
@@ -214,6 +308,9 @@ struct BookDetailRelatedSection: View {
         .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
         .scrollClipDisabled()
+        // The row is lazy and below the fold: its covers are fetched once it has its books
+        // (2026-11-14). The wall is not lazy: its posters load as the page is built.
+        .prefetchingCovers(of: section)
     }
 
     /// Three posters a row, the first few rows; 查看全部 has the rest. Not a lazy grid: it is

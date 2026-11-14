@@ -106,7 +106,7 @@ struct RuleModuleClient: Sendable {
         let entryID = entry.id ?? "search"
         let cacheFile = cacheFile(module: module.id, entry: entryID, values: values)
         let duration = TimeInterval(max(entry.cacheDuration ?? 0, 0))
-        if duration > 0, let cached = cached(cacheFile), cached.version == module.version,
+        if duration > 0, let cached = cached(RuleModulePage.self, at: cacheFile), cached.version == module.version,
            now().timeIntervalSince(cached.fetchedAt) < duration {
             return cached
         }
@@ -124,7 +124,7 @@ struct RuleModuleClient: Sendable {
     /// draws while `page` fetches it again. Off the main actor: it reads and decodes a file.
     @concurrent
     func savedPage(of entry: RuleModule.Entry, in module: RuleModule, values: [String: String]) async -> RuleModulePage? {
-        guard let saved = cached(cacheFile(module: module.id, entry: entry.id ?? "search", values: values)),
+        guard let saved = cached(RuleModulePage.self, at: cacheFile(module: module.id, entry: entry.id ?? "search", values: values)),
               saved.version == module.version else { return nil }
         return saved
     }
@@ -365,24 +365,24 @@ struct RuleModuleClient: Sendable {
     // MARK: - Cache
 
     /// One file per entry and its values, so a section's own parameters keep their own pages.
-    private func cacheFile(module: String, entry: String, values: [String: String]) -> URL {
+    func cacheFile(module: String, entry: String, values: [String: String]) -> URL {
         let key = values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
         let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         return store.cacheDirectory(id: module).appendingPathComponent("\(entry)-\(digest.prefix(32)).json")
     }
 
     /// A cache that cannot be read is a miss: the page is fetched again and the file replaced.
-    private func cached(_ file: URL) -> RuleModulePage? {
+    func cached<Page: Decodable>(_ type: Page.Type, at file: URL) -> Page? {
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
         do {
-            return try JSONDecoder().decode(RuleModulePage.self, from: Data(contentsOf: file))
+            return try JSONDecoder().decode(type, from: Data(contentsOf: file))
         } catch {
             AppLogger.cache("Module page cache unreadable", error: error, context: ["file": file.lastPathComponent], level: .warning)
             return nil
         }
     }
 
-    private func save(_ page: RuleModulePage, to file: URL) {
+    func save<Page: Encodable>(_ page: Page, to file: URL) {
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(page).write(to: file, options: .atomic)

@@ -130,6 +130,9 @@ enum DSColor {
     /// and appearance, as Apple Books' 取得.
     static let cardPrimaryActionFill = Color.white
     static let cardPrimaryActionLabel = Color.black
+    /// A card that sits quietly on the page, as Apple Books' store draws a reader's review: a
+    /// translucent system fill, so it differs from whatever page background a theme paints.
+    static let quietCardFill = Color(uiColor: .tertiarySystemFill)
     /// Neutral gray fill for controls that must not inherit an appearance-theme tint.
     static let neutralControlFill = Color(uiColor: DSUIColor.neutralControlFill)
     /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
@@ -869,6 +872,15 @@ enum DSLayout {
     /// block, so the light text on it reads better than on the block itself.
     static let bookDetailSourcePanelOpacity: Double = 0.18
     static let bookDetailSourcePanelRadius: CGFloat = 20
+    /// A reader's review in 作品詳情's row: no wider than this on a wide screen, the next card
+    /// showing at the edge on a narrow one, and this many lines of its text.
+    static let reviewCardMaxWidth: CGFloat = 420
+    static let reviewCardPeek: CGFloat = 28
+    static let reviewCardPreviewLines = 4
+    /// How many reviews 作品詳情's row shows before 查看全部.
+    static let reviewPreviewCount = 8
+    /// 讀者評論's rating bars: the stars beside each, and the bar's own width at most.
+    static let ratingBarMaxWidth: CGFloat = 260
     /// 目錄's ground behind the chapter being read: the text's colour, faint.
     static let tocCurrentRowOpacity: Double = 0.07
     /// How far the panel stands in from the hero's own margins: 32pt from the screen's edges

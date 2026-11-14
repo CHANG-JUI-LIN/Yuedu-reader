@@ -66,9 +66,16 @@ struct WorkIndexEntry: Hashable, Codable, Sendable {
     /// The record's number in that series, for 系列下一本 (5d-6b): from the same place as the
     /// series name, so a name and a number never come from two different series.
     var seriesIndex: Double?
+    /// The record's genres as its metadata names them, at most `tagLimit`, for a copy's genre
+    /// links and 同題材 (2026-11-14: a copy's page has what a 來源配置's has). Shown as they are.
+    var tags: [String]
+    /// `WorkMatchKey` of each of `tags`, in the same order: what two records share a genre by.
+    var tagKeys: [String]
+
+    static let tagLimit = 5
 
     init(record: SourceRecord, extraIdentifiers: [ExternalIdentifier] = [], language: LanguageTag? = nil,
-         series: String? = nil, seriesIndex: Double? = nil) {
+         series: String? = nil, seriesIndex: Double? = nil, tags: [String] = []) {
         self.record = record
         self.identifiers = Set(record.identifiers).union(extraIdentifiers).sorted { $0.sortKey < $1.sortKey }
         self.language = language
@@ -77,6 +84,16 @@ struct WorkIndexEntry: Hashable, Codable, Sendable {
         self.authorKeys = WorkMatchKey.knownAuthors(record.authors).map(WorkMatchKey.author).filter { !$0.isEmpty }
         self.seriesKey = series.map(WorkMatchKey.title).flatMap { $0.isEmpty ? nil : $0 }
         self.seriesIndex = seriesKey == nil ? nil : seriesIndex
+        var seen = Set<String>(), kept: [String] = [], keys: [String] = []
+        for tag in tags {
+            let name = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = WorkMatchKey.title(name)
+            guard !key.isEmpty, kept.count < Self.tagLimit, seen.insert(key).inserted else { continue }
+            kept.append(name)
+            keys.append(key)
+        }
+        self.tags = kept
+        self.tagKeys = keys
     }
 
     /// The record's node in the index: a copy's own key, which is unique and does not change

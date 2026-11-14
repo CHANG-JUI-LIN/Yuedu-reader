@@ -104,13 +104,17 @@ struct IconConsistentLabelStyle: LabelStyle {
 /// show the page background — tabs, sheets, and standalone views alike.
 struct PageBackgroundView: View {
     let scope: AppearancePageBackgroundScope
+    /// The page's colour under the theme's picture. 探索's home passes `DSColor.background`: its
+    /// sections shade a white page, as Apple Books' store (`HomeSectionShade`). A theme gives
+    /// both the same colour.
+    var base: Color = DSColor.groupedBackground
     @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            DSColor.groupedBackground
+            base
             if let slice = Self.slice(for: scope, colorScheme: colorScheme, settings: gs,
                                       subscriptions: subscriptionStore) {
                 AppearancePageBackgroundLayerView(slice: slice)

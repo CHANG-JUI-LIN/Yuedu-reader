@@ -9,6 +9,12 @@ private enum OnlineBookDetailPush: Hashable {
     case category(ExploreCategoryReference)
     /// A 同題材 book.
     case book(OnlineBook)
+    /// 讀者評論, every review the section showed the first of.
+    case reviews(WorkReviewSet)
+    /// The author's page.
+    case author(AuthorPageRequest)
+    /// A genre the source has no category of: the source's books for it.
+    case tag(SourceTagPage)
 
     var readerID: UUID? {
         if case .reader(let id) = self { return id }
@@ -46,6 +52,10 @@ struct OnlineBookView: View {
     @Environment(\.appDependencies) private var dependencies
     @State private var pushed: OnlineBookDetailPush?
     @StateObject private var genres = SourceGenreLinks()
+    /// 讀者評論: what a module's readers wrote about the book (`WorkReviews`).
+    @StateObject private var reviews = WorkReviewsModel()
+    /// 作者其他作品: the source's own search for the author (`AuthorWorksRequest.source`).
+    @StateObject private var authorWorks = AuthorWorksModel()
     @State private var pendingChapterSelection: Int?
 
     private var gs: GlobalSettings { GlobalSettings.shared }
@@ -270,7 +280,7 @@ struct OnlineBookView: View {
                 meta: tags.joined(separator: " · "),
                 primary: readAction,
                 secondary: shelfAction,
-                authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
+                authorActions: authorActions(shown.author),
                 sourceGestures: sourceCallBacks?.gestures,
                 links: linksGenres ? sourceLinks.links(for: tags) : [],
                 seriesFan: seriesFan,
@@ -306,6 +316,7 @@ struct OnlineBookView: View {
                 )
             }
             if onContinueReading == nil {
+                BookDetailReviewsSection(reviews: reviews.reviews, onShowAll: { pushed = .reviews($0) })
                 BookDetailRelatedSection(
                     related: genres.related,
                     choices: genres.choices,
@@ -319,6 +330,17 @@ struct OnlineBookView: View {
                         guard let key = genreLoadKey else { return }
                         Task { await genres.retryRelated(key: key, source: source, tags: tags, book: currentBook) }
                     }
+                )
+            }
+            if onContinueReading == nil {
+                BookDetailAuthorWorksSection(
+                    state: authorWorks.state,
+                    // The author's every book in the source: its search, as the author's name opens.
+                    onShowAll: authorActions(shown.author).first?.action,
+                    onSelect: { route in
+                        if case .onlineBook(let frozen) = route.opening { pushed = .book(frozen.book) }
+                    },
+                    onRetry: { Task { await authorWorks.retry(authorWorksRequest, store: bookStore) } }
                 )
             }
             // 作品資訊 last: the first half serves reading and finding more (2026-10-12).
@@ -402,6 +424,12 @@ struct OnlineBookView: View {
             case .book(let book):
                 BookDetailRelatedBookDestination(book: book)
                     .environmentObject(bookStore)
+            case .reviews(let reviews):
+                WorkReviewsPage(reviews: reviews)
+            case .author(let request):
+                AuthorPageView(request: request).environmentObject(bookStore)
+            case .tag(let page):
+                SourceTagWorksPage(page: page).environmentObject(bookStore)
             }
         }
         .readerShelvePrompt($shelvePrompt, onAdd: keepReadBook, onDecline: leaveReadBook)
@@ -438,6 +466,8 @@ struct OnlineBookView: View {
             resumeChapterIndex = await ReadingChapterPlace(store: bookStore, positionStore: dependencies.readingPositionStore)
                 .resumeChapterIndex(of: id)
         }
+        .task(id: reviewsQuery) { await reviews.load(reviewsQuery) }
+        .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: bookStore) }
         .task(id: genreLoadKey) {
             guard let key = genreLoadKey else { return }
             await genres.load(key: key, source: source, tags: tags, book: currentBook)
@@ -445,6 +475,31 @@ struct OnlineBookView: View {
     }
 
     // MARK: Genres and author
+
+    /// What 讀者評論 asks the modules about: the book as the source names it. Not on the page a
+    /// reader opened, which shows its book and nothing around it.
+    private var reviewsQuery: WorkReviewQuery? {
+        // A book the source gave no name is 「未知書名」 on the page: nothing to ask by.
+        guard onContinueReading == nil, displayName != localized("未知書名") else { return nil }
+        return WorkReviewQuery(title: displayName, authors: [displayAuthor], contentKind: .text)
+    }
+
+    /// The author's name as a link to the author's page. None for a source that takes label taps
+    /// itself, nor on the page a reader opened, where another book's page could open a second
+    /// reader (decision 32).
+    private func authorActions(_ author: String) -> [BookDetailAuthorAction] {
+        guard sourceCallBacks == nil, onContinueReading == nil else { return [] }
+        return sourceLinks.authorActions(author)
+    }
+
+    /// What 作者其他作品 is read for: the source and the author, once the chapters have loaded or
+    /// failed, as 同題材 waits, so the search is never in the way of the page's own loading. Not
+    /// on the page a reader opened (decision 32), nor for a book that names no author.
+    private var authorWorksRequest: AuthorWorksRequest? {
+        guard onContinueReading == nil, !(loadingTOC || (chapters.isEmpty && tocError == nil)),
+              let author = WorkMatchKey.knownAuthors([displayAuthor]).first else { return nil }
+        return .source(sourceID: currentBook.sourceId, author: author, title: displayName, bookURL: currentBook.bookUrl)
+    }
 
     /// What the genre links and 同題材 are read for: the source, the genres and the book. Nil
     /// until the chapters have loaded or failed: the source's categories are read after them,
@@ -461,7 +516,8 @@ struct OnlineBookView: View {
 
     /// The genre and author taps, for a source that does not take them itself.
     private var sourceLinks: BookDetailSourceLinks {
-        BookDetailSourceLinks(source: source, genres: genres, openCategory: { pushed = .category($0) })
+        BookDetailSourceLinks(source: source, genres: genres, openCategory: { pushed = .category($0) },
+                              openTag: { pushed = .tag($0) }, openAuthor: { pushed = .author($0) })
     }
 
     // MARK: Hero

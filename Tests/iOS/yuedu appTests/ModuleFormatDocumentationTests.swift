@@ -14,7 +14,7 @@ struct ModuleFormatDocumentationTests {
     /// A module with every optional part present, so the walk reaches every nested type.
     private static let everything = """
     {"id":"doc.all","title":"t","description":"d","author":"a","site":"https://example.com","version":"1.0",
-     "requiredVersion":"3.0","hosts":["example.com"],"rateLimit":"1/1000",
+     "requiredVersion":"3.0.1","hosts":["example.com"],"rateLimit":"1/1000",
      "modules":[{"id":"e","title":"t","description":"d","cacheDuration":60,
        "params":[{"name":"p","title":"t","type":"enumeration","description":"d","value":"v",
                   "enumOptions":[{"title":"t","value":"v"}]}],
@@ -23,13 +23,17 @@ struct ModuleFormatDocumentationTests {
        "list":{"items":"i","title":"t","author":"a","cover":"c","intro":"i","url":"u","kind":"k","language":"l",
                "aliases":"a","tags":"t","publisher":"p","isbn":"i","series":"s","contentKind":"c"},
        "contentKind":"comic","excludeTags":["x"]}],
-     "search":{"request":{"url":"https://example.com/s"},"list":{"items":"i","title":"t","url":"u"},
+     "search":{"request":{"url":"https://example.com/s"},"list":{"items":"i","title":"t","url":"u","id":"d"},
+               "minKeywordLength":2,"searchesAuthors":true,
                "detail":{"request":{"url":"{{url}}.json"},"intro":"i","tags":"t"}},
      "lookup":{"request":{"url":"https://example.com/{{isbn}}"},"list":{"items":"i","title":"t","isbn":"i"},
                "isbnPrefixes":["9784"]},
      "reading":{"headers":{"h":"v"},"charset":"utf-8",
                 "toc":{"items":"i","title":"t","url":"u","nextPage":"n","singleChapter":"s"},
                 "content":{"text":"t","title":"t","nextPage":"n"}},
+     "reviews":{"request":{"url":"https://example.com/r/{{id}}"},"cacheDuration":60,"ratingScale":10,
+                "list":{"items":"i","text":"t","title":"h","author":"a","date":"d","rating":"r","likes":"l"},
+                "rating":{"score":"s","count":"c","distribution":"d"}},
      "attribution":{"text":"t","url":"https://example.com"},
      "localizations":{"en":{"title":"t","description":"d","entries":{"e":{"title":"t","description":"d"}}}}}
     """
@@ -67,10 +71,10 @@ struct ModuleFormatDocumentationTests {
 
     @Test("every field of a module is in the document")
     func moduleFields() throws {
-        let module = try RuleModuleValidator.validate(Data(Self.everything.utf8), appVersion: "3.0")
+        let module = try RuleModuleValidator.validate(Data(Self.everything.utf8), appVersion: "3.0.1")
         let names = Self.fieldNames(of: module)
         #expect(names.contains("singleChapter") && names.contains("enumOptions") && names.contains("entries")
-                && names.contains("detail"),
+                && names.contains("detail") && names.contains("distribution") && names.contains("likes"),
                 "the walk reaches the nested types: \(names.sorted())")
         let document = try documented()
         let missing = names.filter { !document.contains("`\($0)`") }.sorted()

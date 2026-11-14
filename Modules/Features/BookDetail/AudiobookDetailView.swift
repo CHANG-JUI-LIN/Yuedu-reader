@@ -15,6 +15,12 @@ private enum AudiobookDetailPush: Hashable {
     case category(ExploreCategoryReference)
     /// A 同題材 book.
     case book(OnlineBook)
+    /// The author's page.
+    case author(AuthorPageRequest)
+    /// A genre the source has no category of: the source's books for it.
+    case tag(SourceTagPage)
+    /// 讀者評論, every review the section showed the first of.
+    case reviews(WorkReviewSet)
 }
 
 /// Dedicated detail page for audiobooks. Audiobooks must NOT fall into the text-book
@@ -38,6 +44,10 @@ struct AudiobookDetailView: View {
     @State private var currentBook: OnlineBook
     @State private var pushed: AudiobookDetailPush?
     @StateObject private var genres = SourceGenreLinks()
+    /// 讀者評論 and 作者其他作品, as every detail page has them (maintainer, 2026-11-14: the same
+    /// sections whatever the source).
+    @StateObject private var reviews = WorkReviewsModel()
+    @StateObject private var authorWorks = AuthorWorksModel()
     @EnvironmentObject var bookStore: BookStore
     // DismissAction is repeatedly replaced by iOS 17 while a page is pushed above this
     // detail (a genre's category, a 同題材 book). Its stable binding avoids a navigation
@@ -274,6 +284,7 @@ struct AudiobookDetailView: View {
                     action: { play(chapterIndex: offset) }
                 )
             }
+            BookDetailReviewsSection(reviews: reviews.reviews, onShowAll: { pushed = .reviews($0) })
             BookDetailRelatedSection(
                 related: genres.related,
                 choices: genres.choices,
@@ -287,6 +298,14 @@ struct AudiobookDetailView: View {
                     guard let key = genreLoadKey else { return }
                     Task { await genres.retryRelated(key: key, source: source, tags: tags, book: currentBook) }
                 }
+            )
+            BookDetailAuthorWorksSection(
+                state: authorWorks.state,
+                onShowAll: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author).first?.action : nil,
+                onSelect: { route in
+                    if case .onlineBook(let frozen) = route.opening { pushed = .book(frozen.book) }
+                },
+                onRetry: { Task { await authorWorks.retry(authorWorksRequest, store: bookStore) } }
             )
             // 作品資訊 last: the first half serves reading and finding more (2026-10-12).
             BookDetailInfoSection(items: infoItems)
@@ -369,6 +388,12 @@ struct AudiobookDetailView: View {
             case .book(let book):
                 BookDetailRelatedBookDestination(book: book)
                     .environmentObject(bookStore)
+            case .author(let request):
+                AuthorPageView(request: request).environmentObject(bookStore)
+            case .tag(let page):
+                SourceTagWorksPage(page: page).environmentObject(bookStore)
+            case .reviews(let reviews):
+                WorkReviewsPage(reviews: reviews)
             }
         }
         // The player's own 加入書架 shelves the book while it is up; this page learns of it
@@ -397,9 +422,26 @@ struct AudiobookDetailView: View {
             guard let key = genreLoadKey else { return }
             await genres.load(key: key, source: source, tags: tags, book: currentBook)
         }
+        .task(id: reviewsQuery) { await reviews.load(reviewsQuery) }
+        .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: bookStore) }
     }
 
     // MARK: Genres and author
+
+    /// What 讀者評論 asks the modules about. An audiobook's reviews are its book's: the modules
+    /// list books, so the work is asked for as one.
+    private var reviewsQuery: WorkReviewQuery? {
+        guard displayName != localized("未知書名") else { return nil }
+        return WorkReviewQuery(title: displayName, authors: [displayAuthor], contentKind: .text)
+    }
+
+    /// What 作者其他作品 is read for: the source and the author, once the chapters have loaded or
+    /// failed, as 同題材 waits. Not for a book that names no author.
+    private var authorWorksRequest: AuthorWorksRequest? {
+        guard !(loading || (chapters.isEmpty && loadError == nil)),
+              let author = WorkMatchKey.knownAuthors([displayAuthor]).first else { return nil }
+        return .source(sourceID: currentBook.sourceId, author: author, title: displayName, bookURL: currentBook.bookUrl)
+    }
 
     /// What the genre links and 同題材 are read for: the source, the genres and the book. Nil
     /// until the chapters have loaded or failed: the source's categories are read after them,
@@ -411,7 +453,8 @@ struct AudiobookDetailView: View {
 
     /// The genre and author taps, for a source that does not take them itself.
     private var sourceLinks: BookDetailSourceLinks {
-        BookDetailSourceLinks(source: source, genres: genres, openCategory: { pushed = .category($0) })
+        BookDetailSourceLinks(source: source, genres: genres, openCategory: { pushed = .category($0) },
+                              openTag: { pushed = .tag($0) }, openAuthor: { pushed = .author($0) })
     }
 
     // MARK: Hero

@@ -64,8 +64,9 @@ enum RuleModuleValidator {
         guard module.modules.count <= maxEntries else { throw .tooManyEntries(module.modules.count) }
 
         let hosts = RuleModuleHosts(module.hosts)
-        // The first field a 3.0 app is needed for.
+        // The first field a 3.0 app is needed for, and the first a 3.0.1 app is.
         var format3: String?
+        var format301: String?
         if let attribution = module.attribution {
             format3 = "attribution"
             try requireText(attribution.text, "attribution.text")
@@ -110,18 +111,32 @@ enum RuleModuleValidator {
             guard isFileSafe(id) else { throw .invalidID(id) }
             guard seen.insert(id).inserted else { throw .duplicateEntryID(id) }
             try requireText(entry.title ?? "", "\(path).title")
-            try validate(entry, path: path, hosts: hosts, isSearch: false, format3: &format3)
+            try validate(entry, path: path, hosts: hosts, isSearch: false, format3: &format3, format301: &format301)
         }
-        if let search = module.search { try validate(search, path: "search", hosts: hosts, isSearch: true, format3: &format3) }
+        if let search = module.search {
+            try validate(search, path: "search", hosts: hosts, isSearch: true, format3: &format3, format301: &format301)
+        }
         if let reading = module.reading {
             if format3 == nil { format3 = "reading" }
             try validate(reading)
         }
         if let lookup = module.lookup {
             if format3 == nil { format3 = "lookup" }
-            try validate(lookup, path: "lookup", hosts: hosts, isSearch: false, isLookup: true, format3: &format3)
+            try validate(lookup, path: "lookup", hosts: hosts, isSearch: false, isLookup: true, format3: &format3,
+                         format301: &format301)
+        }
+        if let reviews = module.reviews {
+            if format301 == nil { format301 = "reviews" }
+            try validate(reviews, records: [module.search, module.lookup].compactMap { $0 }, hosts: hosts)
         }
 
+        // The newest format it uses is the one it must ask for.
+        if let field = format301 {
+            let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
+            guard let declared, let minimum = RuleModuleVersion(RuleModuleFormat.version3_0_1), declared >= minimum else {
+                throw .needsRequiredVersion(field: field, minimum: RuleModuleFormat.version3_0_1)
+            }
+        }
         if let field = format3 {
             let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
             guard let declared, let minimum = RuleModuleVersion(RuleModuleFormat.version3), declared >= minimum else {
@@ -133,7 +148,8 @@ enum RuleModuleValidator {
     // MARK: - Entries
 
     private static func validate(_ entry: RuleModule.Entry, path: String, hosts: RuleModuleHosts,
-                                 isSearch: Bool, isLookup: Bool = false, format3: inout String?) throws(RuleModuleRejection) {
+                                 isSearch: Bool, isLookup: Bool = false, format3: inout String?,
+                                 format301: inout String?) throws(RuleModuleRejection) {
         func uses3(_ field: String) { if format3 == nil { format3 = field } }
         if let prefixes = entry.isbnPrefixes {
             uses3("\(path).isbnPrefixes")
@@ -147,6 +163,11 @@ enum RuleModuleValidator {
             uses3("\(path).minKeywordLength")
             // Only a search is sent a keyword.
             guard isSearch, length >= 1 else { throw .unknownValue(field: "\(path).minKeywordLength", value: String(length)) }
+        }
+        if let authors = entry.searchesAuthors {
+            if format301 == nil { format301 = "\(path).searchesAuthors" }
+            // Only a search is sent a keyword.
+            guard isSearch else { throw .unknownValue(field: "\(path).searchesAuthors", value: String(authors)) }
         }
         if isLookup {
             // The ISBN is what is asked, and the record's own ISBN is how it is known to be the copy's.
@@ -221,6 +242,10 @@ enum RuleModuleValidator {
             ("aliases", list.aliases), ("tags", list.tags), ("publisher", list.publisher), ("isbn", list.isbn),
             ("series", list.series), ("seriesCovers", list.seriesCovers), ("contentKind", list.contentKind),
         ]
+        if let id = list.id {
+            if format301 == nil { format301 = "\(path).list.id" }
+            try checkRule(id, field: "\(path).list.id", declared: [], innerRules: true)
+        }
         for case let (name, rule?) in rules + format3Rules {
             // A list rule fills no parameters. Its `{{…}}` may only hold a rule, which the engine
             // reads in place (`{{$.id}}`, Legado's own); anything else would go to the JS evaluator.
@@ -269,6 +294,61 @@ enum RuleModuleValidator {
         guard rules.contains(where: { !($0.1 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             throw .missingField("\(path).intro")
         }
+        for case let (name, rule?) in rules {
+            try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
+        }
+    }
+
+    /// A record's reviews: asked of a record `search` or `lookup` found, by the keys its request
+    /// names, so one of them must read every such key; each review has a text.
+    private static func validate(_ reviews: RuleModule.Reviews, records: [RuleModule.Entry],
+                                 hosts: RuleModuleHosts) throws(RuleModuleRejection) {
+        let path = "reviews"
+        let request = reviews.request
+        let method = (request.method ?? "GET").uppercased()
+        guard method == "GET" || method == "POST" else {
+            throw .unsupportedMethod(field: "\(path).request.method", method: request.method ?? "")
+        }
+        let declared: Set<String> = ["id", "url"]
+        try requireText(request.url, "\(path).request.url")
+        try checkRule(request.url, field: "\(path).request.url", declared: declared)
+        if let body = request.body { try checkRule(body, field: "\(path).request.body", declared: declared) }
+        if let encoding = request.bodyEncoding, RuleModule.BodyEncoding(rawValue: encoding) == nil {
+            throw .unknownValue(field: "\(path).request.bodyEncoding", value: encoding)
+        }
+        for (name, value) in (request.headers ?? [:]).sorted(by: { $0.key < $1.key }) {
+            try checkRule(value, field: "\(path).request.headers.\(name)", declared: declared)
+        }
+        if hasOptionTail(request.url) { throw .urlOptions(field: "\(path).request.url") }
+        // Which record: without a key the page would be the same for every book.
+        let keys = Set(templateNames(in: request.url + (request.body ?? "") + (request.headers ?? [:]).values.joined()))
+            .intersection(declared)
+        guard !keys.isEmpty else { throw .missingField("\(path).request.url {{id}}") }
+        guard !records.isEmpty else { throw .missingField("search") }
+        func reads(_ entry: RuleModule.Entry, _ key: String) -> Bool {
+            let rule = key == "id" ? entry.list.id : entry.list.url
+            return !(rule ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard records.contains(where: { entry in keys.allSatisfy { reads(entry, $0) } }) else {
+            throw .missingField("search.list.\(keys.sorted().first ?? "id")")
+        }
+        // `{{url}}…` is the record's own address; `send` refuses it when it names another host.
+        if !request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}") {
+            try checkHost(request.url, field: "\(path).request.url", hosts: hosts)
+        }
+        if let scale = reviews.ratingScale, !(scale > 0) {
+            throw .unknownValue(field: "\(path).ratingScale", value: String(scale))
+        }
+        let list = reviews.list
+        try requireText(list.items, "\(path).list.items")
+        try requireText(list.text, "\(path).list.text")
+        let rules: [(String, String?)] = [
+            ("list.items", list.items), ("list.text", list.text), ("list.title", list.title), ("list.author", list.author),
+            ("list.date", list.date), ("list.rating", list.rating), ("list.likes", list.likes),
+            ("rating.score", reviews.rating?.score), ("rating.count", reviews.rating?.count),
+            ("rating.distribution", reviews.rating?.distribution),
+        ]
+        if let rating = reviews.rating { try requireText(rating.score, "\(path).rating.score") }
         for case let (name, rule?) in rules {
             try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
         }

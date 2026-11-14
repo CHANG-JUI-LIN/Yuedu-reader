@@ -150,7 +150,7 @@ final class ModuleFillProvider: MetadataFillProvider {
     /// -13) is the one asked.
     static func record(in items: [RuleListItem], isbn: String) -> RuleListItem? {
         items.first { item in
-            ModuleProvider.values(item.isbn ?? "").contains { ExternalIdentifier.normalized(.isbn13, $0)?.value == isbn }
+            ModuleProvider.isbnValues(item.isbn ?? "").contains { ExternalIdentifier.normalized(.isbn13, $0)?.value == isbn }
         }
     }
 
@@ -183,17 +183,26 @@ final class ModuleFillProvider: MetadataFillProvider {
 
     /// The one item that is the copy's work; nil for none, or for two (which one is unknown).
     static func match(in items: [RuleListItem], of entry: RuleModule.Entry, query: MetadataFillQuery) -> RuleListItem? {
-        let titleKey = WorkMatchKey.title(query.title)
-        guard !titleKey.isEmpty else { return nil }
+        let matches = sameWork(in: items, of: entry, title: query.title, authors: query.authors, contentKind: query.contentKind)
+        return matches.count == 1 ? matches.first : nil
+    }
+
+    /// The items that are the work named, in the list's order, each record once: its title or one
+    /// of its `aliases` is the work's (`WorkMatchKey`), its author is compatible with the work's,
+    /// and it is the work's kind. A site that lists one work once has one; a site of uploads has
+    /// one per upload (`ModuleReviewProvider`).
+    static func sameWork(in items: [RuleListItem], of entry: RuleModule.Entry, title: String, authors: [String],
+                         contentKind: ContentKind) -> [RuleListItem] {
+        let titleKey = WorkMatchKey.title(title)
+        guard !titleKey.isEmpty else { return [] }
         var seen = Set<String>()
-        let matches = items.filter { item in
-            entry.contentKind(of: item) == query.contentKind
+        return items.filter { item in
+            entry.contentKind(of: item) == contentKind
                 && ([item.name] + (item.aliases ?? [])).contains { WorkMatchKey.title($0) == titleKey }
-                && WorkMatchKey.authorsCompatible(query.authors, Self.names(item.author))
+                && WorkMatchKey.authorsCompatible(authors, Self.names(item.author))
                 // One work listed twice is still one.
                 && seen.insert(item.bookUrl.isEmpty ? "\(item.name)\u{1F}\(item.author)" : item.bookUrl).inserted
         }
-        return matches.count == 1 ? matches.first : nil
     }
 
     /// A search result's description and tags, in the copy title's script.

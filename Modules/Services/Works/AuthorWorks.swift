@@ -4,15 +4,26 @@ import Foundation
 /// 作者其他作品 on 作品詳情 (Editorial Minimalism, 2026-10-12): other works by the author of the
 /// version shown, from where that version's data says they are. Each source answers from its
 /// own record of authors, never a guess: 青空文庫 from its catalogue's credits, Gutenberg from
-/// the author's own feed, the shelf from the work index's author keys. A book source has no
-/// author record; its page searches the source when the author is tapped instead.
+/// the author's own feed, the shelf from the work index's author keys.
+///
+/// A 來源配置 has no author record, and until 2026-11-14 its page had no such row: the author's
+/// name searched the source when tapped. Maintainer, 2026-11-14 (「為什麼只有這 3 種來源」): its
+/// page lists the author's other books too — the source's own search for the author's name,
+/// only the books whose author is that author. A record with no library of its own (a module's,
+/// a bibliographic one) and a shelf with few of the author's works ask the modules whose
+/// search takes an author's name (`searchesAuthors`).
 enum AuthorWorksRequest: Hashable {
     /// The work's first 著者 (else its first credit) in the bundled catalogue.
     case aozora(AozoraWork, AozoraCatalogIndex)
     /// The catalog entry's first author's Gutenberg feed, without `excluding`.
     case gutenberg(GutenbergAuthor, excluding: GutenbergBook)
-    /// Other works by `versions`' authors on the shelf and in the WebDAV index.
+    /// Other works by `versions`' authors on the shelf and in the WebDAV index, then in the
+    /// modules that search by author.
     case shelf(versions: [WorkDetailRoute])
+    /// The 來源配置's search for the author, without the page's own book.
+    case source(sourceID: UUID, author: String, title: String, bookURL: String)
+    /// A record with no library of its own: the modules that search by author.
+    case modules(authors: [String], title: String)
 
     /// Where 查看全部 leads, for the libraries with an author page.
     var authorPage: PublicLibraryAuthorDestination? {
@@ -21,7 +32,7 @@ enum AuthorWorksRequest: Hashable {
             return AuthorWorks.aozoraPerson(of: work, in: index).map { .aozora($0, index) }
         case .gutenberg(let author, _):
             return .gutenberg(author)
-        case .shelf:
+        case .shelf, .source, .modules:
             return nil
         }
     }
@@ -34,6 +45,8 @@ enum AuthorWorksRequest: Hashable {
         case .aozora(let work, _): ["aozora", work.id]
         case .gutenberg(let author, let book): ["gutenberg", author.id, book.id]
         case .shelf(let versions): ["shelf"] + versions.map(\.nodeKey.sortKey)
+        case .source(let sourceID, let author, let title, let bookURL): ["source", sourceID.uuidString, author, title, bookURL]
+        case .modules(let authors, let title): ["modules", title] + authors
         }
     }
 }
@@ -54,6 +67,34 @@ enum AuthorWorks {
             .filter { $0.id != work.id }
             .prefix(limit)
             .map { CollectionEntry.aozora($0, index: index) }
+    }
+
+    /// A source's search results for an author's name as that author's other books: a search
+    /// matches titles too (「魯迅傳」 for 魯迅), so only a book whose author is compatible with
+    /// `author` (`WorkMatchKey`) is kept; never the page's own book, by address or by title,
+    /// and each title once.
+    static func sameAuthor(_ books: [OnlineBook], author: String, excludingTitle title: String, bookURL: String,
+                           limit: Int) -> [OnlineBook] {
+        let own = WorkMatchKey.title(title)
+        let ownURL = OnlineBookURLKey.normalize(bookURL)
+        var seen: Set<String> = [own]
+        // Not lazy: the filter remembers the titles it has kept, and must see each book once.
+        return Array(books.filter { book in
+            WorkMatchKey.authorsCompatible([author], [book.author])
+                && OnlineBookURLKey.normalize(book.bookUrl) != ownURL
+                && seen.insert(WorkMatchKey.title(book.name)).inserted
+        }.prefix(limit))
+    }
+
+    /// `more` after `entries`, without a work `entries` or the page already has, by title.
+    static func appending(_ more: [CollectionEntry], to entries: [CollectionEntry], excludingTitles titles: [String],
+                          limit: Int) -> [CollectionEntry] {
+        func title(_ entry: CollectionEntry) -> String? {
+            if case .item(let record, _, _) = entry { return WorkMatchKey.title(record.title) }
+            return nil
+        }
+        var seen = Set(titles.map(WorkMatchKey.title) + entries.compactMap(title))
+        return Array((entries + more.filter { entry in title(entry).map { seen.insert($0).inserted } ?? false }).prefix(limit))
     }
 
     /// The feed's books without the one on the page.
@@ -123,9 +164,15 @@ final class AuthorWorksModel: ObservableObject {
 
     typealias LoadGutenberg = @MainActor (GutenbergAuthor) async throws -> [CollectionEntry]
     typealias LoadShelf = @MainActor ([WorkDetailRoute], BookStore) async -> [CollectionEntry]
+    /// A 來源配置's search for a keyword: nil when the source is gone or cannot search.
+    typealias SearchSource = @MainActor (UUID, String) async throws -> (source: BookSource, books: [OnlineBook])?
+    /// The modules' works by these authors, the most certain first.
+    typealias LoadModules = @MainActor ([String]) async -> [CollectionEntry]
 
     private let loadGutenberg: LoadGutenberg
     private let loadShelf: LoadShelf
+    private let searchSource: SearchSource
+    private let loadModules: LoadModules
 
     /// Defaults to the app's sources: Gutenberg's provider for its author feeds, the shelf's
     /// for its works.
@@ -137,10 +184,22 @@ final class AuthorWorksModel: ObservableObject {
         },
         loadShelf: @escaping LoadShelf = { versions, store in
             await ShelfProvider(store: store).otherWorks(byAuthorsOf: versions, limit: AuthorWorks.limit)
-        }
+        },
+        searchSource: @escaping SearchSource = { sourceID, keyword in
+            guard let source = BookSourceStore.shared.source(id: sourceID), !source.searchUrl.isEmpty else { return nil }
+            // Through the source's own search, as 搜索 asks it (`BookSourceSession` under it).
+            switch try await BookSourceFetcher.shared.searchOutcome(query: keyword, in: source) {
+            case .results(let books): return (source, books)
+            case .empty: return (source, [])
+            case .failed(let failure): throw failure
+            }
+        },
+        loadModules: @escaping LoadModules = { await ModuleAuthorWorks.load(authors: $0, limit: AuthorWorks.limit) }
     ) {
         self.loadGutenberg = loadGutenberg
         self.loadShelf = loadShelf
+        self.searchSource = searchSource
+        self.loadModules = loadModules
     }
 
     /// Loads the section for `request`; nil hides it. The same request is not loaded again when
@@ -169,9 +228,39 @@ final class AuthorWorksModel: ObservableObject {
                 state = .failed(error.localizedDescription)
             }
         case .shelf(let versions):
-            let entries = await loadShelf(versions, store)
+            var entries = await loadShelf(versions, store)
             guard !Task.isCancelled else { return }
+            if entries.count < AuthorWorks.limit {
+                // The shelf has few of them: the modules that search by author give the rest.
+                let authors = WorkMatchKey.knownAuthors(versions.flatMap(\.summary.authors))
+                let more = authors.isEmpty ? [] : await loadModules(authors)
+                guard !Task.isCancelled else { return }
+                entries = AuthorWorks.appending(more, to: entries, excludingTitles: versions.map(\.summary.title),
+                                                limit: AuthorWorks.limit)
+            }
             show(entries)
+        case .source(let sourceID, let author, let title, let bookURL):
+            do {
+                guard let found = try await searchSource(sourceID, author) else {
+                    show([])
+                    break
+                }
+                guard !Task.isCancelled else { return }
+                show(AuthorWorks.sameAuthor(found.books, author: author, excludingTitle: title, bookURL: bookURL,
+                                            limit: AuthorWorks.limit)
+                    .map { CollectionEntry.onlineBook($0, source: found.source) })
+            } catch {
+                guard !Task.isCancelled else { return }
+                // The row was never promised: a source whose search fails shows none, as one that
+                // finds nothing does. No retry block under a title the page did not have before.
+                AppLogger.network("⟐ author works: source search failed", error: SourceFailure.loggable(error),
+                                  context: ["source": sourceID.uuidString])
+                show([])
+            }
+        case .modules(let authors, let title):
+            let more = await loadModules(authors)
+            guard !Task.isCancelled else { return }
+            show(AuthorWorks.appending(more, to: [], excludingTitles: [title], limit: AuthorWorks.limit))
         }
         loaded = request
         if case .loaded(let entries) = state {

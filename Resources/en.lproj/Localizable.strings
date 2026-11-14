@@ -4499,3 +4499,12 @@
 "目錄預覽：開頭" = "Start";
 "目錄預覽：讀到" = "Last Read";
 "約 %@ 字" = "%@ characters";
+"讀者評論" = "Reader Reviews";
+"評論" = "Reviews";
+"最有幫助" = "Most Helpful";
+"滿分 %d 顆星" = "out of %d";
+"%d 則評分" = "%d Ratings";
+"評論來自 %@" = "Reviews from %@";
+"%@ 顆星，滿分 %d 顆星" = "%@ out of %d stars";
+"%d 人覺得有幫助" = "%d found this helpful";
+"沒有找到這位作者的作品" = "No works by this author were found";

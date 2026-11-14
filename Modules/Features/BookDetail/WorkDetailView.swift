@@ -8,14 +8,18 @@ private enum WorkDetailPush: Hashable {
     case aozoraReader(AozoraWork)
     /// 編輯遠端資料, for the version shown.
     case editor
-    /// A public library's author page, from the author's name or 作者其他作品's 查看全部.
-    case author(PublicLibraryAuthorDestination)
     /// Another work, from 作者其他作品 or 同系列.
     case work(WorkDetailRoute)
     /// The series page, from the hero's link or 同系列's 查看全部.
     case series(WorkSeriesShelf)
     /// A 青空文庫 分類's works (依分類's group, by id), from the hero's link.
     case aozoraClassification(String)
+    /// 讀者評論, every review the section showed the first of.
+    case reviews(WorkReviewSet)
+    /// The author's page, the one every source's author opens.
+    case authorPage(AuthorPageRequest)
+    /// A genre's works on this device, from a copy's genre link or 同題材's title.
+    case genre(String)
 }
 
 /// When 作品詳情 reads its series: for the versions read, again when they change.
@@ -98,6 +102,10 @@ struct WorkDetailView: View {
     @StateObject private var actions = RemoteLibraryActionModel()
     @StateObject private var authorWorks = AuthorWorksModel()
     @StateObject private var toc = WorkTableOfContentsModel()
+    /// 讀者評論: what a module's readers wrote about the work (`WorkReviews`).
+    @StateObject private var reviews = WorkReviewsModel()
+    /// A copy's genres and 同題材 (`ShelfGenresModel`).
+    @StateObject private var shelfGenres = ShelfGenresModel()
     /// 「尋找可用來源」 (7b-2): the books its search found of the work join `versions`. It runs on
     /// its own once the work's page shows (2026-10-17); a work with nothing to read takes on the
     /// first one found (2026-10-24).
@@ -203,6 +211,8 @@ struct WorkDetailView: View {
                 if id == shownCopy?.id { sidecarRevision += 1 }
             }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
+            .task(id: reviewsQuery) { await reviews.load(reviewsQuery) }
+            .task(id: genreVersions?.map(\.nodeKey)) { await shelfGenres.load(genreVersions, store: store) }
             .task(id: seriesLoad) {
                 guard let seriesLoad else {
                     series = nil
@@ -302,13 +312,17 @@ struct WorkDetailView: View {
                     BookDetailRecommendationSection(reason: reason)
                 }
                 tableOfContents
+                BookDetailReviewsSection(reviews: reviews.reviews, onShowAll: { pushed = .reviews($0) })
                 if let series {
                     BookDetailSeriesSection(series: series, onShowAll: { pushed = .series(series) },
                                             onSelect: { pushed = .work($0) })
                 }
+                BookDetailShelfGenreSection(related: shelfGenres.related, onShowAll: { pushed = .genre($0) },
+                                            onSelect: { pushed = .work($0) })
                 BookDetailAuthorWorksSection(
                     state: authorWorks.state,
-                    onShowAll: authorWorksRequest?.authorPage.map { page in { pushed = .author(page) } },
+                    // Its title opens the author's page, as the author's name does (2026-11-14).
+                    onShowAll: authorLinks.first?.action,
                     onSelect: { pushed = .work($0) },
                     onRetry: { Task { await authorWorks.retry(authorWorksRequest, store: store) } }
                 )
@@ -369,8 +383,6 @@ struct WorkDetailView: View {
                     }
                     .environmentObject(store)
                 }
-            case .author(let destination):
-                WorkDetailAuthorPage(destination: destination).environmentObject(store)
             case .work(let route):
                 WorkDetailView(route: route).environmentObject(store)
             case .series(let series):
@@ -381,6 +393,12 @@ struct WorkDetailView: View {
                                               works: group.ids.compactMap { index.worksByID[$0] }, index: index)
                         .environmentObject(store)
                 }
+            case .reviews(let reviews):
+                WorkReviewsPage(reviews: reviews)
+            case .authorPage(let request):
+                AuthorPageView(request: request).environmentObject(store)
+            case .genre(let genre):
+                ShelfGenreWorksPage(genre: genre).environmentObject(store)
             }
         }
     }
@@ -468,24 +486,35 @@ struct WorkDetailView: View {
 
     // MARK: Author
 
-    /// The author's page in the public library the version is from; elsewhere the author is
-    /// plain text. None on the page a reader opened, where another book could open a second
-    /// reader (decision 32).
+    /// Each author's name as a link to the author's page (maintainer, 2026-11-14: the same page
+    /// from every source, never the search screen): this device's works by the author, and what
+    /// the version's own library has. A placeholder (「未知作者」) is no author and stays text.
+    /// None on the page a reader opened, where another book could open a second reader
+    /// (decision 32).
     private var authorLinks: [BookDetailAuthorAction] {
         guard readerContext == nil, let selected else { return [] }
+        func link(id: String, name: String, shown: String? = nil, context: AuthorPageRequest.Context) -> BookDetailAuthorAction {
+            BookDetailAuthorAction(id: id, name: shown ?? name,
+                                   action: { pushed = .authorPage(AuthorPageRequest(name: name, context: context)) })
+        }
         switch selected.opening {
         case .aozora(let work):
             guard let index = aozora.catalog else { return [] }
             return work.authorCredits.compactMap { credit in
                 guard let person = index.personsByID[credit.person] else { return nil }
-                return BookDetailAuthorAction(id: person.id + credit.role, name: person.name,
-                                              action: { pushed = .author(.aozora(person, index)) })
+                return link(id: person.id + credit.role, name: person.name, context: .library(.aozora(person, index)))
             }
         case .gutenberg:
             return (gutenbergAuthors[selected.nodeKey] ?? []).mainAuthors.map { author in
-                BookDetailAuthorAction(id: author.id, name: author.displayName, action: { pushed = .author(.gutenberg(author)) })
+                link(id: author.id, name: author.displayName, context: .library(.gutenberg(author)))
             }
-        case .copy, .opdsEntry, .webDAVFile, .onlineBook, .moduleBook, .bibliographic:
+        case .copy, .opdsEntry, .webDAVFile, .moduleBook, .bibliographic:
+            return WorkMatchKey.knownAuthors(selected.summary.authors).map { name in
+                // The text the page shows of the name; the page is opened for the name as recorded.
+                link(id: name, name: name, shown: display?.text(name), context: .device)
+            }
+        case .onlineBook:
+            // A book-source version draws its source's own page, which links its author itself.
             return []
         }
     }
@@ -498,12 +527,12 @@ struct WorkDetailView: View {
             return work.otherCredits.enumerated().compactMap { offset, credit in
                 guard let person = index.personsByID[credit.person] else { return nil }
                 return BookDetailInfoItem(id: "credit\(offset)", label: localized(credit.role), value: person.name,
-                                          action: { pushed = .author(.aozora(person, index)) })
+                                          action: { pushed = .authorPage(AuthorPageRequest(name: person.name, context: .library(.aozora(person, index)))) })
             }
         case .gutenberg:
             return (gutenbergAuthors[version.nodeKey] ?? []).contributors.map { author in
                 BookDetailInfoItem(id: "credit.\(author.id)", label: localized(author.roleKey), value: author.displayName,
-                                   action: { pushed = .author(.gutenberg(author)) })
+                                   action: { pushed = .authorPage(AuthorPageRequest(name: author.displayName, context: .library(.gutenberg(author)))) })
             }
         case .copy, .opdsEntry, .webDAVFile, .onlineBook, .moduleBook, .bibliographic:
             return []
@@ -526,8 +555,10 @@ struct WorkDetailView: View {
         return keys.isEmpty ? nil : SeriesLoad(versions: keys)
     }
 
-    /// The links under the author: a 青空文庫 work's 分類, which open 依分類's list, then the
-    /// series page: 「三體 · 第 2 冊 ›」. Only what the version shown has.
+    /// The links under the author: a 青空文庫 work's 分類, which open 依分類's list; a copy's or a
+    /// library file's genres, which open that genre's works on this device (2026-11-14: a page of
+    /// its own, as a 來源配置's genre has); then the series page: 「三體 · 第 2 冊 ›」. Only what the
+    /// version shown has.
     private var heroLinks: [BookDetailLink] {
         var links: [BookDetailLink] = []
         if let selected, case .aozora(let work) = selected.opening, let index = aozora.catalog {
@@ -536,11 +567,38 @@ struct WorkDetailView: View {
                                action: { pushed = .aozoraClassification(group.id) })
             }
         }
+        if genreVersions != nil {
+            links += shelfGenres.genres.map { genre in
+                BookDetailLink(id: "genre.\(genre)", title: genre, action: { pushed = .genre(genre) })
+            }
+        }
         if let series {
             links.append(BookDetailLink(id: "series", title: series.line, action: { pushed = .series(series) },
                                         hint: localized("顯示這個系列的作品")))
         }
         return links
+    }
+
+    /// The versions whose genres the page links: those this device knows, for a copy or a library
+    /// file, once they are read. Not a public library's work (青空文庫 has its own 分類), nor a
+    /// record with no copy here, nor the page a reader opened (decision 32).
+    private var genreVersions: [WorkDetailRoute]? {
+        guard readerContext == nil, versionsLoaded, let selected else { return nil }
+        switch selected.opening {
+        case .copy, .opdsEntry, .webDAVFile: return listed
+        case .aozora, .gutenberg, .onlineBook, .moduleBook, .bibliographic: return nil
+        }
+    }
+
+    /// What 讀者評論 asks the modules about: the work as the page names it, and the ISBNs of the
+    /// versions this device knows. Once those are read, so a copy's ISBN is asked by; not on the
+    /// page a reader opened, which shows its book and nothing around it (decision 32).
+    private var reviewsQuery: WorkReviewQuery? {
+        guard readerContext == nil, versionsLoaded else { return nil }
+        let isbns = listed.flatMap { $0.record.identifiers.filter { $0.scheme == .isbn13 }.map(\.value) }
+        return WorkReviewQuery(title: route.summary.title, authors: route.summary.authors, isbns: isbns,
+                               contentKind: route.record.contentKind,
+                               record: route.record.key.instance.type == .module ? route.record.key : nil)
     }
 
     /// Where 作者其他作品 reads from for the version shown: its library's record of the author,
@@ -557,7 +615,12 @@ struct WorkDetailView: View {
             // The versions known: a book 「尋找可用來源」 found is no shelf work, and each one
             // found would read the author's works again.
             return .shelf(versions: listed)
-        case .onlineBook, .moduleBook, .bibliographic:
+        case .moduleBook, .bibliographic:
+            // No library of its own records its author: the modules that search by author do.
+            let authors = WorkMatchKey.knownAuthors(selected.summary.authors)
+            return authors.isEmpty ? nil : .modules(authors: authors, title: selected.summary.title)
+        case .onlineBook:
+            // A book-source version draws its source's own page, which lists them itself.
             return nil
         }
     }
@@ -966,7 +1029,7 @@ struct WorkDetailView: View {
         switch push {
         case .reader(let id, _): id
         case .aozoraReader(let work): readCopy(of: SourceRecord.derived(from: work).key)?.id
-        case .editor, .author, .work, .series, .aozoraClassification: nil
+        case .editor, .work, .series, .aozoraClassification, .reviews, .authorPage, .genre: nil
         }
     }
 
