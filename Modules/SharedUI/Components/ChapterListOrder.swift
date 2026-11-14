@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 目錄's 正序／倒序 (回饋 #37), shared by every chapter list: the reader's 目錄, the comic
-/// reader's 目錄 and 作品詳情's full 目錄.
+/// 目錄's 正序／倒序 (回饋 #37), shared by every chapter list: the reader's 目錄, which a detail
+/// page's 目錄 opens too, and the comic reader's 目錄.
 ///
 /// Display only. legado and Sigma reverse the stored table of contents and renumber it — a
 /// repair for sources that list newest first, which also flips 上一章／下一章. MD3 reverses the
@@ -92,7 +92,7 @@ private final class ChapterListOrderNode<Item> {
 }
 
 /// The 目錄 toolbar's 正序／倒序 control: a native menu holding a picker, so the choice shows a
-/// checkmark and VoiceOver reads 排序 with the current order as its value.
+/// checkmark; VoiceOver reads 排序 with the current order as its value.
 struct ChapterListOrderMenu: View {
     @Binding var order: ChapterListOrder
 
@@ -105,8 +105,14 @@ struct ChapterListOrderMenu: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Label(localized("排序"), systemImage: "arrow.up.arrow.down")
-                .labelStyle(.iconOnly)
+            // The symbol alone, not `Label(…).labelStyle(.iconOnly)`: SwiftUI turns a menu whose
+            // label is a `Label` into a native bar button (`_UIButtonBarButton`), and on iOS 27
+            // that button keeps the menu's accessibility label and drops its value, so
+            // VoiceOver read 排序 without the order (回饋 #37 again; iOS 27.2 simulator,
+            // 2026-11-13). With an image for its label the item stays SwiftUI's own element,
+            // which reads both, and the menu is the same native menu.
+            Image(systemName: "arrow.up.arrow.down")
+                .accessibilityHidden(true)
         }
         .accessibilityLabel(localized("排序"))
         .accessibilityValue(order.title)
