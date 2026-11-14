@@ -273,7 +273,8 @@ struct OnlineBookView: View {
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
                 sourceGestures: sourceCallBacks?.gestures,
                 links: linksGenres ? sourceLinks.links(for: tags) : [],
-                seriesFan: seriesFan
+                seriesFan: seriesFan,
+                source: heroSource
             )
         } content: {
             if let intro = shown.intro {
@@ -283,7 +284,8 @@ struct OnlineBookView: View {
                     baseURL: intro.isSourcesOwn ? currentBook.bookUrl : nil,
                     onAction: introAction(isSourcesOwn: intro.isSourcesOwn),
                     readsSourceFormats: intro.isSourcesOwn,
-                    isUnavailable: intro.isUnavailable
+                    isUnavailable: intro.isUnavailable,
+                    links: linksGenres ? sourceLinks.links(for: tags) : []
                 )
             }
             BookDetailChapterSection(
@@ -293,7 +295,8 @@ struct OnlineBookView: View {
                 errorMessage: tocError,
                 latestChapter: displayLatestChapter,
                 onRetry: { Task { await loadTOC() } },
-                onShowAll: { showChapterList = true }
+                onShowAll: { showChapterList = true },
+                preview: .latestAndResume(resumeIndex: resumeChapterIndex)
             ) { offset, chapter in
                 BookDetailChapterRow(
                     title: BookDetailChapterTitle.display(chapter, offset: offset),
@@ -415,17 +418,14 @@ struct OnlineBookView: View {
             pendingChapterSelection = nil
             openReader(chapterIndex: chapterIndex)
         }) {
-            NavigationStack {
-                BookDetailChapterListSheet(
-                    chapters: chapters,
-                    bookID: addedBookId,
-                    trailing: .disclosure,
-                    onSelect: { offset in
-                        pendingChapterSelection = chapters[offset].index
-                        showChapterList = false
-                    }
-                )
-            }
+            // The app's one 目錄, the reader's; it closes itself on a pick, and the chapter opens
+            // once it is gone.
+            ReaderTOCView(
+                detailChapters: chapters, bookID: addedBookId,
+                current: resumeChapterIndex.flatMap { resume in chapters.firstIndex { $0.index == resume } },
+                accessory: .disclosure, isPresented: $showChapterList,
+                onSelect: { offset in pendingChapterSelection = chapters[offset].index }
+            )
         }
         .onAppear {
             checkAlreadyInShelf()
@@ -505,8 +505,9 @@ struct OnlineBookView: View {
 
     private var shelfAction: BookDetailAction {
         BookDetailAction(
+            // The shelf's state, not what a tap does: a tap asks before it takes the book off.
             title: alreadyInShelf
-                ? localized("移除書架")
+                ? localized("已在書架")
                 : (addingToShelf ? localized("加入中…") : localized("加入書架")),
             systemImage: alreadyInShelf ? "checkmark" : "plus",
             isBusy: addingToShelf,
@@ -520,18 +521,25 @@ struct OnlineBookView: View {
 
     private var infoItems: [BookDetailInfoItem] {
         var items: [BookDetailInfoItem] = []
-        if !displayWordCount.isEmpty {
-            items.append(BookDetailInfoItem(
-                id: "wordCount", label: localized("字數"), value: displayWordCount
-            ))
-        }
         if !chapters.isEmpty {
             items.append(BookDetailInfoItem(
                 id: "chapters", label: localized("章節"), value: chapters.count.formatted()
             ))
         }
-        items.append(.source(name: sourceName) { showSourcePicker = true })
         return items
+    }
+
+    /// 來源, on the hero's panel: the source read from, whose name opens 換源, then what is
+    /// known of the book there: its chapters and its length, rounded (maintainer, 2026-11-12:
+    /// the length is said on the panel, in 萬, not listed exactly among 作品資訊).
+    private var heroSource: BookDetailHeroSource {
+        var facts = [localized("線上")]
+        if !chapters.isEmpty { facts.append(String(format: localized("%d 章"), chapters.count)) }
+        if let length = OnlineBookMetadataFormatter.roundedWordCount(displayWordCount,
+                                                                     locale: Locale(identifier: gs.localeIdentifier)) {
+            facts.append(length)
+        }
+        return BookDetailHeroSource(name: sourceName, switchAction: { showSourcePicker = true }, facts: facts)
     }
 
     /// The runtime variables the next fetch, shelf add or reader open will carry.

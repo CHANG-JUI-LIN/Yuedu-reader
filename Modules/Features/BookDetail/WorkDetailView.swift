@@ -281,7 +281,8 @@ struct WorkDetailView: View {
                            // fan behind the cover is silent to VoiceOver. The series link replaces it.
                            meta: route.summary.series.map { display?.text($0) ?? $0 } ?? "",
                            primary: primaryAction, secondary: secondaryAction,
-                           authorActions: authorLinks, links: heroLinks, seriesFan: seriesFan)
+                           authorActions: authorLinks, links: heroLinks, seriesFan: seriesFan,
+                           source: selected.map(heroSource))
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status
@@ -295,7 +296,7 @@ struct WorkDetailView: View {
                     // Never a book source's own description: a book-source version draws its
                     // own page. Legado's formats are not read here (decision 33).
                     BookDetailIntroSection(text: intro.string, isExpanded: $introExpanded, readsSourceFormats: false,
-                                           isUnavailable: intro.isUnavailable)
+                                           isUnavailable: intro.isUnavailable, links: heroLinks)
                 }
                 if let reason = route.recommendationReason {
                     BookDetailRecommendationSection(reason: reason)
@@ -337,12 +338,9 @@ struct WorkDetailView: View {
             openChapter(chapter)
         }) {
             if case .loaded(let bookID, let chapters) = toc.state {
-                NavigationStack {
-                    BookDetailChapterListSheet(chapters: chapters, bookID: bookID, trailing: .disclosure, onSelect: { offset in
-                        pendingChapter = chapters[offset]
-                        showChapterList = false
-                    })
-                }
+                // The app's one 目錄, the reader's; it closes itself on a pick.
+                ReaderTOCView(detailChapters: chapters, bookID: bookID, accessory: .disclosure,
+                              isPresented: $showChapterList, onSelect: { offset in pendingChapter = chapters[offset] })
             }
         }
         .navigationDestination(item: $pushed) { push in
@@ -640,10 +638,10 @@ struct WorkDetailView: View {
         BookDetailResume.detail(chapterIndex: nil, progress: readingCopy?.currentPosition)
     }
 
-    /// 加入書架 for the version shown; 已加入書架 once its copy is on the shelf.
+    /// 加入書架 for the version shown; 已在書架 once its copy is on the shelf.
     private var secondaryAction: BookDetailAction? {
         guard let version = selected else { return nil }
-        let added = BookDetailAction(title: localized("已加入書架"), systemImage: "checkmark", isEnabled: false, action: {})
+        let added = BookDetailAction(title: localized("已在書架"), systemImage: "checkmark", isEnabled: false, action: {})
         switch version.opening {
         case .copy(let id):
             return copy(id)?.isInBookshelf == true ? added : nil
@@ -705,8 +703,7 @@ struct WorkDetailView: View {
 
     private var infoItems: [BookDetailInfoItem] {
         guard let version = selected else { return [] }
-        var result = [sourceItem(version)]
-        result += contributorItems(version)
+        var result = contributorItems(version)
         if let item = libraryItem(of: version), let format = selectedFormat(of: version) {
             result.append(BookDetailInfoItem(
                 id: "format", label: localized("格式"), value: formatLabel(format),
@@ -759,33 +756,42 @@ struct WorkDetailView: View {
         }
     }
 
-    /// 來源: the version shown, switched in place from its menu when the work has others. The
-    /// work's own page searches the enabled sources on its own (7b-2) — what it finds joins the
-    /// menu, and how the search stands is the row's second line (maintainer, 2026-10-17: one row,
-    /// 「來源」; it is automatic, so no 「尋找可用來源」 of its own). Not on the page a reader opened:
-    /// it shows that reader's book only (decision 32).
-    private func sourceItem(_ version: WorkDetailRoute) -> BookDetailInfoItem {
-        let choice = versionChoice(version)
-        guard readerContext == nil else {
-            return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version),
-                                      detail: choice == nil ? nil : localized("換源"), choice: choice,
-                                      accessibilityInputLabels: choice == nil ? [] : [localized("換源")])
-        }
+    /// 來源, on the hero's panel: the version shown, switched in place from its name's menu when
+    /// the work has others. The work's own page searches the enabled sources on its own (7b-2) —
+    /// what it finds joins the menu, and how the search stands is beside the name (maintainer,
+    /// 2026-10-17: it is automatic, so no 「尋找可用來源」 of its own); with nothing to say of the
+    /// search, how many sources the work has. Not on the page a reader opened: it shows that
+    /// reader's book only (decision 32).
+    private func heroSource(_ version: WorkDetailRoute) -> BookDetailHeroSource {
+        var choice = versionChoice(version)
+        var source = BookDetailHeroSource(name: sourceName(of: version), choice: choice,
+                                          count: versions.count > 1 ? versions.count : nil, facts: sourceFacts(version))
+        guard readerContext == nil else { return source }
         let status = searchStatus
         let followUp: (title: String, action: () -> Void)? = switch finder.state {
         case .done(more: true): (localized("繼續搜索"), { finder.resume() })
         case .failed: (localized("重試"), findSources)
         case .idle, .searching, .done, .noSources: nil
         }
-        if var choice {
-            choice.extra = followUp
-            return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version),
-                                      detail: status.isEmpty ? localized("換源") : status, choice: choice,
-                                      accessibilityInputLabels: [localized("換源")], spokenDetail: status.isEmpty ? nil : status)
+        if choice != nil {
+            // In the menu, under the versions.
+            choice?.extra = followUp
+            source.choice = choice
+        } else {
+            source.followUp = followUp
         }
-        return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version),
-                                  detail: followUp.map { "\(status) · \($0.title)" } ?? (status.isEmpty ? nil : status),
-                                  action: followUp?.action, spokenDetail: status.isEmpty ? nil : status)
+        if !status.isEmpty { source.status = status }
+        return source
+    }
+
+    /// What is known of the file the version reads: its format and size.
+    private func sourceFacts(_ version: WorkDetailRoute) -> [String] {
+        guard libraryItem(of: version) != nil, let format = selectedFormat(of: version) else { return [] }
+        var facts = [formatLabel(format)]
+        if let size = format.size, size > 0 {
+            facts.append(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+        }
+        return facts
     }
 
     /// How the automatic search stands: 「搜尋來源配置中…」, 「找到 2 個來源」, nothing yet.
@@ -1214,23 +1220,24 @@ extension WorkSourceFinder.State {
 }
 
 #Preview("作品詳情 · 來源") {
-    // 來源 as 作品資訊 shows it while the automatic search runs, after it, and when it failed.
+    // 來源 on the hero's panel: after the automatic search found a source, and when it failed.
     @Previewable @State var version = "local"
     let versions = BookDetailInfoChoice(options: [.init(id: "local", title: "本機"), .init(id: "a", title: "書山聚合 · 可閱讀")],
                                         selection: $version)
+    let read = BookDetailAction(title: localized("開始閱讀"), systemImage: "book", action: {})
+    let shelve = BookDetailAction(title: localized("加入書架"), systemImage: "plus", action: {})
     ScrollView {
-        BookDetailInfoSection(items: [
-            BookDetailInfoItem(id: "searching", label: localized("來源"), value: "本機", detail: localized("搜尋來源配置中…"),
-                               spokenDetail: localized("搜尋來源配置中…")),
-            BookDetailInfoItem(id: "found", label: localized("來源"), value: "本機",
-                               detail: String(format: localized("找到 %d 個來源"), 1), choice: versions,
-                               spokenDetail: String(format: localized("找到 %d 個來源"), 1)),
-            BookDetailInfoItem(id: "unreadable", label: localized("來源"), value: localized("只有資料"),
-                               detail: localized("未找到可用來源"), spokenDetail: localized("未找到可用來源")),
-            BookDetailInfoItem(id: "failed", label: localized("來源"), value: "本機",
-                               detail: "\(localized("搜索失敗")) · \(localized("重試"))", action: {},
-                               spokenDetail: localized("搜索失敗")),
-        ])
+        VStack(spacing: DSSpacing.xl) {
+            BookDetailHero(artworkShape: .book, cover: GeneratedBookCover(title: "無名之書", author: "佚名"),
+                           title: "無名之書", author: "佚名", meta: "", primary: read, secondary: shelve,
+                           source: BookDetailHeroSource(name: "本機", choice: versions,
+                                                        status: String(format: localized("找到 %d 個來源"), 1),
+                                                        facts: ["EPUB", "2.1 MB"]))
+            BookDetailHero(artworkShape: .book, cover: GeneratedBookCover(title: "無名之書", author: "佚名"),
+                           title: "無名之書", author: "佚名", meta: "", primary: read, secondary: shelve,
+                           source: BookDetailHeroSource(name: "本機", status: localized("搜索失敗"),
+                                                        followUp: (localized("重試"), {})))
+        }
     }
 }
 

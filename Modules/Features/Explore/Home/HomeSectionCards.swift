@@ -495,14 +495,12 @@ struct HomeBandGround: ViewModifier {
 
     /// The header's line under the section's name.
     static func line(for cover: CoverTint.RGB?) -> CoverTint.RGB {
-        CoverTint.lightTint(for: cover ?? CoverTint.placeholder)
+        CoverTint.blockLine(for: cover)
     }
 
     /// Also behind the header on its own, which its long press lifts out of the band.
     static func ground(for cover: CoverTint.RGB?, contrast: ColorSchemeContrast) -> Color {
-        guard let cover else { return DSColor.coverTintPlaceholder }
-        return CoverTint.background(for: cover, under: line(for: cover),
-                                    minimumContrast: contrast == .increased ? 7 : 4.5).color
+        CoverTint.blockGround(for: cover, increasedContrast: contrast == .increased).color
     }
 
     func body(content: Content) -> some View {

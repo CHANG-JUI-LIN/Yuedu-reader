@@ -2,10 +2,13 @@ import SwiftUI
 
 // MARK: - Book detail building blocks
 //
-// The detail pages are laid out as Apple Books lays out a book and Apple Podcasts a
-// show: the artwork centred over a faint wash of its hue, the title and author under it,
-// the primary action directly beneath, then the description, the chapter list and the
-// information strip. Every detail page composes these pieces; none draws its own copy.
+// The detail pages are laid out as Apple Books' store lays out a book (maintainer,
+// 2026-11-12): the artwork, large, on a block of its own colour with the title and author
+// under it and a panel that names the source and holds the two actions; then, on the page's
+// own ground, the description, the chapter list, what the work is related to and its
+// information, each under a bold title, in grey text, with a hairline between sections and
+// none between rows, and no accent colour. Every detail page composes these pieces; none
+// draws its own copy.
 
 /// One action button on a detail page.
 struct BookDetailAction {
@@ -201,7 +204,7 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                 }
                 .modifier(BookDetailRefreshModifier(onRefresh: onRefresh))
                 // iOS 26's soft top edge fades whatever scrolls under the navigation bar into
-                // the page background — it turned the cover wash under the bar into a flat
+                // the page background — it turned the cover's colour under the bar into a flat
                 // band. The cover shows through while it is on screen; once it has scrolled
                 // away the edge effect returns to keep the bar's title and button legible.
                 .softScrollEdges(hidingTop: !heroScrolledAway)
@@ -214,8 +217,10 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                     }
                 }
                 .pageBackgroundToolbar(for: .global)
-                // The bar's title and buttons over a tinted page are white too.
-                .toolbarColorScheme(pageTint == nil ? nil : .dark, for: .navigationBar)
+                // The bar's title and buttons over a tinted page are white too, and over the
+                // hero's block of colour until it has scrolled away.
+                .toolbarColorScheme(pageTint != nil || !heroScrolledAway ? .dark : nil, for: .navigationBar)
+                .background { BarItemsOnBlock(isOnBlock: pageTint == nil && !heroScrolledAway) }
                 .toolbarTitleDisplayMode(.inline)
                 .hidesRootTabBar()
                 .toolbar {
@@ -265,7 +270,7 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
             VStack(spacing: 0) {
                 if embedding != nil {
                     BookDetailCardHeader(hasActions: Actions.self != EmptyView.self) { actions }
-                        // Over the hero, whose cover wash runs up behind it.
+                        // Over the hero, whose block of colour runs up behind it.
                         .zIndex(1)
                 }
                 hero
@@ -391,6 +396,61 @@ struct CardButtonGlass: ViewModifier {
     }
 }
 
+/// The bar's back button and items in white while the bar is over the hero's block of colour.
+/// Before iOS 26 they keep the app's tint, which does not read on a block of any colour (system
+/// blue on a dark olive block is under 3:1; seen on the iOS 18.6 simulator, 2026-11-12), and
+/// SwiftUI has no modifier that reaches the back button of a pushed page. From iOS 26 each item
+/// sits on its own glass, which takes the colour under it, and this does nothing.
+///
+/// It sets the navigation bar's own tint while the page shows and the hero has not scrolled
+/// away, and clears it again (nil inherits the app's tint, as before) when either ends.
+private struct BarItemsOnBlock: UIViewControllerRepresentable {
+    let isOnBlock: Bool
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.isOnBlock = isOnBlock
+    }
+
+    final class Controller: UIViewController {
+        var isOnBlock = false {
+            didSet { if isOnBlock != oldValue { apply() } }
+        }
+        private var isShown = false
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            isShown = true
+            apply()
+        }
+
+        /// Again once it is in the stack: SwiftUI can show the page before this controller has
+        /// a parent, and `navigationController` is nil until then (iOS 18.6 simulator).
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            isShown = true
+            apply()
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            apply()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            isShown = false
+            apply()
+        }
+
+        private func apply() {
+            if #available(iOS 26.0, *) { return }
+            navigationController?.navigationBar.tintColor = isShown && isOnBlock ? UIColor(DSColor.textOnFixedFill) : nil
+        }
+    }
+}
+
 private struct BookDetailRefreshModifier: ViewModifier {
     let onRefresh: (() async -> Void)?
 
@@ -440,6 +500,39 @@ private extension View {
     }
 }
 
+/// Where the page reads the book from, on the hero's panel: the source's name, which switches
+/// it where the work has another, and what is known of this copy.
+struct BookDetailHeroSource {
+    var name: String
+    /// The work's versions, picked in place from the name's menu (作品詳情).
+    var choice: BookDetailInfoChoice?
+    /// 換源's sheet, opened from the name (a book source's page). Never an item of `choice`'s
+    /// menu: iOS 17 drops a sheet presented while a menu dismisses.
+    var switchAction: (() -> Void)?
+    /// How the page's search for sources stands, beside the name and read after it:
+    /// 「搜尋來源配置中…」, 「找到 2 個來源」.
+    var status: String?
+    /// How many sources the work has, beside the name when the search has nothing to say:
+    /// 「共 3 個來源」. Not read: the name's menu lists them.
+    var count: Int?
+    /// What the status does where no menu holds it: 重試, 繼續搜索.
+    var followUp: (title: String, action: () -> Void)?
+    /// What is known of the copy, one line: 線上, 1,432 章, EPUB, 2.1 MB.
+    var facts: [String] = []
+
+    var isSwitchable: Bool { choice != nil || switchAction != nil }
+}
+
+/// The top of a detail page (maintainer, 2026-11-12, after Apple Books' store page): the
+/// artwork, large, on a block of its own colour that runs up under the bars; the title, the
+/// author and one line of genres in light text on it; then a panel that names the source the
+/// page reads from and holds the two actions, the shelf's and reading, side by side and as
+/// tall as each other.
+///
+/// The block's colour is the cover's, darkened until the text reads on it
+/// (`CoverTint.blockGround`), in light and dark mode, under a theme's page picture, with
+/// Reduce Transparency and with Increase Contrast, where it is darkened further. A carousel
+/// card keeps its generated cover's own colours and ink (`BookDetailEmbedding.tone`).
 struct BookDetailHero<Cover: View>: View {
     enum ArtworkShape {
         /// A book jacket, 2:3 like the shelf grid.
@@ -467,11 +560,15 @@ struct BookDetailHero<Cover: View>: View {
     /// The series' other volumes, fanned behind the cover (`SeriesCoverFan`); nil for a book
     /// alone. Drawn behind the artwork's frame, so the hero's size never changes with it.
     var seriesFan: SeriesFan? = nil
+    /// The source the page reads from, on the panel over the actions; nil where the page has
+    /// one place only and nothing to say of it.
+    var source: BookDetailHeroSource? = nil
 
     @Environment(\.bookDetailEmbedding) private var embedding
-    /// The hue of the cover on screen, as its view reports it; nil until then, for a cover
-    /// with no bitmap (a generated one) and for a grey one (`CoverTint.wash`).
-    @State private var wash: CoverTint.Wash?
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The average colour of the cover on screen, as its view reports it; nil until then.
+    @State private var coverColor: CoverTint.RGB?
 
     private var artworkSize: CGSize {
         switch artworkShape {
@@ -487,30 +584,37 @@ struct BookDetailHero<Cover: View>: View {
         VStack(spacing: 0) {
             artwork
             titleBlock
-                .padding(.top, isCard ? DSLayout.cardCarouselCoverTitleSpacing : DSSpacing.lg)
-            actions
+                .padding(.top, isCard ? DSLayout.cardCarouselCoverTitleSpacing : DSSpacing.xl)
+            panel
                 .padding(.top, DSSpacing.lg)
         }
         .padding(.horizontal, DSSpacing.lg)
         // On a card the cover sits where Apple Books puts it, under the card's header.
-        .padding(.top, isCard ? DSLayout.cardCarouselCoverTop - DSSpacing.lg - DSLayout.minimumTapTarget : DSSpacing.lg)
-        .padding(.bottom, isCard ? DSLayout.cardCarouselTopBottomPadding : 0)
-        // In a widening card the text keeps its width; only the wash grows with it.
+        .padding(.top, isCard ? DSLayout.cardCarouselCoverTop - DSSpacing.lg - DSLayout.minimumTapTarget : DSSpacing.sm)
+        .padding(.bottom, isCard ? DSLayout.cardCarouselTopBottomPadding : DSSpacing.xl)
+        // In a widening card the text keeps its width; only the block grows with it.
         .frame(maxWidth: embedding?.contentWidth ?? .infinity)
         .frame(maxWidth: .infinity)
-        .background(alignment: .top) {
-            if let tone = embedding?.tone { cardTop(tone) } else { BookDetailCoverWash(wash: wash) }
-        }
+        .background(alignment: .top) { block }
+        .animation(reduceMotion ? nil : DSAnimation.standard, value: coverColor)
     }
 
-    /// In a carousel card: the cover's colours fill the card's top, running up behind
-    /// the header (the card clips it to its rounded top).
-    private func cardTop(_ tone: BookDetailCardTone) -> some View {
+    /// The block of colour behind the hero. It runs up past the hero's own top edge, under the
+    /// navigation and status bars (a card clips it to its rounded top), and stays inside the
+    /// safe area at the sides: a colour's own `.background` ran out under iPadOS 26's sidebar
+    /// (FB-136).
+    private var block: some View {
         GeometryReader { proxy in
             let extensionHeight = DSLayout.bookDetailBackdropTopExtension
-            LinearGradient(colors: [tone.top, tone.bottom], startPoint: .top, endPoint: .bottom)
-                .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
-                .offset(y: -extensionHeight)
+            Group {
+                if let tone = embedding?.tone {
+                    LinearGradient(colors: [tone.top, tone.bottom], startPoint: .top, endPoint: .bottom)
+                } else {
+                    CoverTint.blockGround(for: coverColor, increasedContrast: contrast == .increased).color
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
+            .offset(y: -extensionHeight)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -518,15 +622,23 @@ struct BookDetailHero<Cover: View>: View {
 
     private var isCard: Bool { embedding != nil }
 
-    private var primaryText: Color { embedding?.tone.ink ?? DSColor.textPrimary }
+    /// White on the block; a card's own ink on its paper.
+    private var primaryText: Color { embedding?.tone.ink ?? DSColor.textOnFixedFill }
+    /// The cover's hue made light, which the block is darkened for (`CoverTint.blockLine`).
     private var secondaryText: Color {
-        embedding.map { $0.tone.ink.opacity(DSLayout.cardSecondaryTextOpacity) } ?? DSColor.textSecondary
+        embedding.map { $0.tone.ink.opacity(DSLayout.cardSecondaryTextOpacity) } ?? CoverTint.blockLine(for: coverColor).color
+    }
+
+    /// A veil over the block for the panel and the second action: dark on the block, so the
+    /// light text on it reads better still; the card's ink, light, on its paper.
+    private func veil(_ opacity: Double) -> Color {
+        (embedding?.tone.ink ?? Color.black).opacity(opacity)
     }
 
     private var artwork: some View {
         let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
         return cover
-            .reportsCoverWash(to: $wash)
+            .environment(\.coverImageObserver, Self.observer(reportingTo: $coverColor))
             .frame(width: artworkSize.width, height: artworkSize.height)
             .clipShape(shape)
             .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
@@ -542,6 +654,16 @@ struct BookDetailHero<Cover: View>: View {
             .accessibilityHidden(true)
     }
 
+    /// Takes the average colour of the image the cover draws, off the main thread.
+    private static func observer(reportingTo color: Binding<CoverTint.RGB?>) -> @MainActor (UIImage) -> Void {
+        { image in
+            Task {
+                let found = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
+                if found != color.wrappedValue { color.wrappedValue = found }
+            }
+        }
+    }
+
     private var titleBlock: some View {
         VStack(spacing: DSSpacing.xs) {
             Text(title)
@@ -555,8 +677,8 @@ struct BookDetailHero<Cover: View>: View {
                 )
             if let gestures = sourceGestures, authorActions.isEmpty {
                 Text(author)
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(secondaryText)
+                    .font(DSFont.callout)
+                    .foregroundStyle(primaryText)
                     .lineLimit(1)
                     .sourceGesture(
                         tap: gestures.tapAuthor, longPress: gestures.longPressAuthor,
@@ -564,8 +686,8 @@ struct BookDetailHero<Cover: View>: View {
                     )
             } else if authorActions.isEmpty {
                 Text(author)
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(secondaryText)
+                    .font(DSFont.callout)
+                    .foregroundStyle(primaryText)
                     .lineLimit(1)
             } else {
                 ForEach(authorActions) { author in
@@ -576,20 +698,20 @@ struct BookDetailHero<Cover: View>: View {
                                 .font(DSFont.caption.weight(.semibold))
                                 .accessibilityHidden(true)
                         }
-                        .font(DSFont.subheadline)
+                        .font(DSFont.callout)
                         .frame(minHeight: DSLayout.minimumTapTarget)
                     }
-                    // A card sets the author line as tight under the title as Apple Books
-                    // does; the tap target keeps its height, overlapping the text around it.
-                    .padding(.vertical, isCard ? -DSSpacing.md : 0)
+                    // The author line sits as tight under the title as Apple Books sets it; the
+                    // tap target keeps its height, overlapping the text around it.
+                    .padding(.vertical, -DSSpacing.md)
                     .buttonStyle(.plain)
-                    // Quiet, as the author line is when it leads nowhere; the chevron says it does.
-                    .foregroundStyle(secondaryText)
+                    .foregroundStyle(primaryText)
                     .accessibilityIdentifier("publicLibrary.author.\(author.id)")
                 }
             }
             if let gestures = sourceGestures, !gestures.labels.isEmpty {
-                // One tappable label each, so the source learns which one (legado `clickBookLabel`).
+                // One tappable label each, so the source learns which one (legado `clickBookLabel`),
+                // and every one on the page: a long press is not offered from a menu.
                 WrappingFlowLayout(spacing: DSSpacing.sm, alignment: .center) {
                     ForEach(gestures.labels, id: \.self) { label in
                         Text(label)
@@ -602,180 +724,225 @@ struct BookDetailHero<Cover: View>: View {
                             )
                     }
                 }
-                .padding(.top, isCard ? DSSpacing.md : 0)
+                .padding(.top, DSSpacing.sm)
             } else if !links.isEmpty {
-                linkLine
-                    .padding(.top, isCard ? DSSpacing.md : 0)
+                genreLine
+                    .padding(.top, DSSpacing.sm)
             } else if !meta.isEmpty {
                 Text(meta)
                     .font(DSFont.footnote)
                     .foregroundStyle(secondaryText)
-                    .lineLimit(2)
-                    .padding(.top, isCard ? DSSpacing.md : 0)
+                    .lineLimit(1)
+                    .padding(.top, DSSpacing.sm)
             }
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
     }
 
-    /// One action leads (Editorial Minimalism, 2026-10-12): a quiet grey capsule carrying
-    /// only its words, and where reading resumes in grey after them; the second thing to do
-    /// (the shelf) is plain text beside it, as the maintainer's 方案 A draws them. Always one
-    /// row, at every text size: stacking them is what the maintainer rejected. The second
-    /// label keeps its width and the capsule's truncates first.
-    private var actions: some View {
-        HStack(spacing: DSSpacing.lg) {
-            primaryButton
-            secondaryButton
+    /// Genres on one line (maintainer, 2026-11-12: many of them, wrapped, were what was wrong
+    /// with the page): the first few, each its own button, and the rest in a 「+N」 menu. Fewer
+    /// are shown where they do not fit the line.
+    private var genreLine: some View {
+        ViewThatFits(in: .horizontal) {
+            genreRow(shown: min(links.count, DSLayout.bookDetailGenreLimit))
+            genreRow(shown: min(links.count, DSLayout.bookDetailGenreLimit - 1))
+            genreRow(shown: 1)
         }
+        // The 44pt tap targets would push the line away from the author; the text keeps its rhythm.
+        .padding(.vertical, -DSSpacing.md)
     }
 
-    @ViewBuilder
-    private var primaryButton: some View {
-        if embedding != nil {
-            // Apple Books' 取得: white whatever the card's colour, and the same white
-            // while the page loads, so paging between cards never changes it.
-            Button(action: primary.action) {
-                BookDetailActionLabel(action: primary, progressTint: DSColor.cardPrimaryActionLabel)
-            }
-            .buttonStyle(BookDetailCardActionStyle(fill: DSColor.cardPrimaryActionFill, label: DSColor.cardPrimaryActionLabel))
-            .disabled(!primary.isEnabled || primary.isBusy)
-        } else {
-            Button(action: primary.action) {
-                BookDetailCalmActionLabel(action: primary)
-            }
-            // Neutral, not the accent: the page's colour belongs to the book.
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-            .tint(DSColor.textSecondary)
-            .disabled(!primary.isEnabled || primary.isBusy)
-            .accessibilityLabel(primary.title)
-            .accessibilityValue(primary.detail ?? "")
-        }
-    }
-
-    @ViewBuilder
-    private var secondaryButton: some View {
-        if let secondary { secondaryButton(secondary) }
-    }
-
-    @ViewBuilder
-    private func secondaryButton(_ secondary: BookDetailAction) -> some View {
-        if let tone = embedding?.tone {
-            // Apple Books' card: the card's ink over a light veil of itself.
-            Button(action: secondary.action) {
-                BookDetailActionIcon(action: secondary, progressTint: tone.ink)
-                    .frame(width: DSLayout.cardActionHeight, height: DSLayout.cardActionHeight)
-            }
-            .buttonStyle(BookDetailCardActionStyle(fill: tone.ink.opacity(DSLayout.cardSecondaryActionFillOpacity), label: tone.ink))
-            .disabled(!secondary.isEnabled || secondary.isBusy)
-            .accessibilityLabel(secondary.title)
-            .removalConfirmation(secondary.removalConfirmation)
-        } else {
-            Button(action: secondary.action) {
-                HStack(spacing: DSSpacing.xs) {
-                    if secondary.isBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(secondary.title)
-                        .lineLimit(1)
+    private func genreRow(shown: Int) -> some View {
+        HStack(spacing: DSSpacing.sm) {
+            ForEach(Array(links.prefix(shown).enumerated()), id: \.element.id) { index, link in
+                if index > 0 {
+                    Text(verbatim: "·")
+                        .accessibilityHidden(true)
                 }
-                .font(DSFont.body)
-                .frame(minHeight: DSLayout.minimumTapTarget)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .tint(DSColor.textPrimary)
-            .fixedSize()
-            .layoutPriority(1)
-            .disabled(!secondary.isEnabled || secondary.isBusy)
-            .removalConfirmation(secondary.removalConfirmation)
-        }
-    }
-
-    /// Genres as centred plain text, each one its own button, wrapping onto more lines.
-    private var linkLine: some View {
-        // Each link's chevron ends it, so space alone separates them; a separator of its own
-        // could be left at the end or start of a wrapped row.
-        WrappingFlowLayout(spacing: DSSpacing.md, alignment: .center) {
-            ForEach(links) { link in
-                // Plain, quiet text with the chevron that says it leads somewhere.
                 Button(action: link.action) {
-                    HStack(spacing: DSSpacing.xxs) {
-                        Text(link.title)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.right")
-                            .font(DSFont.caption2.weight(.semibold))
-                            .accessibilityHidden(true)
-                    }
-                    .font(DSFont.footnote)
-                    .foregroundStyle(secondaryText)
-                    .frame(minHeight: DSLayout.minimumTapTarget)
-                    .contentShape(Rectangle())
+                    Text(link.title)
+                        .lineLimit(1)
+                        .frame(minHeight: DSLayout.minimumTapTarget)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint(link.hint ?? localized("顯示這個分類的作品"))
                 .accessibilityIdentifier("detail.link.\(link.id)")
             }
-        }
-        // The 44pt tap targets would push the line apart; the text keeps its rhythm.
-        .padding(.vertical, -DSSpacing.md)
-    }
-}
-
-/// The cover's hue as a faint wash behind a detail page's header, fading into the page: never
-/// the cover itself blurred, which turned a dull cover into grey haze. It runs up past the
-/// header's own top edge, under the navigation and status bars, so the bars float over it
-/// instead of ending it as a band. A cover with no hue — a generated one, a grey one —
-/// leaves the page background as it is, and so do a theme's page picture (it owns the
-/// background), Reduce Transparency and Increase Contrast.
-struct BookDetailCoverWash: View {
-    let wash: CoverTint.Wash?
-
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.colorScheme) private var colorScheme
-    @Bindable private var settings = GlobalSettings.shared
-    @ObservedObject private var subscriptions = SubscriptionStore.shared
-
-    var body: some View {
-        if let wash, !reduceTransparency, contrast != .increased,
-           PageBackgroundView.slice(for: .global, colorScheme: colorScheme, settings: settings,
-                                    subscriptions: subscriptions) == nil {
-            GeometryReader { proxy in
-                let extensionHeight = DSLayout.bookDetailBackdropTopExtension
-                LinearGradient(
-                    stops: [
-                        .init(color: wash.color(dark: colorScheme == .dark), location: 0),
-                        .init(color: wash.color(dark: colorScheme == .dark),
-                              location: DSLayout.bookDetailBackdropFadeStart),
-                        .init(color: .clear, location: 1),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
-                .offset(y: -extensionHeight)
+            if links.count > shown {
+                Menu {
+                    ForEach(links.dropFirst(shown)) { link in
+                        Button(link.title, action: link.action)
+                    }
+                } label: {
+                    Text(verbatim: "+\(links.count - shown)")
+                        .monospacedDigit()
+                        .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(localized("其他分類"))
+                .accessibilityValue((links.count - shown).formatted())
+                .accessibilityIdentifier("detail.link.more")
             }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        }
+        .font(DSFont.footnote)
+        .foregroundStyle(secondaryText)
+    }
+
+    // MARK: Panel
+
+    /// The source, what is known of the copy, and the two actions, on one panel. A page with no
+    /// source to name and nothing to say draws the actions alone.
+    @ViewBuilder
+    private var panel: some View {
+        // Where reading resumes is a fact of the copy, on its line; the action keeps its words.
+        let facts = (source?.facts ?? []) + [primary.detail].compactMap { $0 }.filter { !$0.isEmpty }
+        if source != nil || !facts.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                if let source { sourceRow(source) }
+                if !facts.isEmpty {
+                    Text(facts.joined(separator: " · "))
+                        .font(DSFont.footnote)
+                        .foregroundStyle(secondaryText)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .accessibilityIdentifier("detail.source.facts")
+                }
+                actions
+                    .padding(.top, DSSpacing.md)
+            }
+            .padding(DSSpacing.lg)
+            .background(veil(DSLayout.bookDetailSourcePanelOpacity),
+                        in: RoundedRectangle(cornerRadius: DSLayout.bookDetailSourcePanelRadius, style: .continuous))
+            // Narrower than the page's text, as Apple Books sets its panel in from the edges
+            // (maintainer, 2026-11-12: edge to edge, it was too wide).
+            .padding(.horizontal, DSLayout.bookDetailSourcePanelInset)
+        } else {
+            actions
+                .padding(.horizontal, DSLayout.bookDetailSourcePanelInset)
         }
     }
-}
 
-extension View {
-    /// Reads the hue of the cover this view draws into `wash`, for `BookDetailCoverWash`.
-    func reportsCoverWash(to wash: Binding<CoverTint.Wash?>) -> some View {
-        environment(\.coverImageObserver, { image in
-            Task {
-                let found = await Task.detached(priority: .utility) {
-                    CoverTint.average(of: image).flatMap(CoverTint.wash(for:))
-                }.value
-                if found != wash.wrappedValue { wash.wrappedValue = found }
+    private func sourceRow(_ source: BookDetailHeroSource) -> some View {
+        HStack(alignment: .center, spacing: DSSpacing.md) {
+            sourceName(source)
+            Spacer(minLength: DSSpacing.sm)
+            if let followUp = source.followUp {
+                Button(action: followUp.action) {
+                    Text([source.status, followUp.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(DSFont.footnote)
+                        .lineLimit(1)
+                        .frame(minHeight: DSLayout.minimumTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(primaryText)
+                .accessibilityIdentifier("detail.source.followUp")
+            } else if let status = source.status.flatMap({ $0.isEmpty ? nil : $0 })
+                        ?? source.count.map({ String(format: localized("共 %d 個來源"), $0) }) {
+                Text(status)
+                    .font(DSFont.footnote)
+                    .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+                    // Read with the name, as 來源's value.
+                    .accessibilityHidden(true)
             }
-        })
+        }
+        // The name's 44pt tap target would push the line of facts away from it.
+        .padding(.vertical, -DSSpacing.sm)
+    }
+
+    /// The source's name: a menu of the work's versions, the button that opens 換源, or plain
+    /// text where there is one place only. 來源 is what it is, the name its value, switching what
+    /// activating it does; 「換源」 stays reachable to Voice Control through the input labels.
+    @ViewBuilder
+    private func sourceName(_ source: BookDetailHeroSource) -> some View {
+        let label = HStack(spacing: DSSpacing.xs) {
+            Text(source.name)
+                .font(DSFont.body.weight(.semibold))
+                .lineLimit(1)
+            if source.isSwitchable {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(DSFont.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(primaryText)
+        .frame(minHeight: DSLayout.minimumTapTarget)
+        .contentShape(Rectangle())
+        let spoken = [source.name, source.followUp == nil ? source.status : nil]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "，")
+
+        if let choice = source.choice {
+            Menu {
+                Picker(localized("來源"), selection: choice.selection) {
+                    ForEach(choice.options) { Text($0.title).tag($0.id) }
+                }
+                if let extra = choice.extra {
+                    Divider()
+                    Button(extra.title, action: extra.action)
+                }
+            } label: {
+                label
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(localized("來源"))
+            .accessibilityValue(spoken)
+            .accessibilityHint(localized("點兩下切換來源配置"))
+            .accessibilityInputLabels([localized("換源"), localized("來源")])
+            .accessibilityIdentifier("detail.info.source")
+        } else if let action = source.switchAction {
+            Button(action: action) { label }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(localized("來源"))
+                .accessibilityValue(spoken)
+                .accessibilityHint(localized("點兩下切換來源配置"))
+                .accessibilityInputLabels([localized("換源"), localized("來源")])
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("detail.info.source")
+        } else {
+            label
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(localized("來源"))
+                .accessibilityValue(spoken)
+                .accessibilityIdentifier("detail.info.source")
+        }
+    }
+
+    /// The shelf's action and reading, side by side and as tall as each other, reading the
+    /// white one, as Apple Books sets 試讀 beside 取得. Always one row, at every text size:
+    /// stacking them is what the maintainer rejected (2026-10-12); a title truncates instead.
+    private var actions: some View {
+        HStack(spacing: DSSpacing.md) {
+            if let secondary { secondaryButton(secondary) }
+            primaryButton
+        }
+    }
+
+    private var primaryButton: some View {
+        Button(action: primary.action) {
+            BookDetailActionLabel(action: primary, progressTint: DSColor.cardPrimaryActionLabel, showsIcon: false)
+        }
+        .buttonStyle(BookDetailCardActionStyle(fill: DSColor.cardPrimaryActionFill, label: DSColor.cardPrimaryActionLabel))
+        .disabled(!primary.isEnabled || primary.isBusy)
+        // A page with nothing to read says so; a card keeps its white while its page loads, so
+        // paging between cards never changes it.
+        .opacity(isCard || primary.isEnabled || primary.isBusy ? 1 : DSLayout.bookDetailUnavailableActionOpacity)
+        .accessibilityLabel(primary.title)
+        .accessibilityValue(primary.detail ?? "")
+    }
+
+    private func secondaryButton(_ secondary: BookDetailAction) -> some View {
+        Button(action: secondary.action) {
+            BookDetailActionLabel(action: secondary, progressTint: primaryText)
+        }
+        .buttonStyle(BookDetailCardActionStyle(fill: veil(DSLayout.bookDetailSecondaryActionOpacity), label: primaryText))
+        .disabled(!secondary.isEnabled || secondary.isBusy)
+        .accessibilityLabel(secondary.title)
+        .removalConfirmation(secondary.removalConfirmation)
     }
 }
 
@@ -800,12 +967,14 @@ struct BookDetailCardActionStyle: ButtonStyle {
 private struct BookDetailActionLabel: View {
     let action: BookDetailAction
     let progressTint: Color
+    /// False for reading: its words alone. Busy, a spinner still shows.
+    var showsIcon = true
 
     var body: some View {
         // The icon goes first when the title does not fit beside it; the title then truncates.
         ViewThatFits(in: .horizontal) {
             HStack(spacing: DSSpacing.sm) {
-                leading
+                if showsIcon || action.isBusy { leading }
                 title
             }
             HStack(spacing: DSSpacing.sm) {
@@ -835,61 +1004,6 @@ private struct BookDetailActionLabel: View {
     }
 }
 
-/// A detail page's primary action as 方案 A draws it: its words alone, no icon, and where
-/// reading resumes in grey after them — 「繼續閱讀　第 12 章」. The resume point goes first
-/// when both do not fit; the title then truncates. Busy, a spinner takes the icon's place.
-private struct BookDetailCalmActionLabel: View {
-    let action: BookDetailAction
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(showsDetail: true)
-            row(showsDetail: false)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func row(showsDetail: Bool) -> some View {
-        HStack(spacing: DSSpacing.sm) {
-            if action.isBusy {
-                ProgressView()
-                    .controlSize(.small)
-            }
-            Text(action.title)
-                .font(DSFont.body.weight(.semibold))
-                .foregroundStyle(isEnabled ? DSColor.textPrimary : DSColor.textTertiary)
-            if showsDetail, let detail = action.detail {
-                Text(detail)
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .monospacedDigit()
-            }
-        }
-        .lineLimit(1)
-    }
-}
-
-/// The icon of a secondary action drawn as a circle; the title is its accessibility label.
-private struct BookDetailActionIcon: View {
-    let action: BookDetailAction
-    let progressTint: Color
-
-    var body: some View {
-        Group {
-            if action.isBusy {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(progressTint)
-            } else {
-                Image(systemName: action.systemImage)
-                    .font(DSFont.body.weight(.semibold))
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 // MARK: - 作品資訊
 
 /// One column of the information strip.
@@ -912,9 +1026,10 @@ struct BookDetailInfoItem: Identifiable {
 
     var spokenValue: String { [value, spokenDetail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "，") }
 
-    /// The current source, opening 換源. 來源 is what the item is, the source name its
-    /// value, switching what activating it does; the visible 「換源」 stays reachable
-    /// to Voice Control through the input labels.
+    /// The current source, opening 換源, where a page keeps it among its information (a video's;
+    /// a book's is on its hero's panel, `BookDetailHeroSource`). 來源 is what the item is, the
+    /// source name its value, switching what activating it does; the visible 「換源」 stays
+    /// reachable to Voice Control through the input labels.
     static func source(name: String, action: @escaping () -> Void) -> BookDetailInfoItem {
         BookDetailInfoItem(
             id: "source",
@@ -941,10 +1056,12 @@ struct BookDetailInfoChoice {
     var extra: (title: String, action: () -> Void)? = nil
 }
 
-/// 作品資訊: the copy's facts as Apple Books lists a book's Information — a titled section
-/// at the foot of the page, one label and value per row, hairlines between. It replaced the
-/// strip of columns under the hero (Editorial Minimalism, 2026-10-12), which gave chapter
-/// counts and source names the weight of the work itself.
+/// 作品資訊: the copy's facts as Apple Books' store lists a book's 系統需求 and 版本 — a titled
+/// section at the foot of the page, each fact its label in bold over its value in grey, no
+/// hairline between them (maintainer, 2026-11-12: rows with a line and a chevron each read
+/// as a settings page). It replaced the strip of columns under the hero (Editorial
+/// Minimalism, 2026-10-12), which gave chapter counts and source names the weight of the
+/// work itself.
 struct BookDetailInfoSection: View {
     let items: [BookDetailInfoItem]
 
@@ -953,8 +1070,7 @@ struct BookDetailInfoSection: View {
             VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 BookDetailSectionHeader(title: localized("作品資訊"))
                 VStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if index > 0 { Divider() }
+                    ForEach(items) { item in
                         cell(item)
                     }
                 }
@@ -1007,86 +1123,112 @@ struct BookDetailInfoSection: View {
     }
 
     private func row(_ item: BookDetailInfoItem) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DSSpacing.md) {
+        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
             Text(item.label)
-                .foregroundStyle(DSColor.textSecondary)
-            Spacer(minLength: DSSpacing.md)
-            VStack(alignment: .trailing, spacing: 2) {
-                // A choice or link without a detail line ends its value with the chevron, on
-                // the same line, as a Settings menu row does.
-                HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
-                    Text(item.value)
-                        .foregroundStyle(DSColor.textPrimary)
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(2)
-                    if item.detail == nil, item.isInteractive {
+                .fontWeight(.semibold)
+                .foregroundStyle(DSColor.textPrimary)
+            // A choice or link without a detail line ends its value with the chevron, on
+            // the same line, as a Settings menu row does.
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
+                Text(item.value)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+                if item.detail == nil, item.isInteractive {
+                    Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
+                        .font(DSFont.caption2.weight(.semibold))
+                        .foregroundStyle(DSColor.textSecondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            if let detail = item.detail {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(detail)
+                    if item.isInteractive {
                         Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
                             .font(DSFont.caption2.weight(.semibold))
-                            .foregroundStyle(DSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
                 }
-                if let detail = item.detail {
-                    HStack(spacing: DSSpacing.xs) {
-                        Text(detail)
-                        if item.isInteractive {
-                            Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
-                                .font(DSFont.caption2.weight(.semibold))
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .font(DSFont.footnote)
-                    .foregroundStyle(item.isInteractive ? DSColor.accent : DSColor.textSecondary)
-                    .lineLimit(1)
-                }
+                .font(DSFont.footnote)
+                .foregroundStyle(item.isInteractive ? DSColor.textPrimary : DSColor.textSecondary)
+                .lineLimit(1)
             }
         }
         .font(DSFont.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, DSSpacing.sm)
-        .frame(minHeight: DSLayout.minimumTapTarget)
+        .frame(minHeight: item.isInteractive ? DSLayout.minimumTapTarget : nil)
     }
 }
 
 // MARK: - Section header
 
-/// A section title in Apple's store style, with an optional trailing 「查看全部」.
+/// A section title in Apple's store style. One that leads to the rest of what it shows is a
+/// button, its chevron after its name, as the store's 讀者評論 › is (maintainer, 2026-11-12: no
+/// accent-coloured 「查看全部」 at the far end); `trailing` is a quiet count there (「100 章」).
 struct BookDetailSectionHeader<Accessory: View>: View {
     let title: String
+    /// What the title does, as VoiceOver's hint and a Voice Control name: 「查看全部」.
     var actionTitle: String?
     var action: (() -> Void)?
+    var trailing: String?
     /// Beside the title: 同題材's category menu.
     @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(DSFont.title3.weight(.bold))
-                .foregroundStyle(DSColor.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            accessory()
-            Spacer(minLength: DSSpacing.sm)
-            if let actionTitle, let action {
+            if let action {
                 Button(action: action) {
-                    HStack(spacing: DSSpacing.xs) {
-                        Text(actionTitle)
+                    HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                        titleText
                         Image(systemName: "chevron.right")
-                            .font(DSFont.caption.weight(.semibold))
+                            .font(DSFont.subheadline.weight(.semibold))
+                            .foregroundStyle(DSColor.textTertiary)
                             .accessibilityHidden(true)
                     }
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.accent)
                     .frame(minHeight: DSLayout.minimumTapTarget)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityHint(actionTitle ?? "")
+                .accessibilityInputLabels([title] + [actionTitle].compactMap { $0 })
+                .accessibilityAddTraits(.isHeader)
+            } else {
+                titleText
+                    .accessibilityAddTraits(.isHeader)
+            }
+            accessory()
+            Spacer(minLength: DSSpacing.sm)
+            if let trailing {
+                Text(trailing)
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .monospacedDigit()
             }
         }
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(DSFont.title3.weight(.bold))
+            .foregroundStyle(DSColor.textPrimary)
+    }
+}
+
+/// The hairline that ends a section, as Apple Books' store separates its sections: under the
+/// section's own content, so a section with nothing to show leaves no line.
+struct BookDetailSectionRule: View {
+    var body: some View {
+        Divider()
+            .padding(.top, DSSpacing.md)
     }
 }
 
 extension BookDetailSectionHeader where Accessory == EmptyView {
-    init(title: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
-        self.init(title: title, actionTitle: actionTitle, action: action, accessory: { EmptyView() })
+    init(title: String, actionTitle: String? = nil, action: (() -> Void)? = nil, trailing: String? = nil) {
+        self.init(title: title, actionTitle: actionTitle, action: action, trailing: trailing, accessory: { EmptyView() })
     }
 }
 
@@ -1110,14 +1252,23 @@ struct BookDetailRecommendationSection: View {
             }
             Text(verbatim: reason)
                 .font(DSFont.subheadline)
-                .foregroundStyle(DSColor.textPrimary)
+                .foregroundStyle(DSColor.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            BookDetailSectionRule()
         }
         .padding(.horizontal, DSSpacing.lg)
     }
 }
 
-/// The description, clamped to four lines with Apple's trailing 「更多」.
+/// The description, clamped to four lines with Apple's 「更多」 under it: grey text, and the
+/// button in the text's own colour at its leading edge, never the accent (maintainer,
+/// 2026-11-12). 「更多」 opens the whole description on a page of its own, as Apple Books'
+/// store does, with every genre under it (the hero shows a few on one line); the page itself
+/// keeps its four lines, so nothing under them moves.
+///
+/// The whole description is the text the page already had, bounded before it reached the
+/// view (guardrail 4), laid out in the sheet's scroll view as the page laid it out expanded:
+/// never measured, never forced to its intrinsic height (guardrail 6).
 ///
 /// Plain intros arrive cleaned by Legado's formatter; `<usehtml>`, `<md>` and
 /// `<useweb>` intros keep their markup and render as HTML, Markdown or a web page
@@ -1128,10 +1279,11 @@ struct BookDetailRecommendationSection: View {
 struct BookDetailIntroSection: View {
     /// A section of its own, or under a video's play button as Infuse and VidHub show a
     /// series' overview: no 簡介 header, two small lines that open when tapped, in the
-    /// hero's margins.
+    /// hero's margins; or the whole of it, on the page 「更多」 opens.
     enum Placement {
         case section
         case hero
+        case full
     }
 
     let text: String
@@ -1148,7 +1300,14 @@ struct BookDetailIntroSection: View {
     /// secondary, as the card draws it.
     var isUnavailable = false
     var placement = Placement.section
+    /// Every genre that leads somewhere, listed under the whole description.
+    var links: [BookDetailLink] = []
 
+    /// What was tapped on the whole description's page, run once that page is gone: a sheet
+    /// or a push begun while it dismisses is dropped on iOS 17
+    /// (`Technotes/iOS17MenuModalPresentation.md`).
+    @State private var pendingAction: BookIntroAction?
+    @State private var pendingLink: BookDetailLink?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var webLayout = BookIntroLayout()
     /// Parsed once per intro, never in `body` (guardrail 5).
@@ -1162,7 +1321,26 @@ struct BookDetailIntroSection: View {
     /// Roughly that many lines of CJK text at the default text size across a phone.
     private var collapsedCharacterEstimate: Int { placement == .hero ? 66 : 80 }
     private var collapsedRichLimit: CGFloat { richLineHeight * CGFloat(collapsedLineLimit) }
-    private var textFont: Font { placement == .hero ? DSFont.caption : DSFont.subheadline }
+    private var textFont: Font {
+        switch placement {
+        case .hero: DSFont.caption
+        case .section: DSFont.subheadline
+        case .full: DSFont.body
+        }
+    }
+
+    /// Whether the text is drawn whole: a section never is, its 「更多」 opens the page of it.
+    private var isOpen: Bool {
+        switch placement {
+        case .hero: isExpanded
+        case .section: false
+        case .full: true
+        }
+    }
+
+    private var textColor: Color {
+        isUnavailable || placement != .hero ? DSColor.textSecondary : DSColor.textPrimary
+    }
 
     private var isRich: Bool {
         switch content {
@@ -1201,31 +1379,121 @@ struct BookDetailIntroSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint(isExpanded ? localized("收合") : localized("簡介：更多"))
+                .accessibilityHint(isOpen ? localized("收合") : localized("簡介：更多"))
             } else {
                 introBody
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if mayOverflow, placement == .section || isRich {
+            if mayOverflow, placement == .section || (placement == .hero && isRich) {
                 Button(action: toggle) {
-                    Text(isExpanded ? localized("收合") : localized("簡介：更多"))
+                    Text(isOpen ? localized("收合") : localized("簡介：更多"))
                         .font(DSFont.subheadline.weight(.semibold))
-                        .foregroundStyle(DSColor.accent)
+                        .foregroundStyle(DSColor.textPrimary)
                         .frame(minHeight: DSLayout.minimumTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(maxWidth: .infinity, alignment: placement == .section ? .leading : .trailing)
             }
+            if placement == .section { BookDetailSectionRule() }
         }
-        .padding(.horizontal, placement == .section ? DSSpacing.lg : 0)
+        .padding(.horizontal, placement == .hero ? 0 : DSSpacing.lg)
         .task(id: text) { parseMarkdownIfNeeded() }
+        .sheet(isPresented: placement == .section ? $isExpanded : .constant(false), onDismiss: runPending) {
+            whole
+        }
     }
 
     private func toggle() {
+        // A section opens its page; a video's lines open where they are.
+        guard placement == .hero else {
+            isExpanded = true
+            return
+        }
         withAnimation(reduceMotion ? nil : DSAnimation.standard) {
             isExpanded.toggle()
         }
+    }
+
+    private func runPending() {
+        if let action = pendingAction {
+            pendingAction = nil
+            onAction?(action)
+        }
+        if let link = pendingLink {
+            pendingLink = nil
+            link.action()
+        }
+    }
+
+    /// The whole description, and the genres under it, on a page of its own.
+    private var whole: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: DSSpacing.xl) {
+                    BookDetailIntroSection(
+                        text: text, isExpanded: .constant(true), baseURL: baseURL,
+                        onAction: onAction == nil ? nil : { action in
+                            pendingAction = action
+                            isExpanded = false
+                        },
+                        readsSourceFormats: readsSourceFormats, isUnavailable: isUnavailable, placement: .full
+                    )
+                    if !links.isEmpty { genres }
+                }
+                .padding(.vertical, DSSpacing.lg)
+            }
+            .background(PageBackgroundView(scope: .global).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .global)
+            .navigationTitle(localized("簡介"))
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isExpanded = false
+                    } label: {
+                        Label(localized("關閉"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityIdentifier("detail.intro.close")
+                }
+            }
+        }
+    }
+
+    private var genres: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+                .padding(.bottom, DSSpacing.lg)
+            Text(localized("分類"))
+                .font(DSFont.subheadline.weight(.semibold))
+                .foregroundStyle(DSColor.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(links) { link in
+                Button {
+                    pendingLink = link
+                    isExpanded = false
+                } label: {
+                    HStack(spacing: DSSpacing.sm) {
+                        Text(link.title)
+                            .font(DSFont.body)
+                            .foregroundStyle(DSColor.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: DSSpacing.sm)
+                        Image(systemName: "chevron.right")
+                            .font(DSFont.caption.weight(.semibold))
+                            .foregroundStyle(DSColor.textTertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: DSLayout.minimumTapTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(link.hint ?? localized("顯示這個分類的作品"))
+                .accessibilityIdentifier("detail.intro.link.\(link.id)")
+            }
+        }
+        .padding(.horizontal, DSSpacing.lg)
     }
 
     @ViewBuilder
@@ -1234,14 +1502,14 @@ struct BookDetailIntroSection: View {
         case .plain(let plain):
             Text(plain)
                 .font(textFont)
-                .foregroundStyle(isUnavailable ? DSColor.textSecondary : DSColor.textPrimary)
-                .lineLimit(isExpanded ? nil : collapsedLineLimit)
+                .foregroundStyle(textColor)
+                .lineLimit(isOpen ? nil : collapsedLineLimit)
                 .modifier(IntroLineHeight(points: placement == .hero ? heroLineHeight : nil))
         case .markdown(let source):
             Text(markdown ?? AttributedString(source))
                 .font(textFont)
-                .foregroundStyle(DSColor.textPrimary)
-                .lineLimit(isExpanded ? nil : collapsedLineLimit)
+                .foregroundStyle(textColor)
+                .lineLimit(isOpen ? nil : collapsedLineLimit)
                 .modifier(IntroLineHeight(points: placement == .hero ? heroLineHeight : nil))
         case .html(let markup):
             richBody(markup, mode: .fragment)
@@ -1258,7 +1526,7 @@ struct BookDetailIntroSection: View {
             layout: $webLayout,
             onAction: onAction
         )
-        .frame(height: max(isExpanded ? webLayout.height : collapsedRichHeight, 1))
+        .frame(height: max(isOpen ? webLayout.height : collapsedRichHeight, 1))
         .clipped()
     }
 
@@ -1303,7 +1571,8 @@ private struct IntroLineHeight: ViewModifier {
 
 // MARK: - Chapters
 
-/// One chapter row, used both in the detail preview and in the full chapter list.
+/// One of 目錄's few rows on a detail page: quiet, grey, with no chevron and no hairline
+/// (maintainer, 2026-11-12). The whole list is the reader's (`ReaderTOCView`).
 struct BookDetailChapterRow: View {
     enum Trailing {
         /// Opens the reader at the chapter.
@@ -1328,8 +1597,8 @@ struct BookDetailChapterRow: View {
                             .foregroundStyle(DSColor.textSecondary)
                     }
                     Text(title)
-                        .font(DSFont.body)
-                        .foregroundStyle(DSColor.textPrimary)
+                        .font(DSFont.subheadline)
+                        .foregroundStyle(DSColor.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: DSSpacing.sm)
@@ -1339,20 +1608,13 @@ struct BookDetailChapterRow: View {
                         .foregroundStyle(DSColor.warning)
                         .accessibilityHidden(true)
                 }
-                switch trailing {
-                case .disclosure:
-                    Image(systemName: "chevron.right")
-                        .font(DSFont.caption.weight(.semibold))
-                        .foregroundStyle(DSColor.textTertiary)
-                        .accessibilityHidden(true)
-                case .play:
+                if trailing == .play {
                     Image(systemName: "play.circle")
                         .font(DSFont.title3)
-                        .foregroundStyle(DSColor.accent)
+                        .foregroundStyle(DSColor.textSecondary)
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.vertical, DSSpacing.md)
             .frame(minHeight: DSLayout.minimumTapTarget)
             .contentShape(Rectangle())
         }
@@ -1361,50 +1623,69 @@ struct BookDetailChapterRow: View {
     }
 }
 
-/// The chapter section: a header with 「查看全部」, the latest chapter, and the first
-/// few chapters, with loading, error and empty states in place of the rows.
+/// The chapter section: its title, which opens the whole list, with the count at the far end,
+/// and a few rows under it, with loading, error and empty states in place of the rows.
 struct BookDetailChapterSection<Row: View>: View {
+    /// Which rows the page lists (maintainer, 2026-11-12, by option).
+    enum Preview {
+        /// The first few: a file's chapters, which has no newest one.
+        case first
+        /// 最新, then where reading stands, or 開頭 for a book not read yet: a book read online,
+        /// whose newest chapter is what a reader following it looks for.
+        case latestAndResume(resumeIndex: Int?)
+    }
+
     let title: String
     let chapters: [OnlineChapterRef]
     let isLoading: Bool
     let errorMessage: String?
+    /// The newest chapter as the source's own page names it, shown as 最新 until the list is read.
     let latestChapter: String
     let onRetry: () -> Void
     let onShowAll: () -> Void
     /// Said with no chapter to list; 「目錄為空」 by default.
     var emptyText: String?
+    var preview = Preview.first
     @ViewBuilder let row: (_ offset: Int, _ chapter: OnlineChapterRef) -> Row
 
-    /// Enough to show what the list holds; the rest is one tap away, as Podcasts
-    /// shows a show's newest few episodes above 「查看全部」.
-    static var previewLimit: Int { 5 }
+    /// Enough to show what the list holds; the rest is one tap away.
+    static var previewLimit: Int { 3 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
             BookDetailSectionHeader(
                 title: title,
                 actionTitle: chapters.isEmpty ? nil : localized("查看全部"),
-                action: chapters.isEmpty ? nil : onShowAll
+                action: chapters.isEmpty ? nil : onShowAll,
+                trailing: chapters.isEmpty ? nil : String(format: localized("%d 章"), chapters.count)
             )
-            if !latestChapter.isEmpty {
-                Label(latestChapter, systemImage: "clock.arrow.circlepath")
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
-                    .accessibilityLabel(localized("最新章節"))
-                    .accessibilityValue(latestChapter)
-            }
             content
+            BookDetailSectionRule()
         }
         .padding(.horizontal, DSSpacing.lg)
+    }
+
+    private var showsLatest: Bool {
+        if case .latestAndResume = preview { true } else { false }
     }
 
     @ViewBuilder
     private var content: some View {
         if isLoading && chapters.isEmpty {
+            if showsLatest, !latestChapter.isEmpty {
+                Grid(alignment: .leading, horizontalSpacing: DSSpacing.md, verticalSpacing: 0) {
+                    labelled(localized("最新")) {
+                        Text(latestChapter)
+                            .font(DSFont.subheadline)
+                            .foregroundStyle(DSColor.textSecondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
+                    }
+                }
+            }
             ProgressView(localized("載入目錄…"))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, DSSpacing.xl)
+                .padding(.vertical, DSSpacing.lg)
         } else if let errorMessage, chapters.isEmpty {
             VStack(spacing: DSSpacing.sm) {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
@@ -1413,7 +1694,7 @@ struct BookDetailChapterSection<Row: View>: View {
                     .multilineTextAlignment(.center)
                 Button(localized("重試"), action: onRetry)
                     .buttonStyle(.bordered)
-                    .tint(DSColor.accent)
+                    .tint(DSColor.textPrimary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, DSSpacing.lg)
@@ -1424,73 +1705,40 @@ struct BookDetailChapterSection<Row: View>: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DSSpacing.lg)
         } else {
-            let preview = Array(chapters.prefix(Self.previewLimit).enumerated())
             VStack(spacing: 0) {
-                ForEach(preview, id: \.element.id) { offset, chapter in
-                    if offset > 0 { Divider() }
-                    row(offset, chapter)
+                switch preview {
+                case .first:
+                    ForEach(Array(chapters.prefix(Self.previewLimit).enumerated()), id: \.element.id) { offset, chapter in
+                        row(offset, chapter)
+                    }
+                case .latestAndResume(let resumeIndex):
+                    let last = chapters.count - 1
+                    // One column of labels as wide as the widest (「Latest」, 「Last Read」), so the
+                    // titles line up in every language.
+                    Grid(alignment: .leading, horizontalSpacing: DSSpacing.md, verticalSpacing: 0) {
+                        labelled(localized("最新")) { row(last, chapters[last]) }
+                        if last > 0 {
+                            // Read up to the newest already, the second row is the start: 最新 says the rest.
+                            let resume = resumeIndex.flatMap { (0..<last).contains($0) ? $0 : nil }
+                            labelled(localized(resume == nil ? "目錄預覽：開頭" : "目錄預覽：讀到")) {
+                                row(resume ?? 0, chapters[resume ?? 0])
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-}
 
-/// The full chapter list, presented from 「查看全部」.
-struct BookDetailChapterListSheet: View {
-    let chapters: [OnlineChapterRef]
-    /// Whose 正序／倒序 to read and save; nil for a book not on the shelf.
-    let bookID: UUID?
-    let trailing: BookDetailChapterRow.Trailing
-    /// Called with the chapter's offset in `chapters` — in 倒序 too.
-    let onSelect: (_ offset: Int) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var chosenOrder: ChapterListOrder?
-
-    private var orderBinding: Binding<ChapterListOrder> {
-        ChapterListOrder.binding(chosen: $chosenOrder, for: bookID)
-    }
-
-    /// Rows in the chosen order, each keeping its offset in `chapters` for `onSelect` and the
-    /// 「第 N 章」 fallback title.
-    nonisolated static func rows(_ chapters: [OnlineChapterRef], order: ChapterListOrder) -> [(offset: Int, element: OnlineChapterRef)] {
-        order.arranged(Array(chapters.enumerated()).map { (offset: $0.offset, element: $0.element) })
-    }
-
-    var body: some View {
-        List {
-            Section {
-                ForEach(Self.rows(chapters, order: orderBinding.wrappedValue), id: \.element.id) { offset, chapter in
-                    BookDetailChapterRow(
-                        title: BookDetailChapterTitle.display(chapter, offset: offset),
-                        isLocked: chapter.isVip || chapter.isPay,
-                        trailing: trailing,
-                        action: { onSelect(offset) }
-                    )
-                    .listRowBackground(Color.clear)
-                }
-            } header: {
-                Text(String(format: localized("共 %d 章"), chapters.count))
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(PageBackgroundView(scope: .global).ignoresSafeArea())
-        .pageBackgroundToolbar(for: .global)
-        .navigationTitle(localized("目錄"))
-        .toolbarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Label(localized("關閉"), systemImage: "xmark")
-                        .labelStyle(.iconOnly)
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                ChapterListOrderMenu(order: orderBinding)
-            }
+    /// A grid row: a small label of what the row is (最新, 讀到, 開頭), on one line, then the row.
+    private func labelled(_ label: String, @ViewBuilder content: () -> some View) -> some View {
+        GridRow(alignment: .center) {
+            Text(label)
+                .font(DSFont.footnote)
+                .foregroundStyle(DSColor.textSecondary)
+                .lineLimit(1)
+                .fixedSize()
+            content()
         }
     }
 }
@@ -1538,8 +1786,10 @@ extension View {
                 author: "唐家三少",
                 meta: "",
                 primary: BookDetailAction(title: "繼續閱讀", systemImage: "book.fill", detail: "第 12 章", action: {}),
-                secondary: BookDetailAction(title: "移除書架", systemImage: "checkmark", action: {}),
-                links: ["玄幻", "東方玄幻", "熱血", "穿越", "系統流", "爽文"].map { BookDetailLink(id: $0, title: $0, action: {}) }
+                secondary: BookDetailAction(title: "已在書架", systemImage: "checkmark", action: {}),
+                links: ["玄幻", "東方玄幻", "熱血", "穿越", "系統流", "爽文"].map { BookDetailLink(id: $0, title: $0, action: {}) },
+                source: BookDetailHeroSource(name: "示範來源配置", switchAction: {}, count: 12,
+                                             facts: ["線上", "1,450 章"])
             )
         } content: {
             BookDetailIntroSection(
@@ -1552,7 +1802,6 @@ extension View {
                 BookDetailInfoItem(id: "format", label: "格式", value: "EPUB", choice: BookDetailInfoChoice(
                     options: [.init(id: "epub", title: "EPUB"), .init(id: "pdf", title: "PDF")],
                     selection: .constant("epub"))),
-                .source(name: "示範來源配置") {},
             ])
         }
     }
@@ -1607,10 +1856,15 @@ extension View {
                 author: "佚名",
                 meta: "",
                 primary: BookDetailAction(title: "開始閱讀", systemImage: "book", action: {}),
-                secondary: BookDetailAction(title: "加入書架", systemImage: "plus", action: {})
+                secondary: BookDetailAction(title: "加入書架", systemImage: "plus", action: {}),
+                source: BookDetailHeroSource(name: "示範來源配置", facts: ["線上"])
             )
         } content: {
-            BookDetailInfoSection(items: [.source(name: "示範來源配置") {}])
+            BookDetailChapterSection(
+                title: localized("目錄"), chapters: [], isLoading: true, errorMessage: nil, latestChapter: "第 3 章",
+                onRetry: {}, onShowAll: {}, preview: .latestAndResume(resumeIndex: nil)
+            ) { _, _ in EmptyView() }
+            BookDetailInfoSection(items: [BookDetailInfoItem(id: "language", label: "語言", value: "中文")])
         }
     }
 }

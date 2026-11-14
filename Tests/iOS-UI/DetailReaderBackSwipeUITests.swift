@@ -151,7 +151,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(genre.waitForExistence(timeout: 10), app.debugDescription)
 
-        let header = app.staticTexts["More in This Genre"].firstMatch
+        let header = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "More in This Genre")).firstMatch
         for _ in 0..<8 where !(header.exists && header.isHittable) { app.swipeUp() }
         XCTAssertTrue(header.waitForExistence(timeout: 15), app.debugDescription)
         attachScreenshot(app, named: "作品詳情 - 同題材")
@@ -236,8 +236,8 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
 
     /// The detail page's design baseline (Editorial Minimalism, 2026-10-12): a book with only a
     /// title, an author and its chapters looks finished. Nothing waits to appear — no section
-    /// header over a spinner, no 簡介 — and the actions are 方案 A's: a text-only reading capsule
-    /// and 加入書架 as plain text beside it. Run in light, in dark and with Pro and a theme pack.
+    /// header over a spinner, no 簡介 — and the actions are side by side on the hero's panel,
+    /// under the source's name (2026-11-12). Run in light, in dark and with Pro and a theme pack.
     @MainActor
     func testBareBookDetailLooksFinished() throws {
         try exerciseBareBook(pro: false)
@@ -268,8 +268,12 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertEqual(abs(add.frame.midY - read.frame.midY) < 2, true, "One row: \(read.frame) \(add.frame)")
         XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15),
                       app.debugDescription)
-        XCTAssertFalse(app.descendants(matching: .any)["detail.facts"].exists, "Chapters and source are in 作品資訊 only")
-        XCTAssertFalse(app.staticTexts["同題材作品"].exists, app.debugDescription)
+        // The source is named on the hero's panel, over the actions, with what is known of the copy.
+        let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
+        XCTAssertTrue(source.exists, app.debugDescription)
+        XCTAssertLessThan(source.frame.maxY, read.frame.minY, "The source's name is over the actions")
+        XCTAssertTrue(app.descendants(matching: .any)["detail.source.facts"].firstMatch.exists, app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "同題材作品")).firstMatch.exists, app.debugDescription)
         XCTAssertFalse(app.staticTexts["簡介"].exists, app.debugDescription)
         attachScreenshot(app, named: pro ? "最少資料 - Pro" : "最少資料")
     }
@@ -288,7 +292,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
         let add = app.buttons["加入書架"].firstMatch
         let resume = app.buttons["繼續閱讀"].firstMatch
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["加入書架", "移除書架"])).firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["加入書架", "已在書架"])).firstMatch
             .waitForExistence(timeout: 15), app.debugDescription)
         if add.exists {
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
@@ -346,7 +350,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         if !fromSearch { attachScreenshot(app, named: "作品詳情 - book source") }
         // An earlier test may have added the book; only one off the shelf is asked about.
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch
             .waitForExistence(timeout: 15), app.debugDescription)
         let offShelf = app.buttons["Add to Library"].firstMatch.exists
         for _ in 0..<2 {
@@ -404,7 +408,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         result.tap()
 
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch
             .waitForExistence(timeout: 15), app.debugDescription)
         let offShelf = app.buttons["Add to Library"].firstMatch.exists
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: read)
@@ -463,7 +467,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         let progress = app.sliders["Reading Progress"]
         // An earlier test may have added the book; only one off the shelf is asked about.
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch
             .waitForExistence(timeout: 15), app.debugDescription)
         let offShelf = app.buttons["Add to Library"].firstMatch.exists
         for entry in 1...2 {
@@ -710,8 +714,8 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.launch()
         openDiscoveredBook(app, named: "Navigation Manga Fixture")
         let add = app.buttons["Add to Library"]
-        let remove = app.buttons["Remove"]
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch.waitForExistence(timeout: 15))
+        let remove = app.buttons["In Library"]
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch.waitForExistence(timeout: 15))
         if add.exists {
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
             XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
@@ -915,8 +919,8 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         openDiscoveredBook(app, named: "Navigation Manga Fixture")
         if addingToLibrary {
             let add = app.buttons["Add to Library"]
-            let remove = app.buttons["Remove"]
-            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"]))
+            let remove = app.buttons["In Library"]
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"]))
                 .firstMatch.waitForExistence(timeout: 15), app.debugDescription)
             if add.exists {
                 let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
@@ -1151,9 +1155,9 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_root_tab_visible_ids", "(explore, settings)"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
-        let remove = app.buttons["Remove"]
+        let remove = app.buttons["In Library"]
         let add = app.buttons["Add to Library"]
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch.waitForExistence(timeout: 15))
         if add.exists {
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
             XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
@@ -1181,7 +1185,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         work.tap()
         XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15),
                       "作品詳情 is the source's own page, with its chapters.\n\(app.debugDescription)")
-        XCTAssertTrue(app.staticTexts["Contents"].firstMatch.exists, app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Contents")).firstMatch.exists, app.debugDescription)
         XCTAssertTrue(remove.waitForExistence(timeout: 15), app.debugDescription)
         attachScreenshot(app, named: "Work detail - shelf online book")
         // The page's reader closes back onto it with its bar on screen (iOS 17 lost it once,
@@ -1200,7 +1204,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let pageButton = remove.frame
         remove.tap()
         // The confirmation's own 移除書架: an action sheet below on iOS 17, a popover over the
-        // page's button on later systems, so it is told apart by where it is, not by order.
+        // page's 已在書架 on later systems.
         XCTAssertTrue(app.staticTexts["Remove This Book from Your Library?"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         let confirm = app.buttons.matching(NSPredicate(format: "label == %@", "Remove"))
             .allElementsBoundByIndex.first { $0.frame != pageButton }
@@ -1222,9 +1226,9 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_root_tab_visible_ids", "(explore, settings)"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
-        let remove = app.buttons["Remove"]
+        let remove = app.buttons["In Library"]
         let add = app.buttons["Add to Library"]
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch.waitForExistence(timeout: 15))
         if remove.exists {
             // On the shelf from an earlier run, maybe renamed: put back with the source's title.
             let pageButton = remove.frame
@@ -1303,7 +1307,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(work.waitForExistence(timeout: 5), app.debugDescription)
         work.tap()
         XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["Contents"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Contents")).firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         attachScreenshot(app, named: "Work detail - edited title")
         XCTAssertTrue(app.staticTexts[edited].firstMatch.exists, "The copy's own title is shown.\n\(app.debugDescription)")
         XCTAssertTrue(app.staticTexts[ownIntro].firstMatch.exists, "The reader's own 簡介, as plain text.\n\(app.debugDescription)")
@@ -1358,7 +1362,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
             XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
             add.tap()
-            XCTAssertTrue(app.buttons["Remove"].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.buttons["In Library"].waitForExistence(timeout: 10), app.debugDescription)
         }
         let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
         let edgeBack = {
@@ -1425,9 +1429,9 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
-        let remove = app.buttons["Remove"]
+        let remove = app.buttons["In Library"]
         let add = app.buttons["Add to Library"]
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "In Library"])).firstMatch.waitForExistence(timeout: 15))
         if add.exists {
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
             XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)

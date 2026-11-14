@@ -256,8 +256,31 @@ enum ReaderTOCFilter {
 /// 只有目錄——書籤與重點在 `ReaderBookmarkListView`。原本三者共用一個分段控制，
 /// 但目錄本來就由工具列的目錄鈕進入、書籤由書籤鈕進入，分段控制只是把兩個入口
 /// 再混回同一個畫面；拆開後目錄頂端讓給原生搜尋列，一直顯示。
+///
+/// The app's one 目錄 (maintainer, 2026-11-12: 「現在有兩條目錄路徑」): the reader's, and the one
+/// a detail page's 目錄 opens, which had a list of its own (`BookDetailChapterListSheet`). Its
+/// rows are spaced and set as that list's were, which the maintainer liked; what each place
+/// says differently is a parameter: the bar's title and how it closes, the line over the list,
+/// what ends a row.
 struct ReaderTOCView: View {
+    /// How the page is left: the reader's ✓ at the trailing end, or a detail page's ✕ at the
+    /// leading end, as each had it.
+    enum Closing {
+        case done
+        case close
+    }
+
+    /// What ends a row, after its page number where it has one.
+    enum Accessory {
+        case none
+        /// Opens the reader at the chapter.
+        case disclosure
+        /// Plays the chapter, as an episode row in Podcasts.
+        case play
+    }
+
     let chapters: [BookChapter]
+    /// The bar's title: the book's in the reader, 目錄 from a detail page.
     let bookTitle: String
     /// Whose 正序／倒序 to read and save.
     let bookID: UUID?
@@ -271,6 +294,12 @@ struct ReaderTOCView: View {
     /// An online book's chapters that are not cached yet, by `BookChapter.index`; empty for
     /// a local book, which has nothing to fetch.
     let uncachedChapterIndexes: Set<Int>
+    /// Chapters the source sells, by `BookChapter.index`: a lock, and 付費章節 for VoiceOver.
+    var lockedChapterIndexes: Set<Int> = []
+    var closing = Closing.done
+    var accessory = Accessory.none
+    /// 「共 415 章」 over the list, where no page count is shown.
+    var showsChapterCount = false
     let onSelectChapter: (BookChapter) -> Void
 
     @Binding var isPresented: Bool
@@ -297,16 +326,28 @@ struct ReaderTOCView: View {
                 .navigationTitle(bookTitle)
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar {
+                    if closing == .close {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                isPresented = false
+                            } label: {
+                                Label(localized("關閉"), systemImage: "xmark")
+                                    .labelStyle(.iconOnly)
+                            }
+                        }
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         ChapterListOrderMenu(order: orderBinding)
                     }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            isPresented = false
-                        } label: {
-                            Image(systemName: "checkmark")
+                    if closing == .done {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                isPresented = false
+                            } label: {
+                                Image(systemName: "checkmark")
+                            }
+                            .accessibilityLabel(localized("完成"))
                         }
-                        .accessibilityLabel(localized("完成"))
                     }
                 }
                 // 兩種版面都固定顯示搜尋列。目錄一打開就捲到目前章節，`.automatic`
@@ -387,7 +428,6 @@ struct ReaderTOCView: View {
     }
 
     private func tocList(_ shown: [BookChapter]) -> some View {
-        let firstID = shown.first?.id
         return ScrollViewReader { proxy in
             List {
                 if totalPages > 0, !isSearching {
@@ -398,8 +438,14 @@ struct ReaderTOCView: View {
                         .listRowSeparator(.hidden)
                 }
 
-                ForEach(shown) { chapter in
-                    chapterRow(chapter, isFirst: chapter.id == firstID)
+                Section {
+                    ForEach(shown) { chapter in
+                        chapterRow(chapter)
+                    }
+                } header: {
+                    if showsChapterCount, totalPages <= 0, !isSearching {
+                        Text(String(format: localized("共 %d 章"), chapters.count))
+                    }
                 }
             }
             .softScrollEdges()
@@ -425,67 +471,120 @@ struct ReaderTOCView: View {
         }
     }
 
-    private func chapterRow(_ chapter: BookChapter, isFirst: Bool) -> some View {
-        Button {
+    /// One row, spaced and set as a detail page's 目錄 was (maintainer, 2026-11-12): the title in
+    /// body text, room above and under it, a hairline between rows.
+    private func chapterRow(_ chapter: BookChapter) -> some View {
+        let isLocked = lockedChapterIndexes.contains(chapter.index)
+        let isUncached = uncachedChapterIndexes.contains(chapter.index)
+        return Button {
             onSelectChapter(chapter)
             isPresented = false
         } label: {
-            HStack(spacing: 0) {
+            HStack(spacing: DSSpacing.md) {
                 if chapter.level > 0 {
                     Color.clear
-                        .frame(width: CGFloat(chapter.level) * 16)
+                        .frame(width: CGFloat(chapter.level) * DSSpacing.lg - DSSpacing.md)
                 }
 
-                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text(chapter.title)
-                        .font(
-                            chapter.level == 0
-                            ? DSFont.fixed(size: 14, weight: .semibold)
-                            : DSFont.fixed(size: 12, weight: .regular)
-                        )
+                        .font(chapter.level == 0 ? DSFont.body : DSFont.subheadline)
                         .foregroundStyle(DSColor.textPrimary)
                         .lineLimit(2)
 
                     // The source's 更新時間, verbatim; a row without one takes no extra line.
                     if let updateTime = chapter.updateTime {
                         Text(updateTime)
-                            .font(DSFont.fixed(size: 12))
+                            .font(DSFont.caption)
                             .foregroundStyle(DSColor.textSecondary)
                             .lineLimit(1)
                     }
                 }
-                .padding(.vertical, DSSpacing.xs)
 
-                Spacer()
+                Spacer(minLength: DSSpacing.sm)
 
-                if uncachedChapterIndexes.contains(chapter.index) {
+                if isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.warning)
+                        .accessibilityHidden(true)
+                }
+
+                if isUncached {
                     TOCUncachedMark()
                 }
 
                 if showsPageNumbers {
                     Text("\(pageNumber(for: chapter))")
-                        .font(DSFont.fixed(size: 18, weight: .regular, design: .monospaced))
+                        .font(DSFont.body)
+                        .monospacedDigit()
                         .foregroundStyle(DSColor.textSecondary)
                 }
-            }
-            // A minimum, not a height: a two-line title over an update time needs more.
-            .frame(minHeight: 48)
-            .padding(.horizontal, 30)
-            .background {
-                if chapter.id == currentChapterID {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(0.07))
+
+                switch accessory {
+                case .none:
+                    EmptyView()
+                case .disclosure:
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.caption.weight(.semibold))
+                        .foregroundStyle(DSColor.textTertiary)
+                        .accessibilityHidden(true)
+                case .play:
+                    Image(systemName: "play.circle")
+                        .font(DSFont.title3)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .accessibilityHidden(true)
                 }
             }
+            .padding(.vertical, DSSpacing.md)
+            // A minimum, not a height: a two-line title over an update time needs more.
+            .frame(minHeight: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityValue(uncachedChapterIndexes.contains(chapter.index) ? localized("未下載") : "")
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets())
-        .listRowSeparator(.hidden, edges: isFirst ? .top : [])
-        .listRowSeparator(.visible, edges: .bottom)
-        .listRowSeparatorTint(Color.secondary.opacity(0.18))
+        .accessibilityValue([isLocked ? localized("付費章節") : nil, isUncached ? localized("未下載") : nil]
+            .compactMap { $0 }.joined(separator: "，"))
+        .accessibilityAddTraits(isCurrent(chapter) ? .isSelected : [])
+        .listRowBackground(
+            // Where reading stands: a quiet ground behind the row, inside the list's margins.
+            RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                .fill(isCurrent(chapter) ? DSColor.textPrimary.opacity(DSLayout.tocCurrentRowOpacity) : Color.clear)
+                .padding(.horizontal, DSSpacing.sm)
+        )
         .id(chapter.index)
+    }
+
+    /// The chapter being read: by its id in the reader, whose 目錄 can name one spine item more
+    /// than once; by its place where only that is known (a detail page).
+    private func isCurrent(_ chapter: BookChapter) -> Bool {
+        if let currentChapterID { return chapter.id == currentChapterID }
+        return currentIndex >= 0 && chapter.index == currentIndex
+    }
+}
+
+extension ReaderTOCView {
+    /// A detail page's 目錄: a book source's chapters as they stand, each at its place in the
+    /// list (the place `onSelect` is given, in 倒序 too), under the title 目錄 with ✕ to close.
+    /// - Parameter current: the place reading stands at, when the page knows it.
+    init(detailChapters refs: [OnlineChapterRef], bookID: UUID?, current: Int? = nil, accessory: Accessory,
+         isPresented: Binding<Bool>, onSelect: @escaping (_ offset: Int) -> Void) {
+        self.init(
+            chapters: Self.entries(refs), bookTitle: localized("目錄"), bookID: bookID,
+            currentPage: 0, totalPages: 0, tocLayoutMode: .horizontalList, pageOffsets: [:], showsPageNumbers: false,
+            currentIndex: current ?? -1, currentChapterID: nil, uncachedChapterIndexes: [],
+            lockedChapterIndexes: Set(refs.indices.filter { refs[$0].isVip || refs[$0].isPay }),
+            closing: .close, accessory: accessory, showsChapterCount: true,
+            onSelectChapter: { onSelect($0.index) }, isPresented: isPresented
+        )
+    }
+
+    /// A source's chapters as 目錄 rows: each keeps its own id, takes its place in the list as
+    /// its index, and reads 「第 N 章」 where the source left its title empty. Values only, so
+    /// off the main actor the view is on.
+    nonisolated static func entries(_ refs: [OnlineChapterRef]) -> [BookChapter] {
+        refs.enumerated().map { offset, ref in
+            BookChapter(id: ref.id, index: offset, title: BookDetailChapterTitle.display(ref, offset: offset), content: "")
+        }
     }
 }
 

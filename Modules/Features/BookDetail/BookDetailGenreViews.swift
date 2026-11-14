@@ -119,6 +119,8 @@ struct BookDetailRelatedSection: View {
                 }
                 .padding(.horizontal, DSSpacing.lg)
                 content(reference)
+                BookDetailSectionRule()
+                    .padding(.horizontal, DSSpacing.lg)
             }
         }
     }
@@ -157,7 +159,8 @@ struct BookDetailRelatedSection: View {
                     .accessibilityHidden(true)
             }
             .font(DSFont.subheadline)
-            .foregroundStyle(DSColor.accent)
+            // Quiet, as the rest of the page is: no accent colour (maintainer, 2026-11-12).
+            .foregroundStyle(DSColor.textSecondary)
             .frame(minHeight: DSLayout.minimumTapTarget)
             .contentShape(Rectangle())
         }

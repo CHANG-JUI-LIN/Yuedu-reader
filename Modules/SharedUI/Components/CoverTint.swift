@@ -26,6 +26,20 @@ enum CoverTint {
     /// A card's ground until its cover has drawn (`DSColor.coverTintPlaceholder`).
     static let placeholder = RGB(red: 0.30, green: 0.31, blue: 0.33)
 
+    /// The light line on a block of the cover's colour (a home band's subtitle, a detail page's
+    /// author and facts): the cover's hue made light; the placeholder's until the cover has drawn.
+    static func blockLine(for cover: RGB?) -> RGB {
+        lightTint(for: cover ?? placeholder)
+    }
+
+    /// A block of the cover's colour: darkened until `blockLine` reads on it at 4.5:1 (7:1 with
+    /// 增加對比), so white does too. Until the cover has drawn it is the placeholder grey,
+    /// darkened the same way: its own line read at 4.2:1 on it as it is.
+    static func blockGround(for cover: RGB?, increasedContrast: Bool) -> RGB {
+        let base = cover ?? placeholder
+        return background(for: base, under: blockLine(for: base), minimumContrast: increasedContrast ? 7 : 4.5)
+    }
+
     /// Thread-safe; one for every average instead of a context per call.
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
 
@@ -50,42 +64,6 @@ enum CoverTint {
             format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB()
         )
         return RGB(red: Double(bitmap[0]) / 255, green: Double(bitmap[1]) / 255, blue: Double(bitmap[2]) / 255)
-    }
-
-    /// A cover's hue as a detail page's hero washes it in: the hue alone, drawn at the page's
-    /// own lightness, so a muddy average cannot turn the wash grey.
-    struct Wash: Equatable, Sendable {
-        var hue: Double
-        var saturation: Double
-
-        /// Pale over a light page, deep over a dark one, faint in both.
-        func color(dark: Bool) -> Color {
-            Color(hue: hue, saturation: saturation,
-                  brightness: dark ? DSLayout.bookDetailWashDarkBrightness : DSLayout.bookDetailWashLightBrightness)
-                .opacity(dark ? DSLayout.bookDetailWashDarkOpacity : DSLayout.bookDetailWashLightOpacity)
-        }
-    }
-
-    /// The wash for an average colour; nil when the cover is close to grey, which would only
-    /// lay a haze over the page (black, white and grey covers, the Moby Dick kind of brown).
-    static func wash(for rgb: RGB) -> Wash? {
-        let high = max(rgb.red, rgb.green, rgb.blue)
-        let low = min(rgb.red, rgb.green, rgb.blue)
-        guard high > 0 else { return nil }
-        let saturation = (high - low) / high
-        guard saturation >= DSLayout.bookDetailWashMinimumSaturation else { return nil }
-        var hue: Double
-        let delta = high - low
-        if high == rgb.red {
-            hue = (rgb.green - rgb.blue) / delta
-        } else if high == rgb.green {
-            hue = (rgb.blue - rgb.red) / delta + 2
-        } else {
-            hue = (rgb.red - rgb.green) / delta + 4
-        }
-        hue /= 6
-        if hue < 0 { hue += 1 }
-        return Wash(hue: hue, saturation: min(saturation, DSLayout.bookDetailWashMaximumSaturation))
     }
 
     /// WCAG relative luminance of an sRGB colour.

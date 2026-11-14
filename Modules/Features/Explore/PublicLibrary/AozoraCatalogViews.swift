@@ -144,7 +144,7 @@ struct AozoraWorkDetailView: View {
         BookDetailScaffold(title: work.title, compactAction: readAction) {
             BookDetailHero(artworkShape: .book, cover: GeneratedBookCover(title: work.title, author: author),
                 title: work.title, author: author, meta: "", primary: readAction,
-                secondary: BookDetailAction(title: localized(shelfBook == nil ? "加入書架" : "已加入書架"),
+                secondary: BookDetailAction(title: localized(shelfBook == nil ? "加入書架" : "已在書架"),
                     systemImage: shelfBook == nil ? "plus" : "checkmark", isBusy: action != nil,
                     isEnabled: action == nil && shelfBook == nil, action: { addToShelf() }),
                 authorActions: work.credits.compactMap { credit in

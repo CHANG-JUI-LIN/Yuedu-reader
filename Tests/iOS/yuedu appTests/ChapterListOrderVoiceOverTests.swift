@@ -5,7 +5,9 @@ import UIKit
 
 /// What VoiceOver reads for 目錄's 正序／倒序 control (回饋 #37): its name, and the order it is
 /// in while closed. The control is a `Menu` in a `ToolbarItem`, which UIKit turns into a bar
-/// button; this reads the window's own accessibility elements, as VoiceOver does.
+/// button; this reads the window's own accessibility elements, as VoiceOver does. On iOS 27
+/// a native bar button drops the menu's value, which is why the menu's label is an image
+/// (`ChapterListOrderMenu`).
 @Suite("Chapter list order VoiceOver", .serialized)
 @MainActor
 struct ChapterListOrderVoiceOverTests {
@@ -68,9 +70,8 @@ struct ChapterListOrderVoiceOverTests {
         let chapters = (0..<3).map { OnlineChapterRef(index: $0, title: "c\($0)", url: "") }
 
         try await withAutomation {
-            let window = try host(NavigationStack {
-                BookDetailChapterListSheet(chapters: chapters, bookID: bookID, trailing: .disclosure, onSelect: { _ in })
-            })
+            let window = try host(ReaderTOCView(detailChapters: chapters, bookID: bookID, accessory: .disclosure,
+                                                isPresented: .constant(true), onSelect: { _ in }))
             defer { window.isHidden = true; window.rootViewController = nil }
             let control = try #require(try await barElement(named: localized("排序"), in: window))
             #expect(control.accessibilityValue == order.title)

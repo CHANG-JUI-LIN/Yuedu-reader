@@ -215,10 +215,14 @@ final class CalibrePromoUITests: XCTestCase {
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         mark("scene4-detail")
         dwell(2.0)
-        let introduction = app.buttons["detail.toc.4"].firstMatch
+        // The page lists a book's first three chapters (2026-11-12); Introduction is further
+        // down, in the whole list its title opens.
+        let contents = app.buttons["Contents"].firstMatch
+        XCTAssertTrue(contents.waitForExistence(timeout: 15), app.debugDescription)
+        reveal(app, contents, maxSwipes: 6)
+        contents.tap()
+        let introduction = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Introduction")).firstMatch
         XCTAssertTrue(introduction.waitForExistence(timeout: 15), app.debugDescription)
-        reveal(app, introduction, maxSwipes: 6)
-        XCTAssertTrue(introduction.label.contains("Introduction"), app.debugDescription)
         introduction.tap()
         let prose = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Swiss canton")).firstMatch
         XCTAssertTrue(prose.waitForExistence(timeout: 45), "Actual Introduction prose must render.\n\(app.debugDescription)")

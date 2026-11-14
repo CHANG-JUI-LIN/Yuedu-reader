@@ -130,10 +130,10 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         try openFromLibrary(app)
         try showChrome(app)
         app.buttons["reader_back_button"].tap()
-        // A book read from its page is on the shelf already (移除書架); one that is not yet
+        // A book read from its page is on the shelf already (已在書架); one that is not yet
         // asks on leaving (加入書架).
         let add = app.buttons["加入書架"].firstMatch
-        let onShelf = app.buttons["移除書架"].firstMatch
+        let onShelf = app.buttons["已在書架"].firstMatch
         let left = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in add.exists || onShelf.exists },
                                              object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 15), .completed, app.debugDescription)

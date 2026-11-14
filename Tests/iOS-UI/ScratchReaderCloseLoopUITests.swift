@@ -75,7 +75,7 @@ final class ScratchReaderCloseLoopUITests: XCTestCase {
         showChrome(app)
         app.buttons["reader_back_button"].tap()
         let add = app.buttons["加入書架"].firstMatch
-        let onShelf = app.buttons["移除書架"].firstMatch
+        let onShelf = app.buttons["已在書架"].firstMatch
         let left = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in add.exists || onShelf.exists }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 15), .completed, app.debugDescription)
         if add.exists { add.tap() }

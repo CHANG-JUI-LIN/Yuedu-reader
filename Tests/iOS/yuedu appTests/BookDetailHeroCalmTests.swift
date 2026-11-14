@@ -3,9 +3,9 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-/// The detail hero after 方案 A (2026-10-12): where reading resumes is written into the reading
-/// button, and the wash behind the hero is the cover's hue, never a grey haze.
-@Suite("Detail hero: resume label and cover wash")
+/// The detail hero: where reading resumes (方案 A, 2026-10-12), and the block of the cover's
+/// colour it stands on (2026-11-12), dark enough for the text on it.
+@Suite("Detail hero: resume label and cover colour")
 struct BookDetailHeroCalmTests {
     @Test("a book read by chapters resumes at 「第 N 章」, counted from one")
     func chapterResume() {
@@ -21,20 +21,33 @@ struct BookDetailHeroCalmTests {
         #expect(BookDetailResume.detail(chapterIndex: nil, progress: 1) == localized("已讀完"))
     }
 
-    @Test("a grey or near-grey cover gets no wash")
-    func greyCoverHasNoWash() {
-        #expect(CoverTint.wash(for: .init(red: 0.5, green: 0.5, blue: 0.5)) == nil)
-        #expect(CoverTint.wash(for: .init(red: 0, green: 0, blue: 0)) == nil)
-        #expect(CoverTint.wash(for: .init(red: 0.45, green: 0.42, blue: 0.40)) == nil, "Moby Dick's grey-brown")
+    // The hero's block (2026-11-12): the cover's colour, darkened until its text reads on it.
+
+    @Test("the block is dark enough for its light line and for white, whatever the cover")
+    func blockGroundReads() {
+        let white = CoverTint.RGB(red: 1, green: 1, blue: 1)
+        let covers: [CoverTint.RGB] = [
+            .init(red: 0.94, green: 0.91, blue: 0.82), .init(red: 0.5, green: 0.5, blue: 0.5),
+            .init(red: 0.8, green: 0.1, blue: 0.1), .init(red: 0.2, green: 0.3, blue: 0.7),
+            .init(red: 0.98, green: 0.85, blue: 0.2), .init(red: 0.05, green: 0.05, blue: 0.05),
+        ]
+        for cover in covers {
+            for (increased, minimum) in [(false, 4.5), (true, 7.0)] {
+                let ground = CoverTint.blockGround(for: cover, increasedContrast: increased)
+                // The bisection stops a hair under the target.
+                #expect(CoverTint.contrast(CoverTint.blockLine(for: cover), ground) >= minimum - 0.01)
+                #expect(CoverTint.contrast(white, ground) >= minimum - 0.01)
+            }
+        }
     }
 
-    @Test("a coloured cover's wash keeps its hue, its saturation capped")
-    func colouredCoverWash() throws {
-        let red = try #require(CoverTint.wash(for: .init(red: 0.8, green: 0.1, blue: 0.1)))
-        #expect(abs(red.hue) < 0.001 || abs(red.hue - 1) < 0.001)
-        #expect(red.saturation == DSLayout.bookDetailWashMaximumSaturation)
-        let blue = try #require(CoverTint.wash(for: .init(red: 0.2, green: 0.3, blue: 0.7)))
-        #expect(abs(blue.hue - (2.0 / 3.0 + (0.2 - 0.3) / 0.5 / 6 + 0)) < 0.05)
+    @Test("a cover dark already keeps its colour; none yet is the placeholder grey, darkened as a cover is")
+    func blockGroundKeepsADarkCover() {
+        let dark = CoverTint.RGB(red: 0.1, green: 0.12, blue: 0.2)
+        #expect(CoverTint.blockGround(for: dark, increasedContrast: false) == dark)
+        let waiting = CoverTint.blockGround(for: nil, increasedContrast: false)
+        #expect(waiting == CoverTint.blockGround(for: CoverTint.placeholder, increasedContrast: false))
+        #expect(CoverTint.contrast(CoverTint.blockLine(for: nil), waiting) >= 4.5 - 0.01)
     }
 
     // A video's page is drawn in the colour of its poster's foot, the part it fades into.

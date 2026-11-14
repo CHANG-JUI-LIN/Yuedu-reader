@@ -106,7 +106,7 @@ final class NarouReadingUITests: XCTestCase {
         let add = app.buttons["加入書架"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
         add.tap()
-        XCTAssertTrue(app.buttons["已加入書架"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["已在書架"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         attach(app, "narou-shelved")
     }
 }

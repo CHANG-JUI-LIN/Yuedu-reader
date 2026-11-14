@@ -30,6 +30,8 @@ struct BookDetailAuthorWorksSection: View {
                 )
                 .padding(.horizontal, DSSpacing.lg)
                 content
+                BookDetailSectionRule()
+                    .padding(.horizontal, DSSpacing.lg)
             }
         }
     }
@@ -44,7 +46,7 @@ struct BookDetailAuthorWorksSection: View {
             Button(action: onRetry) {
                 Label(localized("載入失敗，點按重試"), systemImage: "arrow.clockwise")
                     .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.accent)
+                    .foregroundStyle(DSColor.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: DSLayout.discoverShelfCoverHeight)
             }
             .buttonStyle(.plain)

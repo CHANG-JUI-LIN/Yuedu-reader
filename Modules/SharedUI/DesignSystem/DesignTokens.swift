@@ -861,10 +861,25 @@ enum DSLayout {
     static let bookCoverHeroShadowRadius: CGFloat = 18
     /// Drop-shadow vertical offset under the hero cover.
     static let bookCoverHeroShadowOffsetY: CGFloat = 10
-    /// A detail page's hero (Editorial Minimalism, 2026-10-12): a small jacket, so the title
-    /// and the reading action carry the page; 2:3 like the shelf grid.
-    static let bookDetailCoverWidth: CGFloat = 128
-    static let bookDetailCoverHeight: CGFloat = 192
+    /// A detail page's hero (maintainer, 2026-11-12, after Apple Books' store page): a large
+    /// jacket on a block of its own colour, half a phone wide; 2:3 like the shelf grid.
+    static let bookDetailCoverWidth: CGFloat = 196
+    static let bookDetailCoverHeight: CGFloat = 294
+    /// The hero's panel that names the source and holds the two actions: a dark veil over the
+    /// block, so the light text on it reads better than on the block itself.
+    static let bookDetailSourcePanelOpacity: Double = 0.18
+    static let bookDetailSourcePanelRadius: CGFloat = 20
+    /// 目錄's ground behind the chapter being read: the text's colour, faint.
+    static let tocCurrentRowOpacity: Double = 0.07
+    /// How far the panel stands in from the hero's own margins: 32pt from the screen's edges
+    /// in all, as Apple Books' store sets its panel.
+    static let bookDetailSourcePanelInset: CGFloat = 16
+    /// The second action (the shelf's) on the panel, darker than it.
+    static let bookDetailSecondaryActionOpacity: Double = 0.28
+    /// The white action with nothing to open: a page with no readable source.
+    static let bookDetailUnavailableActionOpacity: Double = 0.45
+    /// Genres on the hero's one line; the rest are in its 「+N」 menu.
+    static let bookDetailGenreLimit = 3
     static let bookDetailCoverShadowRadius: CGFloat = 12
     static let bookDetailCoverShadowOffsetY: CGFloat = 6
     /// 作品詳情's series fan (Apple Books' series header): the volumes behind the hero's cover,
@@ -874,17 +889,6 @@ enum DSLayout {
     static let bookDetailSeriesFanScales: [CGFloat] = [0.84, 0.7]
     static let bookDetailSeriesFanOffsets: [CGFloat] = [0.4, 0.72]
     static let bookDetailSeriesFanAngles: [Double] = [4, 8]
-    /// The cover's hue washed behind a detail page's hero (`CoverTint.Wash`): faint, and
-    /// fading from a third of the hero's height so it melts into the page instead of ending
-    /// as a band. A cover less saturated than the minimum gets no wash; the maximum keeps a
-    /// loud cover's wash calm.
-    static let bookDetailBackdropFadeStart: Double = 0.3
-    static let bookDetailWashMinimumSaturation: Double = 0.18
-    static let bookDetailWashMaximumSaturation: Double = 0.45
-    static let bookDetailWashLightBrightness: Double = 0.92
-    static let bookDetailWashLightOpacity: Double = 0.5
-    static let bookDetailWashDarkBrightness: Double = 0.45
-    static let bookDetailWashDarkOpacity: Double = 0.35
     /// Gap between a shelf-grid cover and the title under it.
     static let bookshelfGridCoverTitleSpacing: CGFloat = 6
     /// A group's folder on the shelf, as shares of its width: the margin around its four

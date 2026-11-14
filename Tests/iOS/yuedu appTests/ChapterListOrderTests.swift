@@ -67,13 +67,13 @@ struct ChapterListOrderTests {
             OnlineChapterRef(index: 11, title: "", url: ""),
             OnlineChapterRef(index: 12, title: "三", url: ""),
         ]
-        let rows = BookDetailChapterListSheet.rows(refs, order: .descending)
-        #expect(rows.map(\.offset) == [2, 1, 0])
-        #expect(rows.map(\.element.index) == [12, 11, 10])
+        // The one 目錄 (2026-11-12): a source's chapters become its rows, each at its place.
+        let entries = ReaderTOCView.entries(refs)
+        #expect(entries.map(\.id) == refs.map(\.id))
+        let rows = ReaderTOCFilter.shown(entries, order: .descending, query: "")
+        #expect(rows.map(\.index) == [2, 1, 0])
         // The empty title still reads 「第 2 章」, its place in the book, not its row.
-        let untitled = rows[1]
-        #expect(BookDetailChapterTitle.display(untitled.element, offset: untitled.offset)
-            == String(format: localized("第 %d 章"), 2))
+        #expect(rows[1].title == String(format: localized("第 %d 章"), 2))
     }
 
     // MARK: Scroll target

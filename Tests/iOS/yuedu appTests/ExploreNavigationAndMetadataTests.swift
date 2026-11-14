@@ -53,6 +53,36 @@ struct ExploreNavigationAndMetadataTests {
         #expect(wordCount == "374萬字")
     }
 
+    // 2026-11-12: the length is said in the language's large unit, not counted out.
+
+    @Test("a count is read in whatever unit the source wrote it")
+    func wordCountUnits() {
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "373.56萬字") == 3_735_600)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "12.3万字") == 123_000)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "1,234,567字") == 1_234_567)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "3735600") == 3_735_600)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "1.2億字") == 120_000_000)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "2024-01-01 更新 · 200万字") == 2_000_000)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "連載中") == nil)
+        #expect(OnlineBookMetadataFormatter.characterCount(in: "2024-01-01 更新") == nil)
+    }
+
+    @Test("繁體中文 says it in 萬, one decimal at most")
+    func wordCountInTenThousands() {
+        let locale = Locale(identifier: "zh-Hant")
+        #expect(OnlineBookMetadataFormatter.compactCount(3_735_600, locale: locale) == "373.6萬")
+        #expect(OnlineBookMetadataFormatter.compactCount(1_200_000, locale: locale) == "120萬")
+        #expect(OnlineBookMetadataFormatter.compactCount(8_000, locale: locale) == "8000")
+    }
+
+    @Test("a text with no count is kept while it is short, and nothing is said of an empty one")
+    func wordCountWithoutANumber() {
+        let locale = Locale(identifier: "zh-Hant")
+        #expect(OnlineBookMetadataFormatter.roundedWordCount("連載中", locale: locale) == "連載中")
+        #expect(OnlineBookMetadataFormatter.roundedWordCount("  ", locale: locale) == nil)
+        #expect(OnlineBookMetadataFormatter.roundedWordCount(String(repeating: "很長的說明", count: 5), locale: locale) == nil)
+    }
+
     private func makeBook() -> OnlineBook {
         OnlineBook(
             name: "夜無疆",

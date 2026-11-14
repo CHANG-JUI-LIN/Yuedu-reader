@@ -241,7 +241,8 @@ struct AudiobookDetailView: View {
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
                 sourceGestures: sourceCallBacks?.gestures,
                 links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : [],
-                seriesFan: seriesFan
+                seriesFan: seriesFan,
+                source: heroSource
             )
         } content: {
             if let intro = shown.intro {
@@ -251,7 +252,8 @@ struct AudiobookDetailView: View {
                     baseURL: intro.isSourcesOwn ? currentBook.bookUrl : nil,
                     onAction: introAction(isSourcesOwn: intro.isSourcesOwn),
                     readsSourceFormats: intro.isSourcesOwn,
-                    isUnavailable: intro.isUnavailable
+                    isUnavailable: intro.isUnavailable,
+                    links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : []
                 )
             }
             BookDetailChapterSection(
@@ -261,7 +263,8 @@ struct AudiobookDetailView: View {
                 errorMessage: loadError,
                 latestChapter: displayLatestChapter,
                 onRetry: { load() },
-                onShowAll: { showChapterList = true }
+                onShowAll: { showChapterList = true },
+                preview: .latestAndResume(resumeIndex: resumeChapterIndex > 0 ? resumeChapterIndex : nil)
             ) { offset, chapter in
                 BookDetailChapterRow(
                     title: BookDetailChapterTitle.display(chapter, offset: offset),
@@ -349,17 +352,14 @@ struct AudiobookDetailView: View {
             pendingChapterSelection = nil
             play(chapterIndex: chapterIndex)
         }) {
-            NavigationStack {
-                BookDetailChapterListSheet(
-                    chapters: chapters,
-                    bookID: addedBookId,
-                    trailing: .play,
-                    onSelect: { offset in
-                        pendingChapterSelection = offset
-                        showChapterList = false
-                    }
-                )
-            }
+            // The app's one 目錄, the reader's; it closes itself on a pick, and the chapter plays
+            // once it is gone.
+            ReaderTOCView(
+                detailChapters: chapters, bookID: addedBookId,
+                current: resumeChapterIndex > 0 ? resumeChapterIndex : nil,
+                accessory: .play, isPresented: $showChapterList,
+                onSelect: { offset in pendingChapterSelection = offset }
+            )
         }
         .navigationDestination(item: $pushed) { push in
             switch push {
@@ -452,8 +452,9 @@ struct AudiobookDetailView: View {
 
     private var shelfAction: BookDetailAction {
         BookDetailAction(
+            // The shelf's state, not what a tap does: a tap asks before it takes the book off.
             title: alreadyInShelf
-                ? localized("移除書架")
+                ? localized("已在書架")
                 : (addingToShelf ? localized("加入中…") : localized("加入書架")),
             systemImage: alreadyInShelf ? "checkmark" : "plus",
             isBusy: addingToShelf,
@@ -472,8 +473,15 @@ struct AudiobookDetailView: View {
                 id: "chapters", label: localized("章節"), value: chapters.count.formatted()
             ))
         }
-        items.append(.source(name: sourceName) { showSourcePicker = true })
         return items
+    }
+
+    /// 來源, on the hero's panel: the source played from, whose name opens 換源.
+    private var heroSource: BookDetailHeroSource {
+        BookDetailHeroSource(
+            name: sourceName, switchAction: { showSourcePicker = true },
+            facts: [localized("線上")] + (chapters.isEmpty ? [] : [String(format: localized("%d 章"), chapters.count)])
+        )
     }
 
     /// The runtime variables the next play, shelf add or fetch will carry.

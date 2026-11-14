@@ -68,7 +68,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["開始閱讀", "繼續閱讀"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(read.isEnabled)
-        let alreadyShelved = app.buttons["已加入書架"].firstMatch.exists
+        let alreadyShelved = app.buttons["已在書架"].firstMatch.exists
         XCTAssertTrue(alreadyShelved || app.buttons["加入書架"].firstMatch.isEnabled)
         print("Existing state: shelved=\(alreadyShelved)")
         screenshot(app, "nonpro-detail")
@@ -90,7 +90,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
             XCTAssertTrue(add.waitForExistence(timeout: 10))
             add.tap()
         }
-        XCTAssertTrue(app.buttons["已加入書架"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["已在書架"].firstMatch.waitForExistence(timeout: 10))
         screenshot(app, "nonpro-shelved")
     }
 
@@ -230,7 +230,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         readAndSwipeBack(app)
         XCTAssertTrue(prompt.waitForExistence(timeout: 10), app.debugDescription)
         prompt.buttons["加入書架"].tap()
-        XCTAssertTrue(app.buttons["已加入書架"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["已在書架"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         screenshot(app, "aozora-detail-after-reading")
 
         // From 書架, the same page: the copy is the work's (2026-10-12: it showed 來源 書架 alone).
@@ -279,7 +279,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch.exists)
         if offShelf { XCTAssertTrue(app.buttons["加入書架"].firstMatch.exists, "making the copy did not shelve it") }
 
-        let all = app.buttons["查看全部"].firstMatch
+        let all = app.buttons["目錄"].firstMatch
         if all.exists, all.isHittable {
             all.tap()
             XCTAssertTrue(app.navigationBars["目錄"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)

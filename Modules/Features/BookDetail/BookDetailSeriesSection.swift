@@ -33,6 +33,8 @@ struct BookDetailSeriesSection: View {
                     .padding(.horizontal, DSSpacing.lg)
                 BookDetailCoverShelf(cards: WorkSeriesShelf.cards(series.others, store: store),
                                      identifier: "detail.series.book", onSelect: onSelect)
+                BookDetailSectionRule()
+                    .padding(.horizontal, DSSpacing.lg)
             }
         }
     }

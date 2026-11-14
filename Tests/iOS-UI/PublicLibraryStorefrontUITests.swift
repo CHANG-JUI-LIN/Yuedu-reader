@@ -211,7 +211,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["曹雪芹"].waitForExistence(timeout: 10), app.debugDescription)
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(author.waitForExistence(timeout: 10), app.debugDescription)
-        let otherWorks = app.staticTexts["作者其他作品"].firstMatch
+        let otherWorks = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "作者其他作品")).firstMatch
         for _ in 0..<6 where !(otherWorks.exists && otherWorks.isHittable) { app.swipeUp() }
         XCTAssertTrue(otherWorks.waitForExistence(timeout: 10), app.debugDescription)
         let cards = app.buttons.matching(identifier: "detail.authorWorks.book")
