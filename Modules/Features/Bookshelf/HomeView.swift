@@ -1944,11 +1944,14 @@ struct BookRow: View {
                     if let onShowWork {
                         Button(localized("作品詳情")) { onShowWork() }
                     }
-                    if let onTogglePin {
+                    // 置頂 and 刪除 are the row's swipe, which iOS 27 reads out by itself.
+                    if !BookshelfRowSwipe.reachesVoiceOver, let onTogglePin {
                         Button(BookshelfPinLabel.title(isPinned: book.isPinned)) { onTogglePin() }
                     }
                     Button(localized("編輯書籍資訊")) { onEdit() }
-                    Button(localized("刪除書籍"), role: .destructive) { onDelete() }
+                    if !BookshelfRowSwipe.reachesVoiceOver {
+                        Button(localized("刪除書籍"), role: .destructive) { onDelete() }
+                    }
                 }
         }
     }
@@ -2697,6 +2700,21 @@ private struct BookOverflowMenu: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(localized("更多"))
+    }
+}
+
+/// Whether the system hands a list row's swipe actions (置頂, 刪除) to VoiceOver itself.
+///
+/// From iOS 27 SwiftUI adds a `List` row's `swipeActions` to the row's accessibility element,
+/// so a `BookRow` that also declared 置頂 and 刪除書籍 as accessibility actions was read with
+/// them twice (a blind user's report, 2026-11-14). Measured on the row's element:
+/// iOS 27.2 — 置頂, 刪除, 刪除書籍, 編輯書籍資訊, 作品詳情; iOS 26.5 — only the four the row
+/// declares. So before iOS 27 the row still declares all four, or VoiceOver there would have
+/// no 置頂 and no delete. Delete this, and the two actions it guards, once the deployment
+/// target is iOS 27. `BookshelfRowVoiceOverActionsTests` holds both sides.
+enum BookshelfRowSwipe {
+    static var reachesVoiceOver: Bool {
+        if #available(iOS 27.0, *) { true } else { false }
     }
 }
 
