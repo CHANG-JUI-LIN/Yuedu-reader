@@ -1910,6 +1910,9 @@ struct ReaderView: View {
                     clearExternalTargetPosition: {},
                     currentPage: $currentPage,
                     pageIsCovered: pageIsCoveredBySurface,
+                    // No reveal over a fixed-layout page, but 自動閱讀 still waits for the
+                    // answer to each turn it asks for.
+                    autoReadRevealHandle: autoReadRevealHandle,
                     onPageChanged: { newPage, _ in
                         currentPage = newPage
                     },

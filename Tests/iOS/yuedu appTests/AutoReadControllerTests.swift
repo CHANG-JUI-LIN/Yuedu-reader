@@ -122,6 +122,120 @@ struct AutoReadControllerTests {
         #expect(controller.intervalDescription.contains("10"))
     }
 
+    // MARK: - Page boundary
+
+    /// 回饋中心 #107: the curtain went back to the top in the frame the turn was asked for, and
+    /// the page under it changed 20–47 ms later — so every turn showed the page just read for a
+    /// frame or two. The curtain stays shut over the old page until the host says the new one
+    /// is on screen.
+    @Test("The curtain stays shut from the page boundary until the turn is on screen (FB-107)")
+    func curtainHoldsUntilThePageHasTurned() {
+        let controller = makeController()
+        controller.setSecondsPerPage(10)
+        var pushed: [Double] = []
+        var turnsAsked = 0
+        controller.onProgressChanged = { pushed.append($0) }
+        controller.onAdvancePage = { turnsAsked += 1; return true }
+        controller.enter()
+
+        controller.step(elapsed: 9)
+        #expect(turnsAsked == 0)
+        #expect(abs((pushed.last ?? 0) - 0.9) < 1e-9)
+
+        // Crosses the boundary: the turn is asked for, and nothing has answered yet.
+        pushed.removeAll()
+        controller.step(elapsed: 2)
+        #expect(turnsAsked == 1)
+        #expect(pushed.allSatisfy { $0 >= 1 }, "the curtain opened before the page turned: \(pushed)")
+
+        // Frames keep coming while the turn is still on its way.
+        controller.step(elapsed: 0.5)
+        #expect(turnsAsked == 1)
+        #expect(pushed.allSatisfy { $0 >= 1 }, "the curtain opened before the page turned: \(pushed)")
+
+        // The page is on screen: the curtain restarts with the distance travelled meanwhile.
+        pushed.removeAll()
+        controller.pageTurnResolved()
+        #expect(pushed.count == 1)
+        #expect(abs((pushed.last ?? -1) - 0.15) < 1e-9)
+        #expect(abs(controller.progress - 0.15) < 1e-9)
+
+        controller.step(elapsed: 1)
+        #expect(turnsAsked == 1)
+        #expect(abs(controller.progress - 0.25) < 1e-9)
+        controller.exit()
+    }
+
+    /// The curtain showed the next page whole for as long as the turn took, so that time is
+    /// reading time — but never more than the one page it showed.
+    @Test("A turn that takes long to land does not skip a page nobody saw")
+    func slowTurnCarriesAtMostOnePage() {
+        let controller = makeController()
+        controller.setSecondsPerPage(10)
+        var turnsAsked = 0
+        controller.onAdvancePage = { turnsAsked += 1; return true }
+        controller.enter()
+
+        controller.step(elapsed: 10)
+        controller.step(elapsed: 35)
+        #expect(turnsAsked == 1)
+
+        controller.pageTurnResolved()
+        #expect(controller.progress == 1)
+        controller.step(elapsed: 0.1)
+        #expect(turnsAsked == 2)
+        controller.exit()
+    }
+
+    @Test("An answer nobody is waiting for changes nothing")
+    func strayAnswerIsIgnored() {
+        let controller = makeController()
+        controller.setSecondsPerPage(10)
+        controller.onAdvancePage = { true }
+        controller.pageTurnResolved()
+        #expect(controller.progress == 0)
+
+        controller.enter()
+        controller.step(elapsed: 4)
+        controller.pageTurnResolved()
+        #expect(abs(controller.progress - 0.4) < 1e-9)
+        controller.exit()
+    }
+
+    /// A turn the reader makes while the mode's own is still on its way starts the curtain
+    /// over; the answer to the abandoned turn must not move it again.
+    @Test("A manual turn ends the wait")
+    func manualTurnEndsTheWait() {
+        let controller = makeController()
+        controller.setSecondsPerPage(10)
+        var pushed: [Double] = []
+        controller.onProgressChanged = { pushed.append($0) }
+        controller.onAdvancePage = { true }
+        controller.enter()
+
+        controller.step(elapsed: 10.5)
+        controller.resetReveal()
+        #expect(controller.progress == 0)
+        controller.step(elapsed: 1)
+        #expect(abs(controller.progress - 0.1) < 1e-9)
+
+        pushed.removeAll()
+        controller.pageTurnResolved()
+        #expect(pushed.isEmpty)
+        controller.exit()
+    }
+
+    @Test("The last page ends the mode")
+    func lastPageEndsTheMode() {
+        let controller = makeController()
+        controller.setSecondsPerPage(10)
+        controller.onAdvancePage = { false }
+        controller.enter()
+        controller.step(elapsed: 11)
+        #expect(!controller.isActive)
+        #expect(controller.progress == 0)
+    }
+
     // MARK: - Frame arithmetic
 
     @Test("A frame advances the page by elapsed / secondsPerPage")

@@ -36,6 +36,9 @@ struct ReaderPageTurnCommand: Equatable {
     let step: Step
     let animated: Bool
     let version: UInt
+    /// 自動閱讀 asked for this turn and is holding its reveal over the page until the
+    /// executor answers that the turn landed or was refused (`AutoReadController`).
+    var isAutoRead = false
 }
 
 // MARK: - TransitionToken

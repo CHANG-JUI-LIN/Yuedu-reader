@@ -192,7 +192,12 @@ extension ReaderView {
             maxPage = allPages.count - 1
         }
         guard currentPage < maxPage else { return false }
-        issuePageTurn(.forward, showing: nextReaderPage(after: currentPage, maxPage: maxPage), animated: false)
+        issuePageTurn(
+            .forward,
+            showing: nextReaderPage(after: currentPage, maxPage: maxPage),
+            animated: false,
+            isAutoRead: true
+        )
         return true
     }
 
@@ -218,13 +223,21 @@ extension ReaderView {
     ///   自動閱讀 passes `false`: its curtain *is* the animation, and running the
     ///   reader's 仿真／覆蓋／滑動 underneath it would be two transitions at once —
     ///   legado bypasses its `PageDelegate` for the same reason.
-    func issuePageTurn(_ step: ReaderPageTurnCommand.Step, showing page: Int, animated: Bool? = nil) {
+    /// - Parameter isAutoRead: the executor answers this turn through
+    ///   `ReaderAutoReadRevealHandle.onPageTurnResolved`.
+    func issuePageTurn(
+        _ step: ReaderPageTurnCommand.Step,
+        showing page: Int,
+        animated: Bool? = nil,
+        isAutoRead: Bool = false
+    ) {
         currentPage = page
         pageTurnVersion &+= 1
         pageTurnCommand = ReaderPageTurnCommand(
             step: step,
             animated: animated ?? (effectivePageTurnStyle != .none),
-            version: pageTurnVersion
+            version: pageTurnVersion,
+            isAutoRead: isAutoRead
         )
     }
 

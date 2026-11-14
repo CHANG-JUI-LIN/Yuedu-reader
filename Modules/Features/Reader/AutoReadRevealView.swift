@@ -8,6 +8,9 @@ import UIKit
 @MainActor
 final class ReaderAutoReadRevealHandle {
     var setProgress: ((Double) -> Void)?
+    /// The paged host's answer to a turn 自動閱讀 asked for: it is on screen, or it was
+    /// refused. Set by the reader, called by the host (`AutoReadController.pageTurnResolved`).
+    var onPageTurnResolved: (() -> Void)?
 }
 
 /// The 自動閱讀 curtain: the next page, unmasked from the top down.

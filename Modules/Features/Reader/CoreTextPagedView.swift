@@ -100,6 +100,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // Absorb any stale page-turn command so a rebuilt controller (page-style
         // switch recreates the coordinator) never replays an old intent.
         context.coordinator.lastExecutedTurnVersion = pageTurnCommand?.version ?? 0
+        // 自動閱讀 is holding its reveal for an answer to the absorbed turn. The page this
+        // controller opens on is what is on screen now.
+        if pageTurnCommand?.isAutoRead == true {
+            autoReadRevealHandle?.onPageTurnResolved?()
+        }
         // Sync the binding (display output) so ReaderView.currentPage aligns with
         // the engine-restored position.
         if initialPage != currentPage {
@@ -216,6 +221,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.applyAutoReadReveal(
             page: autoReadRevealPage,
             handle: autoReadRevealHandle,
+            // `autoReadRevealPage` already names the page after the one being turned to
+            // (the binding moves when the turn is issued). Until that turn has landed
+            // the reveal is still the picture of the page it is turning to.
+            turnArriving: pageTurnCommand.map {
+                $0.isAutoRead && $0.version != context.coordinator.lastExecutedTurnVersion
+            } ?? false,
             on: uiViewController
         )
         if context.coordinator.lastAppliedPageBarsRevision != pageBarsRevision {
@@ -336,10 +347,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 // A page nobody has measured (a 載入中 page) has no next page to name:
                 // the turn waits for its layout, exactly as a swipe from it does.
                 traceRefused(base.page, context.coordinator.isUnmeasured(base) ? "unmeasured" : "edge")
+                if command.isAutoRead { context.coordinator.resolveAutoReadTurn() }
                 return
             }
             guard !target.isSamePage(as: visibleTarget) else {
                 traceRefused(target.page, "samePage")
+                if command.isAutoRead { context.coordinator.resolveAutoReadTurn() }
                 return
             }
             // Rapid-tap speed-up: register cadence now, before the cover / slide /
@@ -374,6 +387,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     let targetVC = context.coordinator.displayViewController(for: target)
                     _ = context.coordinator.setPage(targetVC, on: uiViewController, direction: direction, layoutNow: true)
                 }
+                // Landed just above, or dropped behind a 覆蓋 turn still playing: either
+                // way this command changes nothing further.
+                if command.isAutoRead { context.coordinator.resolveAutoReadTurn() }
                 return
             }
 
@@ -396,12 +412,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     to: target,
                     visible: visibleTarget
                 )
+                if command.isAutoRead { context.coordinator.autoReadTurn = .queued }
                 traceCommand("queued")
                 context.coordinator.prefetchPages(around: target.page)
                 return
             }
 
             traceCommand(shouldAnimate ? "start" : "instant")
+            if command.isAutoRead { context.coordinator.autoReadTurn = .running }
             context.coordinator.performProgrammaticTransition(
                 on: uiViewController,
                 to: target,
@@ -1742,18 +1760,22 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             on pageViewController: UIPageViewController,
             showing visiblePage: Int
         ) {
-            guard let sessionCoordinator else { return }
             let shown = ReaderPageTurnTarget(
                 page: visiblePage,
                 position: turnsByPosition
                     ? readingPage(of: pageViewController).flatMap(committedReadingPosition(of:))
                     : nil
             )
-            let effects = sessionCoordinator.send(.pageTransitionSettled(visible: shown))
-            guard !effects.isEmpty else { return }
-            if effects.contains(where: { if case .requestPageTransition = $0 { true } else { false } }) {
+            let effects = sessionCoordinator?.send(.pageTransitionSettled(visible: shown)) ?? []
+            let chains = effects.contains(where: { if case .requestPageTransition = $0 { true } else { false } })
+            if chains {
                 pageTurnTrace.queueChained(visible: visiblePage)
+            } else if autoReadTurn == .queued {
+                // The queue dropped 自動閱讀's turn (the turn that just settled already
+                // shows its page): nothing further will land.
+                resolveAutoReadTurn()
             }
+            guard !effects.isEmpty else { return }
             // This runs inside the *completion* of the previous animated setViewControllers.
             // Starting the next animated transition synchronously here makes
             // _UIQueuingScrollView raise NSInternalInconsistencyException — it is still
@@ -1809,6 +1831,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     ? self.readingPage(of: pageViewController) ?? shownViewController
                     : shownViewController
                 let resolvedPage = self.syncStablePosition(afterShowing: landedViewController, notifyFallback: true)
+                // 自動閱讀's turn is on screen: its own transition, or the chained one its
+                // queued turn became. (A turn that was already playing when it queued
+                // ends here too, unchained, and is not the answer.)
+                if self.autoReadTurn == .running || (chained && self.autoReadTurn == .queued) {
+                    self.resolveAutoReadTurn()
+                }
                 self.continueQueuedTransitionIfNeeded(on: pageViewController, showing: resolvedPage ?? targetPage)
                 self.endAnimatedTransition(on: pageViewController)
                 if animated { self.turnFrameRate.end() }
@@ -1923,18 +1951,38 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// exactly like `coverOverlayView`. It never receives touches.
         let autoReadRevealView = AutoReadRevealView()
 
+        /// A turn 自動閱讀 asked for that the executor has taken and that has not landed.
+        enum AutoReadTurn {
+            /// Its own stack write is in progress.
+            case running
+            /// Parked behind a turn still playing; the chained transition lands it.
+            case queued
+        }
+        var autoReadTurn: AutoReadTurn?
+        private var autoReadRevealPage: Int?
+        private weak var autoReadHandle: ReaderAutoReadRevealHandle?
+
         /// Puts the next page over the current one and moves the clip line.
         ///
         /// The snapshot already carries 頁眉／頁腳 because it comes from
         /// `renderSnapshot` → `renderPage`, the same function that draws the live
         /// page — so the revealed page brings its own bars, as it does in legado.
+        ///
+        /// - Parameter turnArriving: this pass carries a 自動閱讀 turn the executor has not
+        ///   run yet. The picture then waits for `resolveAutoReadTurn`, like one taken
+        ///   and not landed (`autoReadTurn`).
         func applyAutoReadReveal(
             page: Int?,
             handle: ReaderAutoReadRevealHandle?,
+            turnArriving: Bool,
             on pageViewController: UIPageViewController
         ) {
+            autoReadRevealPage = page
+            autoReadHandle = handle
             guard let page else {
                 handle?.setProgress = nil
+                // `autoReadTurn` stays: a host with no reveal (fixed layout) still owes
+                // the answer to a turn parked behind one that is playing.
                 autoReadRevealView.removeFromSuperview()
                 autoReadRevealView.setPageImage(nil, pageIndex: nil)
                 return
@@ -1944,18 +1992,46 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             autoReadRevealView.frame = pageViewController.view.bounds
             pageViewController.view.bringSubviewToFront(autoReadRevealView)
-            if autoReadRevealView.imagePageIndex != page {
-                autoReadRevealView.setPageImage(
-                    currentEngine.renderSnapshot(forPage: page),
-                    pageIndex: page
-                )
-                // A new page starts its curtain closed, whatever the last frame of
-                // the previous one left behind.
-                autoReadRevealView.setProgress(0)
-            }
             autoReadRevealView.setEdgeColor(.tintColor)
             handle?.setProgress = { [weak autoReadRevealView] progress in
                 autoReadRevealView?.setProgress(CGFloat(progress))
+            }
+            guard !turnArriving, autoReadTurn == nil else { return }
+            if autoReadRevealView.imagePageIndex != page {
+                // A page the reader turned to themselves, or the mode just starting:
+                // the curtain starts closed, whatever the last frame left behind.
+                autoReadRevealView.setProgress(0)
+                showAutoReadRevealPicture(of: page)
+            }
+        }
+
+        private func showAutoReadRevealPicture(of page: Int) {
+            guard autoReadRevealView.imagePageIndex != page else { return }
+            autoReadRevealView.setPageImage(
+                currentEngine.renderSnapshot(forPage: page),
+                pageIndex: page
+            )
+        }
+
+        /// 自動閱讀's turn is settled: the page under the reveal is the one it turned to,
+        /// or the turn was refused and nothing moved.
+        ///
+        /// Called only after the stack write, and the order below is the fix for 回饋中心
+        /// #107. The reveal was the new page drawn in full over the old one. Each step
+        /// leaves the screen showing one whole page however the steps are split across
+        /// frames — measured, the reveal's reset reached the screen a frame or two ahead
+        /// of the page change, and drawing the following page takes tens of milliseconds:
+        /// 1. (done by the caller) the page beneath becomes the new page — identical to
+        ///    the reveal over it;
+        /// 2. the reveal goes back to the top, uncovering that same page;
+        /// 3. the picture, now out of sight, becomes the page after.
+        /// It used to run 2 → 3 → 1, and between 2 and 1 the page just read was back on
+        /// screen for a frame or two.
+        fileprivate func resolveAutoReadTurn() {
+            autoReadTurn = nil
+            autoReadHandle?.onPageTurnResolved?()
+            if let page = autoReadRevealPage {
+                showAutoReadRevealPicture(of: page)
             }
         }
 
