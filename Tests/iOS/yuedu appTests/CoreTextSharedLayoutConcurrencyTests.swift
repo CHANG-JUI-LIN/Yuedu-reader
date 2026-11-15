@@ -55,7 +55,7 @@ struct CoreTextSharedLayoutConcurrencyTests {
     func ownFramesetterReproducesTheLayoutsPages(writingMode: ReaderWritingMode) async throws {
         let layout = await Self.paginate(Self.chapterText(round: 0, ruby: true), writingMode: writingMode)
         let fresh = await Self.paginate(Self.chapterText(round: 0, ruby: true), writingMode: writingMode)
-        let framesetter = CoreTextFramesetterFactory.make(for: layout.attributedString)
+        let framesetter = CoreTextChapterFramesetter(layout.attributedString)
         #expect(framesetter !== layout.framesetter)
         for page in layout.pageRanges.indices {
             let own = CoreTextPageView.makePageFrame(layout: layout, pageIndex: page, framesetter: framesetter)

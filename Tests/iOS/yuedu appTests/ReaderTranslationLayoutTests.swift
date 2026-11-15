@@ -239,7 +239,7 @@ struct ReaderTranslationLayoutTests {
             return CFRangeMake(start, end - start)
         }
         var layout = CoreTextPaginator.ChapterLayout(
-            spineIndex: spine, attributedString: display, framesetter: CTFramesetterCreateWithAttributedString(display),
+            spineIndex: spine, attributedString: display, framesetter: CoreTextChapterFramesetter(CTFramesetterCreateWithAttributedString(display), text: display),
             pageRanges: ranges, inlineAttachments: [:], inlineAnnotations: [:], blockAttachments: [:], blockRenderables: [:],
             pageKinds: Array(repeating: .text, count: ranges.count), pageBackgroundImage: nil, authoredBackgroundColor: nil,
             darkAuthoredBackgroundColor: nil, anchorOffsets: [:], renderSize: CGSize(width: 320, height: 480), fontSize: 18,

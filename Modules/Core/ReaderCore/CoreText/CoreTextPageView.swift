@@ -62,7 +62,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
     nonisolated static func makePageFrame(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
-        framesetter: CTFramesetter
+        framesetter: CoreTextChapterFramesetter
     ) -> CTFrame {
         let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
             renderSize: layout.renderSize,

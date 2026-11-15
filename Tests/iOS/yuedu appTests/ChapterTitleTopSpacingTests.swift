@@ -59,9 +59,7 @@ struct ChapterTitleTopSpacingTests {
             fontSize: layout.fontSize,
             writingMode: layout.writingMode
         )
-        let frame = CTFramesetterCreateFrame(
-            layout.framesetter, range, CGPath(rect: pathRect, transform: nil), nil
-        )
+        let frame = layout.framesetter.makeFrame(range: range, path: CGPath(rect: pathRect, transform: nil), attributes: nil)
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)

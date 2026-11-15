@@ -147,8 +147,8 @@ struct CoreTextAppearanceOffMainTests {
         let whole = ms {
             updated = layout.withUpdatedAppearance(textColor: .white, backgroundColor: .black, readerBackgroundImage: nil)
         }
-        var framesetter: CTFramesetter?
-        let framesetterMs = ms { framesetter = CoreTextFramesetterFactory.make(for: updated.attributedString) }
+        var framesetter: CoreTextChapterFramesetter?
+        let framesetterMs = ms { framesetter = CoreTextChapterFramesetter(updated.attributedString) }
         let framesMs = ms {
             _ = CoreTextPaginator.makePageArtifacts(
                 framesetter: try! #require(framesetter),

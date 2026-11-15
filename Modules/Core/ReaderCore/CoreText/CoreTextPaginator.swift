@@ -217,8 +217,9 @@ final class CoreTextPaginator: Sendable {
     struct ChapterLayout: Sendable {
         let spineIndex: Int
         @LayoutShared var attributedString: NSAttributedString
-        /// Pre-built CTFramesetter; draw(_ rect:) uses it directly without rebuilding
-        @LayoutShared var framesetter: CTFramesetter
+        /// What laid the chapter out; draw(_ rect:) uses it directly without rebuilding.
+        /// One typesetter for an ordinary chapter, windows for a very long one.
+        let framesetter: CoreTextChapterFramesetter
         /// UTF-16 character range per page (total length == attributedString.length)
         let pageRanges: [CFRange]
         /// Final per-page frames shared by metadata extraction and drawing.
@@ -551,7 +552,7 @@ final class CoreTextPaginator: Sendable {
                     "coreText.appearance.frames", "spine=\(spineIndex) pages=\(pageRanges.count)", since: framesStart
                 )
             }
-            let newFramesetter = CoreTextFramesetterFactory.make(for: updated)
+            let newFramesetter = CoreTextChapterFramesetter(updated)
             // Dark appearance prefers the publication's own dark body fill when it has one;
             // otherwise the light authored fill (or the reader theme) carries over.
             let authoredFillForAppearance: UIColor?
@@ -1051,7 +1052,7 @@ final class CoreTextPaginator: Sendable {
 
     // MARK: - Core pagination algorithm (static, runs on any thread)
 
-    private static func computeLayout(
+    static func computeLayout(
         spineIndex: Int,
         attrStr: NSAttributedString,
         imagePage: HTMLAttributedStringBuilder.ImagePage?,
@@ -1129,7 +1130,7 @@ final class CoreTextPaginator: Sendable {
                     executor: Thread.isMainThread ? "main" : "background"
                 )
             ) {
-                CoreTextFramesetterFactory.make(for: attrStr)
+                CoreTextChapterFramesetter(attrStr)
             }
             let pageRect = CGRect(origin: .zero, size: renderSize)
             let imageRect = aspectFitRect(
@@ -1167,7 +1168,7 @@ final class CoreTextPaginator: Sendable {
                 executor: Thread.isMainThread ? "main" : "background"
             )
         ) {
-            CoreTextFramesetterFactory.make(for: attrStr)
+            CoreTextChapterFramesetter(attrStr)
         }
         let pagePath = CGPath(rect: contentPathRect, transform: nil)
 
@@ -1733,6 +1734,18 @@ final class CoreTextPaginator: Sendable {
     }
 
     static func makeFrame(
+        framesetter: CoreTextChapterFramesetter,
+        range: CFRange,
+        path: CGPath,
+        writingMode: ReaderWritingMode
+    ) -> CTFrame {
+        let attributes = frameAttributes(for: writingMode)
+        let frameAttributes = attributes.isEmpty ? nil : attributes as CFDictionary
+        return framesetter.makeFrame(range: range, path: path, attributes: frameAttributes)
+    }
+
+    /// A frame of text that is not a chapter: a title, a table cell, a preview.
+    static func makeFrame(
         framesetter: CTFramesetter,
         range: CFRange,
         path: CGPath,
@@ -1744,7 +1757,7 @@ final class CoreTextPaginator: Sendable {
     }
 
     static func makePageArtifacts(
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         pageRanges: [CFRange],
         contentPathRect: CGRect,
         writingMode: ReaderWritingMode,
@@ -2411,7 +2424,7 @@ final class CoreTextPaginator: Sendable {
     /// - Orphan: last line of the previous page is a paragraph's first line → move to next page
     /// - Widow: first line of the next page is a paragraph's last line → also move the previous page's last line to the next page (ensures ≥2 lines)
     private static func applyOrphanControl(
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         pageRanges: inout [CFRange],
         attrStr: NSAttributedString,
         contentPathRect: CGRect,

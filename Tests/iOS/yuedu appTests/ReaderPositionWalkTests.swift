@@ -31,7 +31,7 @@ struct ReaderPositionWalkTests {
         var result = CoreTextPaginator.ChapterLayout(
             spineIndex: spine,
             attributedString: attributedString,
-            framesetter: CTFramesetterCreateWithAttributedString(attributedString),
+            framesetter: CoreTextChapterFramesetter(CTFramesetterCreateWithAttributedString(attributedString), text: attributedString),
             pageRanges: ranges,
             inlineAttachments: [:],
             inlineAnnotations: [:],

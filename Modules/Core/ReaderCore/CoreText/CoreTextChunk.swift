@@ -16,7 +16,7 @@ final class CoreTextChunk {
     /// The main thread owns it once slicing hands the chunks over: Core Text layout
     /// objects are used by one thread at a time. Off-main frame builds use
     /// framesetters their executor owns (`CoreTextFramesetterCache`).
-    let framesetter: CTFramesetter
+    let framesetter: CoreTextChapterFramesetter
     let attributedString: NSAttributedString
     let writingMode: ReaderWritingMode
     /// Publication-authored page backdrop. The color is painted first, then the image, so
@@ -47,7 +47,7 @@ final class CoreTextChunk {
     init(chapterIndex: Int,
          charRange: CFRange,
          size: CGSize,
-         framesetter: CTFramesetter,
+         framesetter: CoreTextChapterFramesetter,
          attributedString: NSAttributedString,
          frame: CTFrame?,
          writingMode: ReaderWritingMode = .horizontal,
@@ -101,7 +101,7 @@ final class CoreTextChunk {
     /// raster worker. Reads only immutable stored properties. The caller owns
     /// `framesetter` exclusively while this runs (Core Text layout objects are
     /// used by one thread at a time).
-    func makeFrame(using framesetter: CTFramesetter) -> CTFrame {
+    func makeFrame(using framesetter: CoreTextChapterFramesetter) -> CTFrame {
         CoreTextPaginator.makeFrame(
             framesetter: framesetter,
             range: charRange,
@@ -143,7 +143,7 @@ final class CoreTextChunk {
     /// Builds the CTFrame and its derived data. Reads only immutable stored
     /// properties; the caller owns `framesetter` exclusively while this runs.
     /// The result is applied via `applyBuiltFrame` on the main thread.
-    func buildFrameData(using framesetter: CTFramesetter) -> BuiltFrame? {
+    func buildFrameData(using framesetter: CoreTextChapterFramesetter) -> BuiltFrame? {
         if isImageOnly { return nil }
         let size = CGSize(width: width, height: height)
         let f = makeFrame(using: framesetter)

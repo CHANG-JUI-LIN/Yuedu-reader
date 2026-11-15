@@ -31,8 +31,10 @@ struct CoreTextLongChapterPaginationTests {
         print("⏱ longChapter event=\(event.characters)ch \(Int(event.milliseconds))ms pages=\(event.pages)")
 
         #expect(long.pages > short.pages * 3)
-        // Linear work gives ≈4×; the per-page whole-string bridge grows toward 16×.
-        #expect(ratio < 6, "4× the text took \(String(format: "%.1f", ratio))× the time")
+        // Linear work gives ≈4×; measured 4.7× on iOS 27.2, 4.9× on 26.5 and 5.5× on 17.5.
+        // The per-page whole-string bridge grew toward 16×, and one typesetter for the whole
+        // chapter took 9.3× on iOS 27.2 (325 ms → 3,022 ms) and 11× on 26.5.
+        #expect(ratio < 7, "4× the text took \(String(format: "%.1f", ratio))× the time")
     }
 
     /// The same event's second half: a reader closed mid-layout kept laying the chapter out
@@ -87,16 +89,18 @@ struct CoreTextLongChapterPaginationTests {
         return (milliseconds, layout.pageRanges.count, attributedString.length)
     }
 
-    /// One chapter built the way a web-novel chapter is: paragraphs of CJK text, through the
-    /// production HTML pipeline, so the attributed string's backing store, fonts and
-    /// paragraph styles are the ones CoreText sees on device.
+    /// One chapter built the way a web-novel chapter is: paragraphs of CJK dialogue, through
+    /// the production HTML pipeline, so the attributed string's backing store, fonts,
+    /// paragraph styles and punctuation kerns are the ones CoreText sees on device.
     ///
-    /// Adjacent CJK marks (`。」`, `，「`) are left out on purpose: they make CoreText's own
-    /// typesetter creation superlinear on the simulator (TCompositionEngine::AdjustSpacing,
-    /// 13.5 s for 857,790 characters), which would swamp the page loop this test measures.
-    /// On device the event's chapter built its typesetter inside an 882 ms first page.
+    /// The adjacent marks (`。」`, `：「`) matter: the squeeze kerns on them make one
+    /// typesetter for the whole chapter grow far faster than its length (simulator, iOS 27.2:
+    /// 5.2 s for 400k characters, 16.6 s for 857k; worse on iOS 26.5), which is why a long
+    /// chapter is laid out in windows (`CoreTextChapterFramesetter`). The event's own chapter
+    /// was an audio drama's listing and built its typesetter inside an 882 ms first page, so
+    /// it says nothing about how a device handles dialogue.
     private static func chapter(characterCount: Int) async -> NSAttributedString {
-        let paragraph = "他抬起頭看見城牆上的旗幟在風中翻捲他知道這一戰他們必須贏下來眾人沉默片刻後隨即齊聲應和。"
+        let paragraph = "「你來了。」他抬起頭，看見城牆上的旗幟在風中翻捲，低聲說道：「這一戰我們必須贏下來。」眾人沉默片刻，隨即齊聲應和。"
         let paragraphCount = max(1, characterCount / (paragraph.utf16.count + 1))
         let body = String(repeating: "<p>\(paragraph)</p>", count: paragraphCount)
         return await EPUBTestFixtures.renderIR(

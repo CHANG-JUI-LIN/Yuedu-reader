@@ -421,7 +421,7 @@ struct ChapterLayoutTests {
         return CoreTextPaginator.ChapterLayout(
             spineIndex: 0,
             attributedString: attr,
-            framesetter: framesetter,
+            framesetter: CoreTextChapterFramesetter(framesetter, text: attr),
             pageRanges: [CFRangeMake(0, halfLen), CFRangeMake(halfLen, text.utf16.count - halfLen)],
             inlineAttachments: [:],
             inlineAnnotations: [:],

@@ -17,7 +17,7 @@ enum CoreTextChunkSlicer {
     /// Slicing result
     struct Output {
         let chunks: [CoreTextChunk]
-        let framesetter: CTFramesetter
+        let framesetter: CoreTextChapterFramesetter
         let attributedString: NSAttributedString
         /// Cost breakdown of the call that produced this output. Reported, not acted on —
         /// see `CoreTextSliceMetrics`.
@@ -66,7 +66,7 @@ enum CoreTextChunkSlicer {
         metrics.characterCount = attrStr.length
 
         let framesetterStart = CoreTextSliceMetrics.now
-        let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
+        let framesetter = CoreTextChapterFramesetter(attrStr)
         metrics.recordFramesetter(since: framesetterStart)
 
         let totalLen = attrStr.length
@@ -104,26 +104,14 @@ enum CoreTextChunkSlicer {
             let constraints = CGSize(width: contentWidth, height: heightCap)
             var fitRange = CFRange(location: 0, length: 0)
             var suggested = metrics.measuringSuggestFrameSize {
-                CTFramesetterSuggestFrameSizeWithConstraints(
-                    framesetter,
-                    CFRange(location: offset, length: 0),
-                    nil,
-                    constraints,
-                    &fitRange
-                )
+                framesetter.suggestFrameSize(range: CFRange(location: offset, length: 0), constraints: constraints, fitRange: &fitRange)
             }
 
             // Single element exceeds heightCap (e.g. cover image, large illustration) → re-fetch without height limit
             if fitRange.length == 0 {
                 var fr2 = CFRange(location: 0, length: 0)
                 suggested = metrics.measuringSuggestFrameSize {
-                    CTFramesetterSuggestFrameSizeWithConstraints(
-                        framesetter,
-                        CFRange(location: offset, length: 0),
-                        nil,
-                        CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                        &fr2
-                    )
+                    framesetter.suggestFrameSize(range: CFRange(location: offset, length: 0), constraints: CGSize(width: contentWidth, height: .greatestFiniteMagnitude), fitRange: &fr2)
                 }
                 fitRange = fr2
             }
@@ -154,13 +142,7 @@ enum CoreTextChunkSlicer {
                     // Recompute height for the trimmed range
                     var frAdj = CFRange(location: 0, length: 0)
                     suggested = metrics.measuringSuggestFrameSize {
-                        CTFramesetterSuggestFrameSizeWithConstraints(
-                            framesetter,
-                            actualRange,
-                            nil,
-                            CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                            &frAdj
-                        )
+                        framesetter.suggestFrameSize(range: actualRange, constraints: CGSize(width: contentWidth, height: .greatestFiniteMagnitude), fitRange: &frAdj)
                     }
                 }
             }
@@ -185,13 +167,7 @@ enum CoreTextChunkSlicer {
                 actualRange.length = splitLocation - actualRange.location
                 var frAdj = CFRange(location: 0, length: 0)
                 suggested = metrics.measuringSuggestFrameSize {
-                    CTFramesetterSuggestFrameSizeWithConstraints(
-                        framesetter,
-                        actualRange,
-                        nil,
-                        CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                        &frAdj
-                    )
+                    framesetter.suggestFrameSize(range: actualRange, constraints: CGSize(width: contentWidth, height: .greatestFiniteMagnitude), fitRange: &frAdj)
                 }
                 actualHeight = ceil(max(suggested.height, 1))
                 actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
@@ -321,7 +297,7 @@ enum CoreTextChunkSlicer {
         chunks: inout [CoreTextChunk],
         minimumBackdropExtent: CGFloat,
         contentWidth: CGFloat,
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         attrStr: NSAttributedString,
         chapterIndex: Int,
         writingMode: ReaderWritingMode,
@@ -368,7 +344,7 @@ enum CoreTextChunkSlicer {
 
     private static func makeHorizontalChunk(
         frameBuild: HorizontalFrameBuild,
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         attrStr: NSAttributedString,
         chapterIndex: Int,
         range: CFRange,
@@ -411,7 +387,7 @@ enum CoreTextChunkSlicer {
 
     private static func sliceVertical(
         attributedString attrStr: NSAttributedString,
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         chapterIndex: Int,
         contentHeight: CGFloat,
         widthCap: CGFloat,
@@ -576,7 +552,7 @@ enum CoreTextChunkSlicer {
     /// Nil only when the chunk lays out no column, or the next column is too wide for any
     /// chunk; the chunk then keeps the cap width, as every vertical chunk used to.
     private static func verticalSeamWidth(
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         frame: CTFrame,
         width: CGFloat,
         columnHeight: CGFloat,
@@ -593,8 +569,7 @@ enum CoreTextChunkSlicer {
         // Enough text for the next column: the suggestion ignores a first-line indent, so
         // it can only overshoot the column's real length, and only the first column of each
         // probe is read.
-        let typesetter = CTFramesetterGetTypesetter(framesetter)
-        let nextLength = CTTypesetterSuggestLineBreak(typesetter, nextLocation, Double(columnHeight))
+        let nextLength = framesetter.suggestLineBreak(at: nextLocation, width: Double(columnHeight))
         guard nextLength > 0 else { return nil }
 
         func columnsFromRight(_ range: CFRange, probeWidth: CGFloat) -> [CGFloat] {
@@ -654,7 +629,7 @@ enum CoreTextChunkSlicer {
     }
 
     private static func makeHorizontalFrame(
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         attrStr: NSAttributedString,
         range: CFRange,
         chunkSize: CGSize,
@@ -788,7 +763,7 @@ enum CoreTextChunkSlicer {
     /// baseline (measured from the top of an unbounded frame) plus whatever descent it has
     /// below that baseline. A negative descent adds nothing — the baseline itself must fit.
     private static func laidOutHeight(
-        framesetter: CTFramesetter,
+        framesetter: CoreTextChapterFramesetter,
         range: CFRange,
         width: CGFloat,
         metrics: inout CoreTextSliceMetrics
@@ -798,11 +773,10 @@ enum CoreTextChunkSlicer {
         // sub-point precision if Core Text stores line positions in single precision.
         let probeHeight: CGFloat = 1_000_000
         let frame = metrics.measuringCreateFrame {
-            CTFramesetterCreateFrame(
-                framesetter,
-                range,
-                CGPath(rect: CGRect(x: 0, y: 0, width: width, height: probeHeight), transform: nil),
-                nil
+            framesetter.makeFrame(
+                range: range,
+                path: CGPath(rect: CGRect(x: 0, y: 0, width: width, height: probeHeight), transform: nil),
+                attributes: nil
             )
         }
         let lines = CTFrameGetLines(frame) as! [CTLine]

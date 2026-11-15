@@ -31,7 +31,7 @@ struct CoreTextChunkFramesetterOwnershipTests {
                         }
                     } else {
                         let start = SourcePerfTrace.now
-                        let own = CoreTextFramesetterFactory.make(for: text)
+                        let own = CoreTextChapterFramesetter(text)
                         samples["\(name).B.framesetterCreate", default: []].append((SourcePerfTrace.now - start) * 1000)
                         for (index, chunk) in chunks.enumerated() {
                             let frameStart = SourcePerfTrace.now

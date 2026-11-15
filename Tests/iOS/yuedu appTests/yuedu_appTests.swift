@@ -82,7 +82,7 @@ struct yuedu_appTests {
         return CoreTextPaginator.ChapterLayout(
             spineIndex: 0,
             attributedString: attributedString,
-            framesetter: framesetter,
+            framesetter: CoreTextChapterFramesetter(framesetter, text: attributedString),
             pageRanges: ranges,
             inlineAttachments: [:],
             inlineAnnotations: [:],
@@ -1597,12 +1597,7 @@ struct yuedu_appTests {
             fontSize: layout.fontSize,
             writingMode: layout.writingMode
         )
-        let frame = CTFramesetterCreateFrame(
-            layout.framesetter,
-            range,
-            CGPath(rect: contentPathRect, transform: nil),
-            nil
-        )
+        let frame = layout.framesetter.makeFrame(range: range, path: CGPath(rect: contentPathRect, transform: nil), attributes: nil)
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
@@ -2660,7 +2655,7 @@ struct yuedu_appTests {
             writingMode: layout.writingMode
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
-        let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
+        let frame = layout.framesetter.makeFrame(range: range, path: path, attributes: nil)
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
@@ -3041,7 +3036,7 @@ struct yuedu_appTests {
             writingMode: layout.writingMode
         )
         let path = CGPath(rect: contentPathRect, transform: nil)
-        let frame = CTFramesetterCreateFrame(layout.framesetter, range, path, nil)
+        let frame = layout.framesetter.makeFrame(range: range, path: path, attributes: nil)
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)

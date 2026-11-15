@@ -72,11 +72,10 @@ struct CoreTextChunkSlicerImageLineTests {
         let attr = chunk.attributedString
         let range = chunk.charRange
         var fit = CFRange()
-        let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-            chunk.framesetter, range, nil, CGSize(width: chunk.width, height: .greatestFiniteMagnitude), &fit)
+        let suggested = chunk.framesetter.suggestFrameSize(
+            range: range, constraints: CGSize(width: chunk.width, height: .greatestFiniteMagnitude), fitRange: &fit)
         let tall: CGFloat = 100_000
-        let frame = CTFramesetterCreateFrame(
-            chunk.framesetter, range, CGPath(rect: CGRect(x: 0, y: 0, width: chunk.width, height: tall), transform: nil), nil)
+        let frame = chunk.framesetter.makeFrame(range: range, path: CGPath(rect: CGRect(x: 0, y: 0, width: chunk.width, height: tall), transform: nil), attributes: nil)
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: lines.count), &origins)

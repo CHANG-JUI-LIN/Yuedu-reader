@@ -4,7 +4,7 @@ import YueduCoreTextTypography
 
 /// Framesetters owned by exactly one executor.
 ///
-/// A chapter's chunks share one CTFramesetter, and once slicing hands the chunks
+/// A chapter's chunks share one `CoreTextChapterFramesetter`, and once slicing hands the chunks
 /// over, the main thread owns it: materialization, hit testing and selection all
 /// lay out with it. Core Text layout objects (CTFramesetter, CTTypesetter, CTFrame,
 /// CTLine, CTRun) are used by one operation, queue or thread at a time, so an
@@ -21,7 +21,7 @@ import YueduCoreTextTypography
 ///
 /// Not thread-safe by design: confine an instance to its executor.
 struct CoreTextFramesetterCache {
-    private var entries: [(text: NSAttributedString, framesetter: CTFramesetter)] = []
+    private var entries: [(text: NSAttributedString, framesetter: CoreTextChapterFramesetter)] = []
     private let capacity: Int
 
     init(capacity: Int) {
@@ -30,14 +30,14 @@ struct CoreTextFramesetterCache {
 
     /// Most recently used last. Keyed by the chapter string's identity; the entry
     /// keeps the string alive, so the identity cannot be reused while cached.
-    mutating func framesetter(for text: NSAttributedString) -> CTFramesetter {
+    mutating func framesetter(for text: NSAttributedString) -> CoreTextChapterFramesetter {
         if let index = entries.firstIndex(where: { $0.text === text }) {
             let hit = entries.remove(at: index)
             entries.append(hit)
             return hit.framesetter
         }
         let framesetter = SourcePerfTrace.span("coreText.scroll.executorFramesetter", "chars=\(text.length)") {
-            CoreTextFramesetterFactory.make(for: text)
+            CoreTextChapterFramesetter(text)
         }
         entries.append((text, framesetter))
         if entries.count > capacity { entries.removeFirst() }
