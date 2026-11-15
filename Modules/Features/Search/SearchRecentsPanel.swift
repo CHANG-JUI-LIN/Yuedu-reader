@@ -3,20 +3,25 @@ import UIKit
 
 // MARK: - Idle content
 
-/// What the 搜索 page shows when it has no search to show: while its field is active
-/// and empty, 最近搜索 and 最近閱讀 — Apple Books shows Recently Searched and Recently
-/// Viewed when its field is tapped — and otherwise, or with neither to list, the page's
-/// own hint.
+/// What the 搜索 page shows when it has no search to show: while its field is empty,
+/// 最近搜索 and 最近閱讀, and with neither to list, the page's own hint.
 ///
-/// A view of its own because `isSearching` is set only for the views inside
-/// `.searchable`, never for the view that applies it.
+/// The lists show whether or not the field is active, not only once it is tapped as in
+/// Apple Books (FB-195). On iPad from iPadOS 26, an active search whose field is empty
+/// takes a tap anywhere in the page as its Cancel: UIKit's search presentation
+/// (`_UISearchPresentationController`'s passthrough interaction) ends the search and the
+/// tap never reaches the page. Shown only while the field was active, the lists vanished
+/// under the finger and no entry could ever be opened. Shown at rest, an entry runs in
+/// one tap. The cost, on iPad only: with the field already active, the first tap still
+/// just ends the search (the lists stay) and a second tap opens the entry. No public API
+/// exempts the page — `.searchSuggestions` rows are cancelled the same way (iPadOS 27.2
+/// simulator, 2026-11-15).
 struct SearchIdleContent<Hint: View>: View {
     let isQueryEmpty: Bool
     let onSearch: (String) -> Void
     let onOpenBook: (ReadingBook) -> Void
     let hint: Hint
 
-    @Environment(\.isSearching) private var isSearching
     @EnvironmentObject private var bookStore: BookStore
     @AppStorage(RecentSearchQueries.storageKey) private var recentQueries = RecentSearchQueries()
     @AppStorage(RecentReadingSelection.clearedAtStorageKey) private var readingClearedAt: Double = 0
@@ -35,7 +40,7 @@ struct SearchIdleContent<Hint: View>: View {
     }
 
     var body: some View {
-        if isSearching, isQueryEmpty {
+        if isQueryEmpty {
             let books = RecentReadingSelection.entries(
                 shelf: bookStore.books,
                 records: offShelfReads.records,
@@ -88,6 +93,8 @@ private struct SearchRecentsList: View {
                     clearAccessibilityLabel: localized("清除最近搜索"),
                     onClear: onClearQueries
                 )
+                // The first row measures the list's scroll for the 搜索 tab's title.
+                .background { Color.clear.rootTabTitleScrollAnchor() }
                 .searchRecentsRow()
                 .listRowSeparator(.hidden, edges: .top)
 
@@ -109,6 +116,7 @@ private struct SearchRecentsList: View {
                     clearAccessibilityLabel: localized("清除最近閱讀"),
                     onClear: onClearBooks
                 )
+                .background { if queries.isEmpty { Color.clear.rootTabTitleScrollAnchor() } }
                 .searchRecentsRow()
                 .listRowSeparator(.hidden, edges: .top)
 
