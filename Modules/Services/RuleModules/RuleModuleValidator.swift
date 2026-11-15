@@ -229,6 +229,10 @@ enum RuleModuleValidator {
             }
         }
         if entry.excludeTags != nil { uses3("\(path).excludeTags") }
+        if let store = entry.store {
+            if format302 == nil { format302 = "\(path).store" }
+            try validateStore(store, of: entry, path: path)
+        }
 
         var declared = pagingNames.union(globals)
         if isSearch { declared.insert("keyword") }
@@ -311,6 +315,33 @@ enum RuleModuleValidator {
                          hasURLRule: !(entry.list.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
+
+    /// A list's store (`Entry.store`): only a home list has one, each section a layout of books
+    /// with values its own parameters take.
+    private static func validateStore(_ store: [RuleModule.StoreSection], of entry: RuleModule.Entry,
+                                      path: String) throws(RuleModuleRejection) {
+        let field = "\(path).store"
+        guard path.hasPrefix("modules["), !store.isEmpty, store.count <= maxStoreSections else {
+            throw .unknownValue(field: field, value: String(store.count))
+        }
+        for (index, section) in store.enumerated() {
+            let layout = HomeSectionLayout(rawValue: section.layout)
+            guard layout.isKnown, !layout.style.drawsLists, ![.tiles, .readingCard, .compactReadingCard].contains(layout) else {
+                throw .unknownValue(field: "\(field)[\(index)].layout", value: section.layout)
+            }
+            for (name, value) in (section.params ?? [:]).sorted(by: { $0.key < $1.key }) {
+                guard let param = entry.params.first(where: { $0.name == name }) else {
+                    throw .unknownValue(field: "\(field)[\(index)].params", value: name)
+                }
+                if param.kind == .enumeration, !(param.enumOptions ?? []).contains(where: { $0.value == value }) {
+                    throw .unknownValue(field: "\(field)[\(index)].params.\(name)", value: value)
+                }
+            }
+        }
+    }
+
+    /// The most sections a list's store has.
+    static let maxStoreSections = 12
 
     /// A record's own page: only a search's or a lookup's records are asked for one (a home
     /// list's rows never are), and it gives a description or tags.

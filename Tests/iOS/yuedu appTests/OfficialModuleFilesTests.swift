@@ -646,7 +646,8 @@ struct OfficialModuleFilesTests {
     @Test("趨勢: each list is the gateway's file for a region, which follows 中繼資料語言偏好推薦 until the reader picks one")
     func trendsRegion() async throws {
         let module = try official("trends")
-        #expect(module.modules.compactMap(\.id) == ["today", "month", "year", "completed", "classics"])
+        #expect(module.modules.compactMap(\.id) == ["today", "month", "year", "completed", "classics"]
+            + HomePageDefaults.genreIDs.map { "genre-\($0)" })
         #expect(module.hosts == ["gateway.yuedureader.com", "upload.wikimedia.org", "thumb.wikimedia.org", "lain.bgm.tv"])
         let cases: [(language: String, parameters: [String: String], region: String)] = [
             ("zh-Hant", [:], "zh-Hant"), ("zh-Hans", [:], "zh-Hans"), ("ja", [:], "ja"), ("en-GB", [:], "en"),
@@ -664,6 +665,34 @@ struct OfficialModuleFilesTests {
         let ko = module.localized(for: "ko").modules[0].params[0]
         #expect(ko.title == "지역")
         #expect(ko.enumOptions?.map(\.title) == ["중국어(번체)", "중국어(간체)", "일본", "영어"])
+    }
+
+    @Test("趨勢: each genre is the gateway's file for its region and window, with a store of its windows (2026-11-15), its first a week's: the lists are built once a week")
+    func trendsGenres() async throws {
+        let module = try official("trends")
+        for id in HomePageDefaults.genreIDs {
+            let entry = try #require(module.modules.first { $0.id == "genre-\(id)" })
+            #expect(entry.store?.map(\.layout) == ["heroCards", "multiRow", "heroGrid", "largeRow"])
+            #expect(entry.store?.compactMap { $0.params?["window"] } == ["week", "month", "year", "completed"])
+            #expect(entry.description?.isEmpty == false)
+            for language in ["en", "ja", "ko", "zh-Hans"] {
+                let localized = try #require(module.localized(for: language).modules.first { $0.id == "genre-\(id)" })
+                #expect(localized.title != entry.title || language == "zh-Hans", "\(id) \(language)")
+                #expect(ModuleStores.page(of: localized, moduleID: module.id).sections.map(\.title).allSatisfy { !$0.isEmpty })
+            }
+        }
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        let address = "gateway.yuedureader.com/trends/v1/ja/genre-romance-week.json"
+        ModuleStub.install([address: .json(try reply("Trends/trends-en-year.json"))])
+        let provider = ModuleProvider(module: module, client: f.client, language: { "ja" })
+        let page = try await provider.page(ofList: "genre-romance", parameters: ["window": "week"], after: nil)
+        #expect(ModuleStub.urls == ["https://\(address)"])
+        #expect(items(page.entries).count == 2)
+        // The store's sections are named by their window, in the app's language.
+        let romance = try #require(module.localized(for: "en").modules.first { $0.id == "genre-romance" })
+        #expect(ModuleStores.page(of: romance, moduleID: "trends").sections.map(\.title)
+            == ["Popular This Week", "Popular This Month", "Popular This Year", "Completed Picks"])
     }
 
     @Test("趨勢: a work is its title, its authors, its intro, its cover and its article; a folded series names the series")

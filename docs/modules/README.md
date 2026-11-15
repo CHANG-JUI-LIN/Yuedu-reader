@@ -90,6 +90,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `detail` |  | 只用在 `search` 和 `lookup`：那本書自己的頁面，補清單沒給的簡介或標籤（§5.1）。3.0。 |
 | `minKeywordLength` |  | 只用在 `search`：關鍵字至少幾個字才送出（Open Library 是 `3`）。更短的不送：搜尋時這個模組不出現，補資料時也不用書名查。3.0。 |
 | `searchesAuthors` |  | 只用在 `search`：寫 `true` 表示關鍵字可以是作者名、會搜出這位作者的書。作品詳情的「作者其他作品」會用作品的第一位作者搜一次，只留作者相同的結果。不寫就只用書名搜。3.0.1。 |
+| `store` |  | 只用在 `modules[]`：這個清單自己的書店頁（§3.4）。首頁上這個清單的卡片點了開書店頁，不開清單本身。3.0.2。 |
 
 ### 3.1 參數 `params[]`
 
@@ -164,6 +165,27 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 
 規則裡的 `{{…}}` 只能放一條規則（例如 `https://ncode.syosetu.com/{{$.ncode}}/`），由規則引擎就地讀出；
 不能放參數。
+
+### 3.4 書店頁 `store[]`
+
+一個清單（例如一個題材）可以有自己的書店頁：好幾個欄目由上往下排，每個欄目都是這個清單本身，只是換了參數、換了排法。
+首頁上這個清單的卡片（拼貼卡片、大圖卡片、類型清單…）點下去就開這一頁；探索右上的「分類」列出所有有書店頁的清單。
+每個欄目的名稱是它設定的選項名稱（例如 `window` 設成 `month` 就叫「本月熱門」），已在地化的照 `localizations`。
+頁面最底下再列出所有有書店頁的清單，像書店的「類型」。
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `layout` | ✓ | 排法，放書的排法之一：`heroCards`（主打卡片）、`multiRow`（多行橫向輪播）、`row`、`largeRow`（大型封面書架）、`heroGrid`（一大四小）、`rankedRow`、`colorBand`、`coverGrid`、`list`、`featured`。 |
+| `params` |  | 這個欄目的參數值，用參數的 `name` 當鍵；選項參數只能填它有的選項。沒寫的照參數自己的 `value`。 |
+
+最多 12 個欄目。
+
+```json
+"store": [
+  {"layout": "heroCards", "params": {"window": "today"}},
+  {"layout": "multiRow", "params": {"window": "month"}}
+]
+```
 
 ---
 
@@ -397,7 +419,7 @@ App 照這個順序找紀錄：
 
 格式 3.0.1 才有的（要 `"requiredVersion": "3.0.1"` 以上）：`reviews`、`searchesAuthors`，以及 `list` 的 `id`、`volumes`。
 
-格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`，以及參數的 `belongTo`、`placeholders`。
+格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`、清單的 `store`，以及參數的 `belongTo`、`placeholders`。
 舊版 App 會拒絕用了 `globalParams` 的模組（它看不懂那些 `{{…}}`），其他幾個會被忽略。
 
 ---

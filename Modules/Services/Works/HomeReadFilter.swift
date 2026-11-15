@@ -23,7 +23,8 @@ struct HomeReadFilter {
         // 系列下一本 never offers a book read to the end: it offers the one after it. An
         // article's read state is the RSS tab's. An index's chips and 我的書庫's tiles are not
         // books, nor are 精選書單's lists. A section of lists hides by each card's own list.
-        case .continueReading, .bookshelf, .nextInSeries, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .lists,
+        // 之前讀過 is the books read before, those read to the end most of all.
+        case .continueReading, .bookshelf, .nextInSeries, .readBefore, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .lists,
              .myLibrary, .unknown:
             return false
         }

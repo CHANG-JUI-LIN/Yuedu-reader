@@ -65,12 +65,13 @@ struct HomeChartTests {
         #expect(HomeChartColumns.places == 3)
     }
 
-    @Test("a 大圖卡片 card's photo is its card's in its section, on every list the card gives")
+    @Test("a 大圖卡片 card's photo is its card's in its section; 精選書單's lists are a card each, each with its own")
     func photoFollowsTheCard() throws {
         let hot = HomeSectionBinding.module(moduleID: "m", entryID: "hot")
         let section = HomeSection(layout: .bannerCards, binding: .lists([HomeListCard(binding: hot, parameters: ["地區": "jp"]),
                                                                         HomeListCard(binding: .gutenbergLists)]))
         let cards = section.listCards
+        #expect(cards.dropFirst().map(\.binding) == PublicLibraryCollection.all.map { .gutenbergCollection(id: $0.id) })
         let rows = cards.enumerated().map { index, card in
             HomeModel.Row(id: HomeModel.rowID(section: section.id, card: index, source: gutenberg), section: section,
                           source: gutenberg, sourceName: "", policy: .local, state: .idle, card: card, cardIndex: index)
@@ -79,12 +80,12 @@ struct HomeChartTests {
         let expected = try #require(HomeListCardPhotoID(section: section.id, binding: hot, parameters: ["地區": "jp"]))
         #expect(books.map(\.photoID) == [expected])
 
-        let lists = CollectionSummary.cards(of: rows[1], entries: PublicLibraryCollection.all.prefix(2).map {
-            .collection(.bundledGutenberg($0))
-        }, languages: nil)
-        let listsPhoto = try #require(HomeListCardPhotoID(section: section.id, binding: .gutenbergLists, parameters: [:]))
-        #expect(lists.count == 2)
-        #expect(lists.allSatisfy { $0.photoID == listsPhoto })
-        #expect(expected != listsPhoto)
+        let photos = rows.dropFirst().flatMap { CollectionSummary.cards(of: $0, entries: [book("乙")], languages: nil) }.map(\.photoID)
+        #expect(photos.count == PublicLibraryCollection.all.count)
+        #expect(Set(photos + [expected]).count == photos.count + 1, "each list its own photo")
+        #expect(!photos.contains(nil))
+        // The store keeps them when it clears the photos no card has.
+        let home = HomeConfigurations(sections: [section])
+        #expect(HomeListCardPhotoID.all(in: home).isSuperset(of: photos.compactMap { $0 }))
     }
 }

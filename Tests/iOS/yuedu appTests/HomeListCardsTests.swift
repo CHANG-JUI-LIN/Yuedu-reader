@@ -217,6 +217,48 @@ struct HomeListCardsTests {
         #expect(editor.listCards.first == HomeListCard(binding: feed, title: "新書"))
     }
 
+    @Test("a card's own name is kept through the write, stays the card's, and goes back to its list's")
+    func cardName() {
+        let store = HomePageStore(fileURL: scratch().appendingPathComponent("explore_home.json"))
+        let editor = HomeSectionEditor(newSectionIn: store, layout: .bannerCards,
+                                       preview: HomeModel(providers: { [] }, waitForSources: {}))
+        // 精選書單 is its lists, a card each.
+        editor.choose(.gutenbergLists)
+        let lists = PublicLibraryCollection.all.map { HomeSectionBinding.gutenbergCollection(id: $0.id) }
+        #expect(editor.listCards.map(\.binding) == lists)
+        #expect(editor.draft.binding == .gutenbergLists, "nothing is written until a card changes")
+
+        editor.setCardTitle(at: 1, to: "我的 ")
+        #expect(editor.listCards[1].title == "我的 ", "kept as typed: the next word follows the space")
+        editor.setCardTitle(at: 1, to: "我的小說")
+        #expect(editor.listCards.map(\.title) == ["", "我的小說", "", ""])
+        #expect(editor.listCards.map(\.binding) == lists)
+        #expect(editor.draft.title.isEmpty, "the name is the card's, not the section's")
+        let before = editor.photoID(of: HomeListCard(binding: lists[1]))
+        #expect(editor.photoID(of: editor.listCards[1]) == before, "the photo is the list's")
+
+        // One card named: the older form says no name, so it stays a section of lists.
+        for _ in 0..<3 { editor.removeCard(at: editor.listCards.firstIndex { $0.title.isEmpty } ?? 0) }
+        #expect(editor.listCards == [HomeListCard(binding: lists[1], title: "我的小說")])
+        #expect(editor.draft.title.isEmpty)
+        editor.setCardTitle(at: 0, to: "  ")
+        #expect(editor.draft.binding == lists[1], "unnamed, one list is written as that list")
+
+        // A feed has no name but the card's: it keeps one.
+        let feed = HomeSectionBinding.opdsFeed(connectionID: "c", url: "/new")
+        let added = editor.addCards([.picked(feed, name: "新書")])
+        #expect(added == 1)
+        editor.setCardTitle(at: 1, to: "")
+        #expect(editor.listCards[1].title == "新書")
+        editor.setCardTitle(at: 1, to: "新到")
+        #expect(editor.listCards[1].title == "新到")
+        // 精選書單 adds the lists not there yet, a card each, and gives the first one's place.
+        #expect(editor.addCards([.picked(.gutenbergLists, name: "")]) == 2)
+        #expect(editor.listCards.count == 5)
+        #expect(editor.addCards([.picked(lists[1], name: "")]) == 0, "there already under its own name: its place")
+        #expect(editor.listCards.count == 5)
+    }
+
     @Test("what is lists alone, chosen in a layout of books, turns the section to 專題集合")
     func chooseLists() {
         let store = HomePageStore(fileURL: scratch().appendingPathComponent("explore_home.json"))

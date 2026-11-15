@@ -175,6 +175,9 @@ struct HomeSectionForm: View {
     /// The one page the form pushes: one item destination, as on the search page
     /// (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12).
     @State private var push: HomeSectionFormPush?
+    /// The card 加入清單 just added, whose page opens once 選擇內容來源's sheet has gone (CLAUDE.md,
+    /// "Sequence … by dismissal": pushed under a sheet still leaving, the page can be lost).
+    @State private var addedCard: Int?
 
     init(editor: HomeSectionEditor, isInSheet: Bool, modules: RuleModuleLibrary? = nil, added: @escaping () -> Void = {}) {
         self.editor = editor
@@ -283,7 +286,10 @@ struct HomeSectionForm: View {
                 }
             }
         }
-        .sheet(item: $presentedPicker) { mode in
+        .sheet(item: $presentedPicker, onDismiss: {
+            if let index = addedCard { push = .listCard(index) }
+            addedCard = nil
+        }) { mode in
             NavigationStack { picker(mode, isPushed: false) }
                 .environmentObject(store)
         }
@@ -617,8 +623,17 @@ struct HomeSectionForm: View {
             }
         case .addLists:
             HomeContentSourcePicker(current: nil, isPushed: isPushed, title: localized("加入清單")) { choice in
-                editor.addCards([.picked(choice.binding, parameters: choice.parameters, name: choice.itemTitle)])
-                closePicker()
+                // One list added opens its card's page (maintainer, 2026-11-15: 「應該是添加的時候
+                // 自定義分類的來源」): its name, its photo, its source and filters, set as it is added
+                // rather than by finding the new tile and opening it. 全部清單 adds several, and
+                // stays on the form.
+                let index = editor.addCards([.picked(choice.binding, parameters: choice.parameters, name: choice.itemTitle)])
+                if isPushed {
+                    push = index.map { .listCard($0) }
+                } else {
+                    addedCard = index
+                    presentedPicker = nil
+                }
             } chooseAll: { choices in
                 editor.addCards(choices.map { .picked($0.binding, parameters: $0.parameters, name: $0.itemTitle) })
                 closePicker()
@@ -680,6 +695,7 @@ private struct HomeListCardPage: View {
     @ObservedObject private var sources = BookSourceStore.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @State private var picksCategory = false
+    @State private var picksList = false
 
     private var card: HomeListCard? {
         editor.listCards.indices.contains(index) ? editor.listCards[index] : nil
@@ -709,7 +725,34 @@ private struct HomeListCardPage: View {
                     .interfaceSectionSurface()
                 }
                 Section {
-                    LabeledContent(localized("來源"), value: card.sourceName(sources: sources, connections: connections, modules: modules))
+                    // The card's own name in place of its list's (maintainer, 2026-11-15: 「大圖卡片的
+                    // 分類也要可以更改名字」); empty follows the list.
+                    LabeledContent(localized("名稱")) {
+                        TextField(localized("名稱"), text: Binding(get: { card.title }, set: { editor.setCardTitle(at: index, to: $0) }),
+                                  prompt: Text(card.listName(modules: modules)))
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("homeSection.listCard.name")
+                    }
+                    // 選擇內容來源 again, for another source's list in this card's place (maintainer,
+                    // 2026-11-15, on the defaults' 熱門精選: 「選不了來源啊」). Until then the row only
+                    // named the source, and a card could only be removed and another added at the
+                    // end of the row.
+                    Button { picksList = true } label: {
+                        LabeledContent(localized("來源")) {
+                            HStack(spacing: DSSpacing.xs) {
+                                Text(card.sourceName(sources: sources, connections: connections, modules: modules))
+                                    .foregroundStyle(DSColor.textSecondary)
+                                Image(systemName: "chevron.right")
+                                    .font(DSFont.footnote.weight(.semibold))
+                                    .foregroundStyle(DSColor.textTertiary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .foregroundStyle(DSColor.textPrimary)
+                    }
+                    .accessibilityLabel(localized("來源"))
+                    .accessibilityValue(card.sourceName(sources: sources, connections: connections, modules: modules))
+                    .accessibilityIdentifier("homeSection.listCard.source")
                     if let category {
                         Button { picksCategory = true } label: {
                             LabeledContent(localized("分類")) {
@@ -728,7 +771,7 @@ private struct HomeListCardPage: View {
                         .accessibilityValue(category.title)
                         .accessibilityIdentifier("homeSection.listCard.category")
                     } else {
-                        LabeledContent(localized("清單"), value: card.name(modules: modules))
+                        LabeledContent(localized("清單"), value: card.listName(modules: modules))
                     }
                 }
                 .interfaceSectionSurface()
@@ -759,6 +802,17 @@ private struct HomeListCardPage: View {
                     .hidesRootTabBar()
                 }
             }
+            .navigationDestination(isPresented: $picksList) {
+                // Pushed: this page is already pushed in the form's stack.
+                HomeContentSourcePicker(current: card.binding, parameters: card.parameters, isPushed: true) { choice in
+                    editor.replaceCard(at: index, with: .picked(choice.binding, parameters: choice.parameters,
+                                                                name: choice.itemTitle))
+                    picksList = false
+                } cancel: {
+                    picksList = false
+                }
+                .hidesRootTabBar()
+            }
         } else {
             // Removed: the page empties as it pops.
             Color.clear.themedAppSurface(for: .explore)
@@ -777,6 +831,14 @@ extension HomeListCard {
             listName = entry.cardName(entry.title ?? entryID, parameters: parameters)
         }
         return HomeSection(layout: .row, binding: binding, parameters: parameters).displayTitle(sourceName: listName)
+    }
+
+    /// Its list's name, whatever the reader named the card; a list with no name of its own (a
+    /// feed) has only the card's.
+    @MainActor
+    func listName(modules: RuleModuleLibrary) -> String {
+        guard binding.namesItsList else { return title }
+        return HomeListCard(binding: binding, parameters: parameters).name(modules: modules)
     }
 
     /// Where the card's list is from, as 選擇內容來源 names it.

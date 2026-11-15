@@ -92,6 +92,17 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         return section.drawsLists ? entry.cardName(title, parameters: section.parameters) : title
     }
 
+    /// The list's own `description`, in the app's language. Not for a section that sets the
+    /// list's values itself, such as a section of a genre's store (`Entry.store`), whose window
+    /// the genre's description does not describe.
+    func rowDescription(for section: HomeSection) -> String? {
+        guard case .module(_, let entryID) = section.binding, section.parameters.isEmpty,
+              let text = entry(entryID)?.description?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+            return nil
+        }
+        return text
+    }
+
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard case .module(let moduleID, let entryID) = section.binding, moduleID == module.id,
               let entry = entry(entryID) else { return [] }

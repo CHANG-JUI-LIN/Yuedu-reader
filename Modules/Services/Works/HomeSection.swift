@@ -127,6 +127,10 @@ enum HomeSectionBinding: Hashable, Sendable {
     /// 系列下一本 (5d-6b, decisions 24 and 25): the next numbered book of each series being
     /// read or read to the end, from the shelf and the WebDAV index (`NextInSeries`).
     case nextInSeries
+    /// 之前讀過 (maintainer, 2026-11-15, after Apple Books' store): the shelf's books opened before
+    /// and no longer in 繼續閱讀 — read to the end, or taken off it — the last opened first. A
+    /// build before it reads it as `.unknown` and writes it back as it came.
+    case readBefore
     /// 訂閱的最新文章 (5g, decision 26): the newest articles of the RSS subscriptions, as the RSS
     /// tab stores them. Articles, never books: they open the article, not 作品詳情. A build
     /// before 5g reads it as `.unknown` and writes it back as it came.
@@ -169,7 +173,7 @@ extension HomeSectionBinding: Codable {
     private enum Kind: String {
         case myLibrary, continueReading, bookshelf, latest, sourceCategories, opdsFeed
         case gutenbergCollection, gutenbergLists, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
-        case subscriptionArticles, module, aiRecommendations, lists
+        case subscriptionArticles, module, aiRecommendations, lists, readBefore
     }
 
     init(from decoder: Decoder) throws {
@@ -197,6 +201,7 @@ extension HomeSectionBinding: Codable {
         case .aozoraIndex: self = .aozoraIndex(kind: try container.decode(String.self, forKey: .kind))
         case .related: self = .related
         case .nextInSeries: self = .nextInSeries
+        case .readBefore: self = .readBefore
         case .subscriptionArticles: self = .subscriptionArticles
         case .aiRecommendations: self = .aiRecommendations
         case .module:
@@ -248,6 +253,8 @@ extension HomeSectionBinding: Codable {
             try container.encode(Kind.related.rawValue, forKey: .type)
         case .nextInSeries:
             try container.encode(Kind.nextInSeries.rawValue, forKey: .type)
+        case .readBefore:
+            try container.encode(Kind.readBefore.rawValue, forKey: .type)
         case .subscriptionArticles:
             try container.encode(Kind.subscriptionArticles.rawValue, forKey: .type)
         case .aiRecommendations:
@@ -346,6 +353,8 @@ struct HomePage: Codable, Hashable, Sendable {
 ///   (`HomeDefaultsRhythmMigration`);
 /// - once, for the 2026-11-14 page after Apple Books' store: a 預設 still as the defaults made
 ///   it becomes that page (`HomeDefaultsStoreMigration`);
+/// - once, for the 2026-11-15 page with its genres: a 預設 still as the 2026-11-14 page made it
+///   becomes this one (`HomeDefaultsGenresMigration`);
 /// - the languages' rankings, which follow the language (`HomeDefaultsLanguageSwap`).
 enum HomePageDefaults {
     /// Whom the defaults are made for, as the home knows it: `page`'s inputs. 預設配置 makes a
@@ -362,23 +371,27 @@ enum HomePageDefaults {
              makeID: makeID)
     }
 
-    /// The home as Apple Books' store is laid out (maintainer, 2026-11-14, from recordings of its
-    /// home and store; `Technotes/AppleBooksHomeLayouts-2026-10-25.md` §10), filled from the lists
-    /// the app has:
+    /// The home as Apple Books' store is laid out (maintainer, 2026-11-14 and 2026-11-15, from
+    /// recordings of its home and store; `Technotes/AppleBooksHomeLayouts-2026-10-25.md` §10),
+    /// filled from the lists the app has:
     /// - 繼續閱讀 and 系列下一本, the reader's own, first; empty, they take no room.
-    /// - 熱門精選, the store's Top Picks: 趨勢's 今年熱門, 完結推薦 and 經典名著 a collage each.
+    /// - 熱門精選, the store's Top Picks: 趨勢's 今年熱門 and three genres, 完結推薦 and 經典名著,
+    ///   a collage each (`pickCards`).
     /// - 主打卡片, its opening carousel: 今日熱門. 多行橫向輪播, New & Trending: 本月熱門.
     /// - 熱門排行榜, Top Charts: the reading languages' rankings a column each (`rankings`).
-    /// - 探索更多, More to Explore: 精選書單's lists as 大圖卡片, where the public libraries are.
-    /// - 完結推薦 large, 今年熱門 一大四小, 經典名著 on its band, then 古騰堡熱門 as a plain row:
-    ///   its covers are mostly made up, and never drawn large.
-    /// - 最新 last, or right after the reader's own where 來源配置 come first.
+    /// - 探索更多, More to Explore: every genre as 大圖卡片 (`genreCards`), each opening its store.
+    /// - 完結推薦 large; 分類瀏覽, Recent Bestsellers by Genre: four genres a shelf each; 今年熱門
+    ///   一大四小; 經典名著 on its band; 之前讀過, the reader's own again.
+    /// - 精選書單 and 古騰堡熱門 where the public libraries are: 古騰堡's covers are mostly made
+    ///   up, and never drawn large.
+    /// - 類型, the store's foot: every genre a row. 最新 last, or right after the reader's own
+    ///   where 來源配置 come first.
     /// 趨勢's lists follow 中繼資料語言偏好推薦 by themselves (their 地區), so they are the same
-    /// sections for every language. 分組書架 and 類型清單 wait for lists by genre.
+    /// sections for every language.
     ///
-    /// This puts 趨勢 on the defaults, which the maintainer had kept off them on 2026-10-21. A
-    /// saved 預設 still as the defaults before made it takes this page once
-    /// (`HomeDefaultsStoreMigration`); one the reader changed keeps theirs.
+    /// A saved 預設 still as an earlier page made it takes this page once
+    /// (`HomeDefaultsStoreMigration`, `HomeDefaultsGenresMigration`); one the reader changed keeps
+    /// theirs.
     ///
     /// - Parameters:
     ///   - mode: the effective `explore.mode` (`ExploreMode.effective`); a new install is
@@ -391,28 +404,34 @@ enum HomePageDefaults {
         func trends(_ entry: String, _ layout: HomeSectionLayout) -> HomeSection {
             HomeSection(id: makeID(), layout: layout, binding: .module(moduleID: trendsID, entryID: entry))
         }
+        func lists(_ cards: [HomeListCard], _ layout: HomeSectionLayout) -> HomeSection {
+            HomeSection(id: makeID(), layout: layout, binding: .lists(cards))
+        }
         // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
         // Under 繼續閱讀 (decision 25); empty, it takes no room.
         let nextInSeries = HomeSection(id: makeID(), layout: .row, binding: .nextInSeries)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
-        // Untitled, as every section here: named in the app's language, 熱門精選 and 熱門排行榜 by
-        // their layout (`HomeSection.layoutTitle`), a list by its own name.
-        let picks = HomeSection(id: makeID(), layout: .collageCards, binding: .lists(pickCards))
+        // Untitled, as every section here: named in the app's language, 熱門精選, 探索更多, 分類瀏覽
+        // and 類型 by their layout (`HomeSection.layoutTitle`), a list by its own name.
+        let picks = lists(pickCards, .collageCards)
         let hero = trends("today", .heroCards)
         let trending = trends("month", .multiRow)
         let rankingCards = rankings(languages: languages, publicLibrariesAvailable: publicLibrariesAvailable)
-        let charts = rankingCards.isEmpty ? [] : [HomeSection(id: makeID(), layout: .rankedRow, binding: .lists(rankingCards))]
-        let explore = publicLibrariesAvailable
-            ? [HomeSection(id: makeID(), layout: .bannerCards, binding: .gutenbergLists)]
-            : []
+        let charts = rankingCards.isEmpty ? [] : [lists(rankingCards, .rankedRow)]
+        let moreToExplore = lists(genreCards, .bannerCards)
         let completed = trends("completed", .largeRow)
+        let byGenre = lists(Array(genreCards.prefix(4)), .groupedShelves)
         let year = trends("year", .heroGrid)
         let classics = trends("classics", .colorBand)
-        let popular = publicLibrariesAvailable
-            ? [HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
+        let readBefore = HomeSection(id: makeID(), layout: .row, binding: .readBefore)
+        let libraries = publicLibrariesAvailable
+            ? [HomeSection(id: makeID(), layout: .bannerCards, binding: .gutenbergLists),
+               HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
             : []
-        let store = [picks, hero, trending] + charts + explore + [completed, year, classics] + popular
+        let genres = lists(genreCards, .genreList)
+        let store = [picks, hero, trending] + charts + [moreToExplore, completed, byGenre, year, classics, readBefore]
+            + libraries + [genres]
         switch mode {
         case .bookSources:
             return HomePage(sections: [continueReading, nextInSeries, latest] + store)
@@ -424,8 +443,17 @@ enum HomePageDefaults {
     /// 趨勢, the official module whose lists the defaults are mostly made of.
     static let trendsID = "trends"
 
-    /// 熱門精選's lists, a collage each: 趨勢's 今年熱門, 完結推薦 and 經典名著.
-    static let pickCards = ["year", "completed", "classics"].map {
+    /// 趨勢's genres (2026-11-14, by the maintainer's choice of eight), each list opening its store
+    /// (`RuleModule.Entry.store`).
+    static let genreIDs = ["romance", "mystery", "scifi", "fantasy", "wuxia", "horror", "history", "youth"]
+
+    /// Every genre as a card, in `genreIDs`' order.
+    static let genreCards = genreIDs.map {
+        HomeListCard(binding: .module(moduleID: trendsID, entryID: "genre-\($0)"))
+    }
+
+    /// 熱門精選's lists, a collage each: 趨勢's 今年熱門, 愛情, 推理懸疑, 奇幻, 完結推薦 and 經典名著.
+    static let pickCards = ["year", "genre-romance", "genre-mystery", "genre-fantasy", "completed", "classics"].map {
         HomeListCard(binding: .module(moduleID: trendsID, entryID: $0))
     }
 

@@ -109,9 +109,11 @@ enum HomeDefaultsLanguageSwap {
             return Outcome(sections: swapped, removed: held.count, added: wanted.count)
         }
         // The last language had no rankings, so the store's page has no 熱門排行榜 to take them:
-        // it is known by its 熱門精選, which no defaults before it had.
-        let picks = HomeSectionBinding.lists(HomePageDefaults.pickCards)
-        guard sections.contains(where: { $0.binding == picks }) else { return nil }
+        // it is known by its 熱門精選, which no defaults before it had: the 2026-11-14 page's or
+        // today's.
+        let pickBindings: [HomeSectionBinding] = [.lists(HomePageDefaults.pickCards),
+                                                  .lists(HomeDefaultsGenresMigration.storePickCards)]
+        guard let picks = pickBindings.first(where: { binding in sections.contains { $0.binding == binding } }) else { return nil }
         guard !wanted.isEmpty, !sections.contains(where: { $0.binding == .lists(wanted) }) else {
             return Outcome(sections: sections, removed: 0, added: 0)
         }

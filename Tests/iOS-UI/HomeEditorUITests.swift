@@ -853,6 +853,89 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["App 資料"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
     }
 
+    /// 大圖卡片 of 精選書單 (maintainer, 2026-11-15): each of its lists is a card of its own in the
+    /// section's form, with its own page; a card takes a name of its own, which its tile and the
+    /// home's card read while the section stays 精選書單; and a list added opens its card's page.
+    @MainActor
+    func testBannerCardsAreEachTheirOwn() throws {
+        func section(_ binding: [String: Any], layout: String) -> [String: Any] {
+            ["binding": binding, "id": UUID().uuidString, "isEnabled": true, "layout": layout,
+             "parameters": [String: Any](), "title": ""]
+        }
+        let sections = [section(["type": "gutenbergShelf", "id": "popular"], layout: "row"),
+                        section(["type": "gutenbergLists"], layout: "bannerCards")]
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 3, "sections": sections])
+            .write(to: home)
+        let app = launchExplore(["-explore-home-file", home.path])
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        XCTAssertTrue(app.buttons["home.editDone"].waitForExistence(timeout: 10), app.debugDescription)
+        let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
+                                                    "homeEditor.section.", listsTitle)).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5), app.debugDescription)
+        bringBetweenTheBars(card, in: app)
+        card.tap()
+        XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+
+        // A card per list.
+        let first = app.buttons["homeSection.listCard.0"].firstMatch
+        for _ in 0..<4 where !first.isHittable { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(first.isHittable, app.debugDescription)
+        for index in 0..<4 {
+            XCTAssertTrue(app.buttons["homeSection.listCard.\(index)"].firstMatch.exists, "card \(index): \(app.debugDescription)")
+        }
+        XCTAssertFalse(app.buttons["homeSection.listCard.4"].firstMatch.exists, app.debugDescription)
+        XCTAssertEqual(first.label, "中文書籍, Project Gutenberg")
+        attach(app, "home-banner-cards-form")
+
+        // Its own name: a space in it is kept as it is typed.
+        first.tap()
+        let name = app.textFields["homeSection.listCard.name"].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(name.placeholderValue, "中文書籍")
+        name.tap()
+        name.typeText("My Classics")
+        XCTAssertEqual(name.value as? String, "My Classics", app.debugDescription)
+        XCTAssertTrue(app.navigationBars["My Classics"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "home-banner-card-named")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(first.label, "My Classics, Project Gutenberg")
+        XCTAssertEqual(app.buttons["homeSection.listCard.1"].firstMatch.label, "小說與文學, Project Gutenberg")
+        XCTAssertTrue(app.navigationBars[listsTitle].firstMatch.exists, "the section keeps its name: \(app.debugDescription)")
+
+        // A list added opens its card's page.
+        let add = app.buttons["homeSection.lists.add"].firstMatch
+        // Along the cards' row, by the screen: the first card leaves it as the row moves.
+        let cardsY = first.frame.midY / app.frame.height
+        for _ in 0..<6 where !add.isHittable {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: cardsY))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: cardsY)))
+        }
+        XCTAssertTrue(add.isHittable, app.debugDescription)
+        add.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Project Gutenberg")).firstMatch.tap()
+        let popular = app.buttons["homePicker.item.熱門"].firstMatch
+        XCTAssertTrue(popular.waitForExistence(timeout: 5), app.debugDescription)
+        popular.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 10), "the new card's page: \(app.debugDescription)")
+        XCTAssertEqual(name.placeholderValue, "熱門")
+        XCTAssertTrue(app.buttons["homeSection.listCard.source"].firstMatch.exists, app.debugDescription)
+        attach(app, "home-banner-card-added")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["homeSection.listCard.4"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+
+        // The home's card reads the name.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["home.editDoneBar"].firstMatch.tap()
+        let named = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", listCard, "My Classics")).firstMatch
+        for _ in 0..<6 where !named.exists { app.swipeDown(velocity: .slow) }
+        XCTAssertTrue(named.waitForExistence(timeout: 10), app.debugDescription)
+        attach(app, "home-banner-cards-named")
+    }
+
     /// 新增欄目 from 編輯首頁: a layout, then the form, whose 資料來源 opens 選擇內容來源. A library's
     /// list and a book source's category each become a section at the end of the home.
     @MainActor

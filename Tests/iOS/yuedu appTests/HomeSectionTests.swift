@@ -87,6 +87,10 @@ struct HomeSectionTests {
             case .gutenbergShelf("popular"): "popular"
             case .nextInSeries: "next"
             case .lists(HomePageDefaults.pickCards): "picks"
+            // The genres (2026-11-15): 探索更多's cards, 分類瀏覽's shelves and 類型's rows.
+            case .lists(HomePageDefaults.genreCards): $0.layout == .genreList ? "genres" : "explore"
+            case .lists(Array(HomePageDefaults.genreCards.prefix(4))): "byGenre"
+            case .readBefore: "readBefore"
             case .lists: "charts"
             case .module(HomePageDefaults.trendsID, let entry): entry
             default: "other"
@@ -102,7 +106,9 @@ struct HomeSectionTests {
     // 為你推薦 was deleted on 2026-10-27 (maintainer): no default has it.
     // Since 2026-11-14 the home is laid out as Apple Books' store (maintainer): 熱門精選, 主打卡片,
     // 本月熱門, 熱門排行榜, 探索更多, then 完結推薦, 今年熱門 and 經典名著, and 古騰堡熱門.
-    private let storeSections = ["picks", "today", "month", "featured", "completed", "year", "classics", "popular"]
+    // Since 2026-11-15 with its genres: 探索更多, 分類瀏覽, 之前讀過 and 類型 (maintainer).
+    private let storeSections = ["picks", "today", "month", "explore", "completed", "byGenre", "year", "classics",
+                                 "readBefore", "featured", "popular", "genres"]
 
     @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 最新, then the store's sections")
     func bookSourceDefaults() {
@@ -120,6 +126,10 @@ struct HomeSectionTests {
         #expect(layouts["today"] == .heroCards)
         #expect(layouts["month"] == .multiRow)
         #expect(layouts["featured"] == .bannerCards)
+        #expect(layouts["explore"] == .bannerCards)
+        #expect(layouts["byGenre"] == .groupedShelves)
+        #expect(layouts["genres"] == .genreList)
+        #expect(layouts["readBefore"] == .row)
         #expect(layouts["completed"] == .largeRow)
         #expect(layouts["year"] == .heroGrid)
         #expect(layouts["classics"] == .colorBand)
@@ -127,16 +137,22 @@ struct HomeSectionTests {
         #expect(layouts["popular"] == .row)
     }
 
-    @Test("熱門精選 is three of 趨勢's lists, a collage each; no section of the defaults prints a module's name")
+    @Test("熱門精選 is six of 趨勢's lists, a collage each; no section of the defaults prints a module's name")
     func picksAndTitles() {
-        #expect(HomePageDefaults.pickCards.map(\.binding) == ["year", "completed", "classics"].map {
+        #expect(HomePageDefaults.pickCards.map(\.binding) == ["year", "genre-romance", "genre-mystery", "genre-fantasy",
+                                                               "completed", "classics"].map {
             HomeSectionBinding.module(moduleID: "trends", entryID: $0)
         })
+        #expect(HomePageDefaults.genreCards.count == 8)
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
         let titles = Dictionary(uniqueKeysWithValues: zip(kinds(page), page.sections.map { $0.displayTitle(sourceName: "趨勢") }))
         #expect(titles["picks"] == localized("熱門精選"))
         #expect(titles["charts"] == localized("熱門排行榜"))
         #expect(titles["featured"] == localized("精選書單"))
+        #expect(titles["explore"] == localized("探索更多"))
+        #expect(titles["byGenre"] == localized("分類瀏覽"))
+        #expect(titles["genres"] == localized("欄目：類型"))
+        #expect(titles["readBefore"] == localized("之前讀過"))
     }
 
     @Test("a Gutenberg shelf is kept by id and read on the endpoint this build uses")
@@ -159,7 +175,8 @@ struct HomeSectionTests {
             #expect(!kinds(page).contains("popular"))
         }
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false, languages: [])
-        #expect(kinds(page) == ["continue", "next", "latest", "picks", "today", "month", "completed", "year", "classics"])
+        #expect(kinds(page) == ["continue", "next", "latest", "picks", "today", "month", "explore", "completed", "byGenre",
+                                "year", "classics", "readBefore", "genres"])
     }
 
     // The official modules' lists in the reader's languages (maintainer, 2026-10-21).
@@ -211,14 +228,14 @@ struct HomeSectionTests {
         #expect(HomePageDefaults.rankings(languages: ["ja"], publicLibrariesAvailable: false).isEmpty)
 
         let newInstall = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
-        #expect(kinds(newInstall) == ["continue", "next", "picks", "today", "month", "charts", "featured", "completed", "year",
-                                      "classics", "popular", "latest"])
+        #expect(kinds(newInstall) == ["continue", "next", "picks", "today", "month", "charts", "explore", "completed", "byGenre",
+                                      "year", "classics", "readBefore", "featured", "popular", "genres", "latest"])
         let charts = newInstall.sections[5]
         #expect(charts.binding == .lists(bangumi))
         #expect(charts.layout == .rankedRow && charts.layout.style == .chart)
         let sources = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: ["zh"])
-        #expect(kinds(sources) == ["continue", "next", "latest", "picks", "today", "month", "charts", "featured", "completed",
-                                   "year", "classics", "popular"])
+        #expect(kinds(sources) == ["continue", "next", "latest", "picks", "today", "month", "charts", "explore", "completed",
+                                   "byGenre", "year", "classics", "readBefore", "featured", "popular", "genres"])
         // A language with no rankings has no 熱門排行榜.
         #expect(!kinds(HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["ko"]))
             .contains("charts"))

@@ -120,6 +120,9 @@ struct HomeLayoutStyleTests {
                 let expected: HomeSectionLayout = switch section.binding {
                 case .continueReading: .compactReadingCard
                 case .lists(HomePageDefaults.pickCards): .collageCards
+                // The genres (2026-11-15): 探索更多 大圖卡片, 分類瀏覽 分組書架, 類型 類型清單.
+                case .lists(HomePageDefaults.genreCards): section.layout == .genreList ? .genreList : .bannerCards
+                case .lists(Array(HomePageDefaults.genreCards.prefix(4))): .groupedShelves
                 case .lists: .rankedRow
                 case .module(HomePageDefaults.trendsID, "today"): .heroCards
                 case .module(HomePageDefaults.trendsID, "month"): .multiRow

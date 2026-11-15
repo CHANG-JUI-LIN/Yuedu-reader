@@ -91,6 +91,12 @@ final class ShelfProvider: CollectionBrowsing {
         items(recentlyOpened(limit: limit))
     }
 
+    /// 之前讀過 (`HomeSectionBinding.readBefore`): the books opened before and no longer in
+    /// 繼續閱讀, the last opened first.
+    func readBefore(limit: Int) -> [CollectionEntry] {
+        items(recentlyOpened(limit: limit) { !$0.isInContinueReading })
+    }
+
     /// 書架 (feedback #24): the shelf's books in the 書架 tab's order, the first `limit`. Books
     /// only, a group's too: a group's chip would have no page here to open.
     func bookshelf(limit: Int) -> [CollectionEntry] {

@@ -4534,3 +4534,14 @@
 "%@的建議" = "Suggestions for %@";
 
 "相關作品" = "Related Works";
+
+/* 2026-11-15 類型書店、之前讀過 */
+"之前讀過" = "Read Before";
+"讀過的書，隨時再讀一次。" = "Books you've read, ready to read again.";
+"按鈕：分類" = "Categories";
+"所有類型" = "All Genres";
+"找不到這個類型" = "Genre Not Found";
+"提供它的模組已移除或更新。" = "The module that offered it was removed or updated.";
+"這個類型還沒有作品" = "No Books in This Genre Yet";
+"還沒有類型" = "No Genres Yet";
+"安裝提供類型的模組後會列在這裡。" = "Genres appear here once a module that offers them is installed.";

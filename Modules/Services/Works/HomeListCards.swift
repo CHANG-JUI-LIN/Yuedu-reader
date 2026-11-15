@@ -59,6 +59,20 @@ struct HomeListCard: Codable, Hashable, Sendable {
         HomeListCard(binding: binding, parameters: parameters, title: binding.namesItsList ? "" : name)
     }
 
+    /// The cards it stands for: 精選書單 is every bundled list, a card each (maintainer, 2026-11-15:
+    /// 「如果我全都是一個清單的分組，但各個分組要自己的照片呢」). Until then 精選書單 was one card whose
+    /// row gave the lists, so the form showed one tile for them all, with one photo and no name
+    /// of their own. Every card the home draws is now a card the form shows.
+    var expanded: [HomeListCard] {
+        guard binding == .gutenbergLists else { return [self] }
+        return PublicLibraryCollection.all.map { HomeListCard(binding: .gutenbergCollection(id: $0.id)) }
+    }
+
+    /// The same list under the same values, whatever either card is named.
+    func showsSameList(as other: HomeListCard) -> Bool {
+        binding == other.binding && parameters == other.parameters
+    }
+
     /// Whether this build can load it: a list it knows, not a section of lists inside another.
     var isDrawable: Bool {
         switch binding {
@@ -75,6 +89,19 @@ extension HomeSectionBinding {
         switch self {
         case .opdsFeed, .gutenbergFeed, .lists, .myLibrary, .unknown: false
         default: true
+        }
+    }
+
+    /// 精選書單, or a section of nothing but its lists: what 精選書單 is written as once one of
+    /// its cards is named, moved or taken off, so its header stays what it was.
+    var showsBundledLists: Bool {
+        switch self {
+        case .gutenbergLists: return true
+        case .lists(let cards):
+            return !cards.isEmpty && cards.allSatisfy {
+                if case .gutenbergCollection = $0.binding { true } else { false }
+            }
+        default: return false
         }
     }
 
@@ -124,7 +151,7 @@ extension HomeSection {
         guard drawsLists else { return [] }
         switch binding {
         case .lists(let cards):
-            return Array(cards.filter(\.isDrawable).prefix(Self.listCardLimit))
+            return Array(cards.filter(\.isDrawable).flatMap(\.expanded).prefix(Self.listCardLimit))
         case .sourceCategories(let references):
             // The section's parameters hold each source's filters (`HomeSection.filtersKey`).
             return references.prefix(Self.listCardLimit).map { HomeListCard(binding: .sourceCategories([$0]), parameters: parameters) }
@@ -132,8 +159,17 @@ extension HomeSection {
             return []
         default:
             // A feed is named by the section, which 選擇內容來源 titled after it.
-            return [.picked(binding, parameters: parameters, name: title)]
+            return HomeListCard.picked(binding, parameters: parameters, name: title).expanded
         }
+    }
+
+    /// Whether the section, in a layout of lists, draws exactly `cards`: their lists, values and
+    /// names. The older forms say no name of a card's own, so a card the reader named is kept
+    /// as `.lists`.
+    private func draws(_ cards: [HomeListCard]) -> Bool {
+        var asLists = self
+        asLists.layout = .bannerCards
+        return asLists.listCards == Array(cards.filter(\.isDrawable).flatMap(\.expanded).prefix(Self.listCardLimit))
     }
 
     /// A card's list as a section of its own, which its row loads: in the section's layout, so a
@@ -151,7 +187,8 @@ extension HomeSection {
         if cards.count == 1, let card = cards.first, card.isDrawable {
             section.binding = card.binding
             section.parameters = card.parameters
-            return section
+            if section.draws(cards) { return section }
+            section = self
         }
         let references = cards.compactMap { card -> ExploreCategoryReference? in
             guard case .sourceCategories(let references) = card.binding, references.count == 1 else { return nil }
@@ -161,7 +198,8 @@ extension HomeSection {
            Set(cards.map(\.parameters)).count == 1 {
             section.binding = .sourceCategories(references)
             section.parameters = cards[0].parameters
-            return section
+            if section.draws(cards) { return section }
+            section = self
         }
         section.binding = .lists(cards)
         section.parameters = [:]
@@ -210,6 +248,15 @@ extension CollectionSummary {
             return list
         }
         if !lists.isEmpty { return lists }
+        // One of 精選書單's lists as a card of its own is the list 精選書單's one card gave: the
+        // same id, covers and page, under the card's photo and the reader's name for it.
+        if !entries.isEmpty, case .gutenbergCollection(let id) = row.loadingSection.binding,
+           let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) {
+            var list = CollectionSummary.bundledGutenberg(collection)
+            list.photoID = photo
+            if let name = row.card?.title, !name.isEmpty { list.title = name }
+            return [list]
+        }
         var books: [WorkSummary] = []
         var bookLanguages: [String] = []
         var hasPlaces = false
@@ -237,6 +284,7 @@ extension CollectionSummary {
         var card = CollectionSummary(id: row.id, title: title, books: books, languages: bookLanguages, opening: .list(opening),
                                      sourceName: row.providerName)
         card.photoID = photo
+        card.blurb = row.listDescription
         return [card]
     }
 

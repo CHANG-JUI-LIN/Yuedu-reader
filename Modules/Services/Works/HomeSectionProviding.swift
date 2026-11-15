@@ -42,12 +42,17 @@ protocol HomeSectionProviding: SourceProvider {
     /// What a row of `section` is called when the section has no title of its own: the
     /// source's name, or a module's list's own (`ModuleProvider`).
     func rowName(for section: HomeSection) -> String
+    /// What a row of `section` holds, in a line, when the section has none of its own: a module's
+    /// list's `description` (`ModuleProvider`), under the section's name and on its 拼貼卡片
+    /// (maintainer, 2026-11-15, after Apple Books' store). Nil for every other source.
+    func rowDescription(for section: HomeSection) -> String?
 }
 
 extension HomeSectionProviding {
     func savedPage(_ section: HomeSection) async -> [CollectionEntry]? { nil }
     func inputsKey(for section: HomeSection) -> String? { nil }
     func rowName(for section: HomeSection) -> String { displayName }
+    func rowDescription(for section: HomeSection) -> String? { nil }
 }
 
 enum HomeRow {
@@ -60,7 +65,7 @@ enum HomeRow {
 extension ShelfProvider: HomeSectionProviding {
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
         switch section.binding {
-        case .continueReading, .bookshelf, .related, .nextInSeries: .local
+        case .continueReading, .bookshelf, .related, .nextInSeries, .readBefore: .local
         default: nil
         }
     }
@@ -72,6 +77,7 @@ extension ShelfProvider: HomeSectionProviding {
         case .bookshelf: bookshelf(limit: HomeRow.limit)
         case .related: await related(limit: HomeRow.limit)
         case .nextInSeries: await nextInSeries(limit: HomeRow.limit)
+        case .readBefore: readBefore(limit: HomeRow.limit)
         default: []
         }
     }

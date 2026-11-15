@@ -277,7 +277,7 @@ struct HomeCollageCards: View {
             // Top Picks' cards stand this far apart.
             LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                 ForEach(collections) { collection in
-                    HomeCollectionButton(collection: collection, value: HomeCollageCard.countText(collection), open: open) {
+                    HomeCollectionButton(collection: collection, value: HomeCollageCard.caption(collection), open: open) {
                         HomeCollageCard(collection: collection, width: width)
                     }
                 }
@@ -297,8 +297,9 @@ struct HomeCollageCard: View {
     let width: CGFloat
     var connections: RemoteLibraryConnectionStore = .shared
 
-    static func countText(_ collection: CollectionSummary) -> String {
-        String(format: localized("%d 本"), collection.bookCount)
+    /// Under the name: what the list holds, else how many books it has.
+    static func caption(_ collection: CollectionSummary) -> String {
+        collection.blurb ?? String(format: localized("%d 本"), collection.bookCount)
     }
 
     var body: some View {
@@ -310,7 +311,7 @@ struct HomeCollageCard: View {
                 Text(collection.title)
                     .font(DSFont.headline)
                     .foregroundStyle(DSColor.textPrimary)
-                Text(Self.countText(collection))
+                Text(Self.caption(collection))
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
             }

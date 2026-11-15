@@ -77,7 +77,8 @@ struct CollectionSummary: Hashable, Sendable, Identifiable {
     static let collageLimit = 5
 
     let id: String
-    let title: String
+    /// Its name; a card of a section of lists may carry the reader's own (`HomeListCard.title`).
+    var title: String
     /// The first books, in the list's order, at most `collageLimit`.
     let books: [WorkSummary]
     let bookCount: Int
@@ -90,6 +91,9 @@ struct CollectionSummary: Hashable, Sendable, Identifiable {
     /// The photo the reader gave the card that drew it, for 大圖卡片 (`HomeListCardPhotos`); nil
     /// for a list no card of a section drew.
     var photoID: HomeListCardPhotoID?
+    /// What the list holds, in a line, which 拼貼卡片 writes under its name in place of its count
+    /// (maintainer, 2026-11-15, after Apple Books' Top Picks); nil writes the count.
+    var blurb: String?
 
     init(id: String, title: String, books: [WorkSummary], languages: [String], opening: CollectionOpening,
          sourceName: String? = nil) {

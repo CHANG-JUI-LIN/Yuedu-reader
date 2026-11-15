@@ -4,8 +4,8 @@
   "description": "依維基百科瀏覽量排出的熱門小說、完結作品和經典名著，每天更新；地區預設跟隨「中繼資料語言偏好推薦」。",
   "author": "Yuedu",
   "site": "https://yuedureader.com/",
-  "version": "1.1",
-  "requiredVersion": "3.0.1",
+  "version": "1.2",
+  "requiredVersion": "3.0.2",
   "hosts": [
     "gateway.yuedureader.com",
     "upload.wikimedia.org",
@@ -63,8 +63,10 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
-      }
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "今天維基百科上最多人查閱的小說。"
     },
     {
       "id": "month",
@@ -112,8 +114,10 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
-      }
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "這個月最受關注的小說。"
     },
     {
       "id": "year",
@@ -161,8 +165,10 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
-      }
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "今年最受關注的小說。"
     },
     {
       "id": "completed",
@@ -210,8 +216,10 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
-      }
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "已經完結、可以一口氣讀完的熱門作品。"
     },
     {
       "id": "classics",
@@ -259,8 +267,818 @@
         "url": "$.url",
         "aliases": "$.aliases",
         "series": "$.series",
-        "seriesCovers": "$.seriesCovers", "volumes": "$.volumes[*]"
-      }
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "歷久不衰的經典名著。"
+    },
+    {
+      "id": "genre-romance",
+      "title": "愛情",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-romance-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "心動、相戀與別離的故事。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-mystery",
+      "title": "推理懸疑",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-mystery-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "謎團、犯罪與真相。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-scifi",
+      "title": "科幻",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-scifi-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "未來、太空與科技的想像。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-fantasy",
+      "title": "奇幻",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-fantasy-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "魔法、異世界與冒險。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-wuxia",
+      "title": "武俠",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-wuxia-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "江湖恩怨與刀光劍影。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-horror",
+      "title": "恐怖驚悚",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-horror-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "讓人不敢關燈的故事。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-history",
+      "title": "歷史",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-history-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "走進過去的時代與人物。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "genre-youth",
+      "title": "校園青春",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "window",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "本週熱門",
+              "value": "week"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-youth-{{window}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "description": "校園、成長與青春時光。",
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "window": "week"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "window": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "window": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "window": "completed"
+          }
+        }
+      ]
     }
   ],
   "localizations": {
@@ -280,7 +1098,8 @@
                 "en": "英语"
               }
             }
-          }
+          },
+          "description": "今天维基百科上最多人查阅的小说。"
         },
         "month": {
           "title": "本月热门",
@@ -294,7 +1113,8 @@
                 "en": "英语"
               }
             }
-          }
+          },
+          "description": "这个月最受关注的小说。"
         },
         "year": {
           "title": "今年热门",
@@ -308,7 +1128,8 @@
                 "en": "英语"
               }
             }
-          }
+          },
+          "description": "今年最受关注的小说。"
         },
         "completed": {
           "title": "完结推荐",
@@ -322,7 +1143,8 @@
                 "en": "英语"
               }
             }
-          }
+          },
+          "description": "已经完结、可以一口气读完的热门作品。"
         },
         "classics": {
           "title": "经典名著",
@@ -334,6 +1156,199 @@
                 "zh-Hans": "华语（简）",
                 "ja": "日本",
                 "en": "英语"
+              }
+            }
+          },
+          "description": "历久不衰的经典名著。"
+        },
+        "genre-romance": {
+          "title": "爱情",
+          "description": "心动、相恋与别离的故事。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-mystery": {
+          "title": "推理悬疑",
+          "description": "谜团、犯罪与真相。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-scifi": {
+          "title": "科幻",
+          "description": "未来、太空与科技的想象。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-fantasy": {
+          "title": "奇幻",
+          "description": "魔法、异世界与冒险。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-wuxia": {
+          "title": "武侠",
+          "description": "江湖恩怨与刀光剑影。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-horror": {
+          "title": "恐怖惊悚",
+          "description": "让人不敢关灯的故事。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-history": {
+          "title": "历史",
+          "description": "走进过去的时代与人物。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
+              }
+            }
+          }
+        },
+        "genre-youth": {
+          "title": "校园青春",
+          "description": "校园、成长与青春时光。",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "window": {
+              "title": "榜单",
+              "options": {
+                "week": "本周热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐"
               }
             }
           }
@@ -356,7 +1371,8 @@
                 "en": "English"
               }
             }
-          }
+          },
+          "description": "The novels most looked up on Wikipedia today."
         },
         "month": {
           "title": "Popular This Month",
@@ -370,7 +1386,8 @@
                 "en": "English"
               }
             }
-          }
+          },
+          "description": "The novels drawing the most interest this month."
         },
         "year": {
           "title": "Popular This Year",
@@ -384,7 +1401,8 @@
                 "en": "English"
               }
             }
-          }
+          },
+          "description": "The novels drawing the most interest this year."
         },
         "completed": {
           "title": "Completed Picks",
@@ -398,7 +1416,8 @@
                 "en": "English"
               }
             }
-          }
+          },
+          "description": "Popular stories that are finished, to read in one go."
         },
         "classics": {
           "title": "Classics",
@@ -410,6 +1429,199 @@
                 "zh-Hans": "Chinese (Simplified)",
                 "ja": "Japan",
                 "en": "English"
+              }
+            }
+          },
+          "description": "Classics that have stood the test of time."
+        },
+        "genre-romance": {
+          "title": "Romance",
+          "description": "Stories of falling in love, and of parting.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-mystery": {
+          "title": "Mystery & Thriller",
+          "description": "Puzzles, crimes and the truth behind them.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-scifi": {
+          "title": "Science Fiction",
+          "description": "Futures, space and technology imagined.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-fantasy": {
+          "title": "Fantasy",
+          "description": "Magic, other worlds and adventure.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-wuxia": {
+          "title": "Wuxia & Period",
+          "description": "Martial heroes and tales of bygone ages.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-horror": {
+          "title": "Horror",
+          "description": "Stories to keep the lights on for.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-history": {
+          "title": "Historical",
+          "description": "Times and people of the past.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
+              }
+            }
+          }
+        },
+        "genre-youth": {
+          "title": "Young Adult",
+          "description": "School, growing up and the years of youth.",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "window": {
+              "title": "List",
+              "options": {
+                "week": "Popular This Week",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks"
               }
             }
           }
@@ -432,7 +1644,8 @@
                 "en": "英語"
               }
             }
-          }
+          },
+          "description": "今日ウィキペディアで最も読まれている小説。"
         },
         "month": {
           "title": "今月の人気",
@@ -446,7 +1659,8 @@
                 "en": "英語"
               }
             }
-          }
+          },
+          "description": "今月いちばん注目を集めている小説。"
         },
         "year": {
           "title": "今年の人気",
@@ -460,7 +1674,8 @@
                 "en": "英語"
               }
             }
-          }
+          },
+          "description": "今年いちばん注目を集めている小説。"
         },
         "completed": {
           "title": "完結作品のおすすめ",
@@ -474,7 +1689,8 @@
                 "en": "英語"
               }
             }
-          }
+          },
+          "description": "完結済みで一気に読める人気作。"
         },
         "classics": {
           "title": "名作",
@@ -486,6 +1702,199 @@
                 "zh-Hans": "中国語（簡体字）",
                 "ja": "日本",
                 "en": "英語"
+              }
+            }
+          },
+          "description": "時代を超えて読み継がれる名作。"
+        },
+        "genre-romance": {
+          "title": "恋愛",
+          "description": "ときめきと恋、そして別れの物語。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-mystery": {
+          "title": "ミステリー",
+          "description": "謎と犯罪、そして真相。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-scifi": {
+          "title": "SF",
+          "description": "未来と宇宙、テクノロジーの想像力。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-fantasy": {
+          "title": "ファンタジー",
+          "description": "魔法と異世界、そして冒険。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-wuxia": {
+          "title": "時代小説",
+          "description": "剣と人情、過ぎし時代の物語。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-horror": {
+          "title": "ホラー",
+          "description": "灯りを消せなくなる物語。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-history": {
+          "title": "歴史",
+          "description": "過ぎた時代と人々をたどる。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
+              }
+            }
+          }
+        },
+        "genre-youth": {
+          "title": "学園",
+          "description": "学園と成長、青春の日々。",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "window": {
+              "title": "リスト",
+              "options": {
+                "week": "今週の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ"
               }
             }
           }
@@ -508,7 +1917,8 @@
                 "en": "영어"
               }
             }
-          }
+          },
+          "description": "오늘 위키백과에서 가장 많이 찾아본 소설."
         },
         "month": {
           "title": "이달의 인기",
@@ -522,7 +1932,8 @@
                 "en": "영어"
               }
             }
-          }
+          },
+          "description": "이번 달 가장 주목받는 소설."
         },
         "year": {
           "title": "올해의 인기",
@@ -536,7 +1947,8 @@
                 "en": "영어"
               }
             }
-          }
+          },
+          "description": "올해 가장 주목받는 소설."
         },
         "completed": {
           "title": "완결 추천",
@@ -550,7 +1962,8 @@
                 "en": "영어"
               }
             }
-          }
+          },
+          "description": "완결되어 한 번에 읽을 수 있는 인기작."
         },
         "classics": {
           "title": "고전 명작",
@@ -562,6 +1975,199 @@
                 "zh-Hans": "중국어(간체)",
                 "ja": "일본",
                 "en": "영어"
+              }
+            }
+          },
+          "description": "시대를 넘어 읽히는 고전 명작."
+        },
+        "genre-romance": {
+          "title": "로맨스",
+          "description": "설렘과 사랑, 그리고 이별의 이야기.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-mystery": {
+          "title": "추리·서스펜스",
+          "description": "수수께끼와 범죄, 그리고 진실.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-scifi": {
+          "title": "SF",
+          "description": "미래와 우주, 기술의 상상력.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-fantasy": {
+          "title": "판타지",
+          "description": "마법과 이세계, 그리고 모험.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-wuxia": {
+          "title": "무협·시대소설",
+          "description": "강호의 은원과 검의 이야기.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-horror": {
+          "title": "호러",
+          "description": "불을 끌 수 없게 만드는 이야기.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-history": {
+          "title": "역사",
+          "description": "지나간 시대와 인물 속으로.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
+              }
+            }
+          }
+        },
+        "genre-youth": {
+          "title": "학원·청춘",
+          "description": "학교와 성장, 청춘의 나날.",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "window": {
+              "title": "목록",
+              "options": {
+                "week": "이번 주 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천"
               }
             }
           }

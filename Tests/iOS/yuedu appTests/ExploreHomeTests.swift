@@ -25,6 +25,10 @@ struct ExploreHomeTests {
             case .nextInSeries: "nextInSeries"
             // The store's sections (2026-11-14): 熱門精選, then 趨勢's lists by their entry.
             case .lists(HomePageDefaults.pickCards): "picks"
+            // The genres (2026-11-15).
+            case .lists(HomePageDefaults.genreCards): $0.layout == .genreList ? "genres" : "explore"
+            case .lists(Array(HomePageDefaults.genreCards.prefix(4))): "byGenre"
+            case .readBefore: "readBefore"
             case .module(HomePageDefaults.trendsID, let entry): entry
             default: "other"
             }
@@ -42,8 +46,8 @@ struct ExploreHomeTests {
         let saved = sources.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: true, languages: [])
         // 精選書單, one section of the bundled lists, since 專題集合 (decision 37); among the store's
         // sections since 2026-11-14.
-        #expect(bindings(saved) == ["continueReading", "nextInSeries", "latest", "picks", "today", "month", "lists",
-                                    "completed", "year", "classics", "popular"])
+        #expect(bindings(saved) == ["continueReading", "nextInSeries", "latest", "picks", "today", "month", "explore",
+                                    "completed", "byGenre", "year", "classics", "readBefore", "lists", "popular", "genres"])
         sources.waitForPendingWritesForTesting()
 
         // Read again in another mode: the saved page stands.
@@ -57,12 +61,13 @@ struct ExploreHomeTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let newInstall = HomePageStore(fileURL: folder.appendingPathComponent("a.json"))
         #expect(bindings(newInstall.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: []))
-                == ["continueReading", "nextInSeries", "picks", "today", "month", "lists", "completed", "year", "classics",
-                    "popular", "latest"])
+                == ["continueReading", "nextInSeries", "picks", "today", "month", "explore", "completed", "byGenre", "year",
+                    "classics", "readBefore", "lists", "popular", "genres", "latest"])
 
         let china = HomePageStore(fileURL: folder.appendingPathComponent("b.json"))
         #expect(bindings(china.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: false, languages: []))
-                == ["continueReading", "nextInSeries", "latest", "picks", "today", "month", "completed", "year", "classics"])
+                == ["continueReading", "nextInSeries", "latest", "picks", "today", "month", "explore", "completed", "byGenre",
+                    "year", "classics", "readBefore", "genres"])
         newInstall.waitForPendingWritesForTesting()
         china.waitForPendingWritesForTesting()
     }

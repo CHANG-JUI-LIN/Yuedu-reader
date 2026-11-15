@@ -25,7 +25,7 @@ struct ModuleFormatDocumentationTests {
                   "bodyEncoding":"json"},
        "list":{"items":"i","title":"t","author":"a","cover":"c","intro":"i","url":"u","kind":"k","language":"l",
                "aliases":"a","tags":"t","publisher":"p","isbn":"i","series":"s","contentKind":"c"},
-       "contentKind":"comic","excludeTags":["x"]}],
+       "contentKind":"comic","excludeTags":["x"],"store":[{"layout":"heroCards","params":{"p":"v"}}]}],
      "search":{"request":{"url":"https://example.com/s"},"list":{"items":"i","title":"t","url":"u","id":"d"},
                "minKeywordLength":2,"searchesAuthors":true,
                "detail":{"request":{"url":"{{url}}.json"},"intro":"i","tags":"t"}},

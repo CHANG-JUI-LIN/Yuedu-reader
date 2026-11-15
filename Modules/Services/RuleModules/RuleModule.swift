@@ -193,11 +193,16 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// On `search`: a keyword that is an author's name finds that author's books, so
         /// 作品詳情's 作者其他作品 may ask it (format 3.0.1). Absent, it is asked for titles only.
         var searchesAuthors: Bool?
+        /// On `modules[]`: the list's own store, its sections in order, each the list with some of
+        /// its parameters set (format 3.0.2). A card of the list opens it instead of the plain
+        /// list (maintainer, 2026-11-15: a genre opens as Apple Books' 愛情 page does). An older
+        /// app ignores it.
+        var store: [StoreSection]?
 
         init(id: String?, title: String?, description: String? = nil, cacheDuration: Int? = nil,
              params: [Param] = [], request: Request, list: ListRules, contentKind: String? = nil,
              excludeTags: [String]? = nil, isbnPrefixes: [String]? = nil, detail: Detail? = nil,
-             minKeywordLength: Int? = nil, searchesAuthors: Bool? = nil) {
+             minKeywordLength: Int? = nil, searchesAuthors: Bool? = nil, store: [StoreSection]? = nil) {
             self.id = id
             self.title = title
             self.description = description
@@ -211,6 +216,7 @@ struct RuleModule: Codable, Hashable, Sendable {
             self.detail = detail
             self.minKeywordLength = minKeywordLength
             self.searchesAuthors = searchesAuthors
+            self.store = store
         }
 
         init(from decoder: any Decoder) throws {
@@ -228,6 +234,7 @@ struct RuleModule: Codable, Hashable, Sendable {
             detail = try container.decodeIfPresent(Detail.self, forKey: .detail)
             minKeywordLength = try container.decodeIfPresent(Int.self, forKey: .minKeywordLength)
             searchesAuthors = try container.decodeIfPresent(Bool.self, forKey: .searchesAuthors)
+            store = try container.decodeIfPresent([StoreSection].self, forKey: .store)
         }
 
         /// Whether `keyword` is long enough to be sent (`minKeywordLength`), counted trimmed.
@@ -235,6 +242,15 @@ struct RuleModule: Codable, Hashable, Sendable {
             let keyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
             return !keyword.isEmpty && keyword.count >= (minKeywordLength ?? 1)
         }
+    }
+
+    /// One section of a list's store (`Entry.store`): the list drawn in `layout`, with `params`
+    /// over the parameters' own values. Named by the option it sets, as its cards are.
+    struct StoreSection: Codable, Hashable, Sendable {
+        /// A layout of books (`HomeSectionLayout`): `heroCards`, `multiRow`, `largeRow`…
+        var layout: String
+        /// Parameter values by name.
+        var params: [String: String]?
     }
 
     /// A `search` or `lookup` record's own page (Open Library: a work's description is at
@@ -447,8 +463,8 @@ enum RuleModuleFormat {
     static let version3 = "3.0"
     /// `reviews`, a list's `id` and `volumes`, and a search's `searchesAuthors`.
     static let version3_0_1 = "3.0.1"
-    /// `icon`, `globalParams`, `detail`, `related`, `genre`, and a parameter's `belongTo` and
-    /// `placeholders`.
+    /// `icon`, `globalParams`, `detail`, `related`, `genre`, a list's `store`, and a parameter's
+    /// `belongTo` and `placeholders`.
     static let version3_0_2 = "3.0.2"
 }
 

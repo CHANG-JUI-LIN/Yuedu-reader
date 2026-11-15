@@ -27,6 +27,10 @@ enum ExploreNavigationRoute: Hashable {
     case moduleList(ModuleListRoute)
     /// 官方模組's AI 推薦 page (AI 推薦 plan 8d).
     case aiRecommendations
+    /// A module list's own store (`RuleModule.Entry.store`): a genre's, from its card.
+    case moduleStore(ModuleStoreRoute)
+    /// 所有類型, from 探索's 分類: every list with a store.
+    case genres
     /// 模組 (M6), from 設定 → 資源: 官方模組, the repositories and 匯入的模組.
     case moduleManager
     /// 官方模組 or 匯入的模組, from 模組.
@@ -46,8 +50,10 @@ enum ExploreNavigationRoute: Hashable {
             return lhsURL == rhsURL
         case (.sourceManager, .sourceManager), (.aggregationSettings, .aggregationSettings),
              (.subscriptions, .subscriptions), (.aiRecommendations, .aiRecommendations),
-             (.moduleManager, .moduleManager):
+             (.moduleManager, .moduleManager), (.genres, .genres):
             return true
+        case (.moduleStore(let lhsRoute), .moduleStore(let rhsRoute)):
+            return lhsRoute == rhsRoute
         case (.moduleGroup(let lhsGroup), .moduleGroup(let rhsGroup)):
             return lhsGroup == rhsGroup
         case (.moduleRepository(let lhsURL), .moduleRepository(let rhsURL)):
@@ -107,6 +113,11 @@ enum ExploreNavigationRoute: Hashable {
         case .moduleRepository(let url):
             hasher.combine(17)
             hasher.combine(url)
+        case .moduleStore(let route):
+            hasher.combine(18)
+            hasher.combine(route)
+        case .genres:
+            hasher.combine(19)
         }
     }
 }

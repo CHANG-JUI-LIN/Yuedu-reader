@@ -108,6 +108,20 @@ final class HomePhotoFolder<ID: RawRepresentable & Hashable & Sendable>: Observa
         images[new] = image
     }
 
+    /// `old`'s photo as `new`'s too, where `new` has none: what `old` stood for is now several
+    /// (精選書單's lists, a card each). The file is copied whether or not the photos are read.
+    func copyPhoto(from old: ID, to new: ID) {
+        guard old != new, FileManager.default.fileExists(atPath: fileURL(for: old).path),
+              !FileManager.default.fileExists(atPath: fileURL(for: new).path) else { return }
+        do {
+            try FileManager.default.copyItem(at: fileURL(for: old), to: fileURL(for: new))
+        } catch {
+            AppLogger.cache("⟐ home photo could not be copied", error: error, context: ["from": old.rawValue, "to": new.rawValue])
+            return
+        }
+        if isLoaded { images[new] = images[old] }
+    }
+
     /// Every saved photo whose id is not in `ids` gone from the disk, read or not: what was left
     /// by what it belonged to going.
     func removePhotos(keeping ids: Set<ID>) {
@@ -185,8 +199,26 @@ struct HomeListCardPhotoID: RawRepresentable, Hashable, Sendable {
             var asLists = section
             asLists.layout = .bannerCards
             let cards = if case .lists(let stored) = section.binding { stored } else { asLists.listCards }
-            return cards.compactMap { Self(section: section, card: $0) }
+            // A stored 精選書單 is drawn as its lists, a card each (`HomeListCard.expanded`).
+            return cards.flatMap(\.expanded).compactMap { Self(section: section, card: $0) }
         })
+    }
+
+    /// The photo a card had while it stood for several lists (精選書單, until 2026-11-15) given
+    /// to each list's own card that has none, so the home looks as it did until the reader gives
+    /// a list another. Call before `removePhotos(keeping:)`, which then takes the old one.
+    @MainActor
+    static func giveListsTheirCardsPhoto(in home: HomeConfigurations, photos: HomeListCardPhotos) {
+        for section in home.sections + home.configurations.flatMap(\.sections) {
+            let cards = if case .lists(let stored) = section.binding { stored }
+                else { [HomeListCard(binding: section.binding, parameters: section.parameters)] }
+            for card in cards where card.expanded != [card] {
+                guard let old = Self(section: section, card: card) else { continue }
+                for list in card.expanded {
+                    if let new = Self(section: section, card: list) { photos.copyPhoto(from: old, to: new) }
+                }
+            }
+        }
     }
 
     /// Nil, logged, when the list cannot be encoded; the card then keeps its designed face.

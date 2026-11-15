@@ -86,6 +86,42 @@ struct ModuleFormat302Tests {
                 == .needsRequiredVersion(field: "modules[0].params[1].belongTo", minimum: "3.0.2"))
     }
 
+    @Test("a list's store is sections of books with values its parameters take, on a home list only, under 3.0.2")
+    func store() {
+        // The fixture's list without its other 3.0.2 fields (a global, belongTo, placeholders), so
+        // its store is what needs 3.0.2.
+        func withStore(_ store: [[String: Any]]) -> (inout [String: Any]) -> Void {
+            { object in
+                var modules = object["modules"] as! [[String: Any]]
+                modules[0]["request"] = ["url": "https://example.com/list?sort={{sort}}&genre={{genre}}&p={{page}}"]
+                modules[0]["store"] = store
+                object["modules"] = modules
+                entryParams(&object) {
+                    $0[1]["belongTo"] = nil
+                    $0[1]["placeholders"] = nil
+                }
+            }
+        }
+        let good: [[String: Any]] = [["layout": "heroCards", "params": ["sort": "new"]], ["layout": "multiRow"]]
+        #expect(rejection(module(withStore(good))) == nil)
+        let module302 = try? RuleModuleValidator.validate(module(withStore(good)), appVersion: "3.0.2")
+        #expect(module302?.modules[0].store?.map(\.layout) == ["heroCards", "multiRow"])
+        #expect(rejection(module(withStore(good), requiredVersion: "3.0.1"))
+            == .needsRequiredVersion(field: "modules[0].store", minimum: "3.0.2"))
+        // A layout of lists, a reading card, an unknown layout; a parameter or option the list lacks.
+        for bad in [[["layout": "collageCards"]], [["layout": "compactReadingCard"]], [["layout": "spiral"]],
+                    [["layout": "row", "params": ["order": "new"]]], [["layout": "row", "params": ["sort": "old"]]],
+                    [] as [[String: Any]]] {
+            #expect(rejection(module(withStore(bad))) != nil, "\(bad)")
+        }
+        // Only a home list has a store.
+        let onSearch = module { object in
+            object["search"] = ["request": ["url": "https://example.com/s?q={{keyword}}"],
+                                "list": ["items": "$.books[*]", "title": "$.title"], "store": good]
+        }
+        #expect(rejection(onSearch) != nil)
+    }
+
     @Test("a request may only use a global the module declares")
     func undeclaredGlobal() {
         #expect(rejection(module()) == .undeclaredTemplate(field: "modules[0].request.url", name: "lang"))

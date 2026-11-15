@@ -17,6 +17,7 @@ extension HomeSection {
         case .latest: return localized("最新")
         case .related: return localized("相關")
         case .nextInSeries: return localized("系列下一本")
+        case .readBefore: return localized("之前讀過")
         case .subscriptionArticles: return localized("訂閱的最新文章")
         case .aiRecommendations: return localized("AI 推薦")
         // In a layout of lists the cards name their categories: the section is its source's.
@@ -25,6 +26,8 @@ extension HomeSection {
             return drawsLists && !headerNamesItsList ? sourceName : categories.first?.title ?? sourceName
         // Lists by their layout where it has a name of its own (`layoutTitle`); else from one
         // source, by the source; from several, 清單.
+        // 精選書單 with a card named, moved or taken off is still 精選書單 (`showsBundledLists`).
+        case .lists where binding.showsBundledLists: return localized("精選書單")
         case .lists: return layoutTitle ?? (sourceName.isEmpty ? localized("清單") : sourceName)
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
@@ -45,8 +48,10 @@ extension HomeSection {
         if !subtitle.isEmpty { return subtitle }
         switch binding {
         case .nextInSeries: return localized("你讀過的系列，接著讀下一本。")
+        case .readBefore: return localized("讀過的書，隨時再讀一次。")
         case .related: return localized("書架上同作者、同系列的書。")
         case .gutenbergLists: return localized("依主題整理的經典名著。")
+        case .lists where binding.showsBundledLists: return localized("依主題整理的經典名著。")
         case .gutenbergShelf(let id) where id == "popular": return localized("最多人下載的經典。")
         default: return nil
         }
@@ -182,7 +187,7 @@ struct HomeRowView: View {
 
     @ViewBuilder
     private var header: some View {
-        let label = HomeRowTitle(title: group.title, subtitle: group.section.displaySubtitle, showsChevron: showAll != nil,
+        let label = HomeRowTitle(title: group.title, subtitle: group.subtitle, showsChevron: showAll != nil,
                                  bandLine: drawsBand ? HomeBandGround.line(for: bandCover).color : nil)
             .padding(.horizontal, DSSpacing.lg)
             // The band's white name on the band's colour when its long press lifts it out. Inside

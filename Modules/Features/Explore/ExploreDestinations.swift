@@ -80,6 +80,10 @@ private struct ExploreRouteDestinations: ViewModifier {
             ModuleListPage(route: route)
         case .aiRecommendations:
             AIRecommendationModuleView()
+        case .moduleStore(let route):
+            ModuleStorePage(route: route)
+        case .genres:
+            ModuleGenresPage()
         case .moduleManager:
             RuleModuleManagerView()
         case .moduleGroup(let group):
@@ -280,7 +284,7 @@ enum ExplorePlace {
         // AI 推薦's row is its whole list.
         // 書架's whole list is the 書架 tab, which 探索 cannot switch to. A section of lists has
         // a card per list, each opening its own (`listsPage` is its header's).
-        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries,
+        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries, .readBefore,
              .aiRecommendations, .lists, .unknown:
             return nil
         }
@@ -317,6 +321,12 @@ enum ExplorePlace {
         case .gutenbergCollection(let id):
             return .publicLibrary(.collection(id: id))
         case .list(let list):
+            // A list with a store opens it, a genre as Apple Books' 愛情 (maintainer, 2026-11-15);
+            // its sections' headers open the plain list (`showAll`).
+            if case .module(let moduleID, let entryID) = list.section.binding,
+               let store = ModuleStores.store(moduleID: moduleID, entryID: entryID) {
+                return .explore(.moduleStore(store))
+            }
             let row = HomeModel.Row(id: collection.id, section: list.section, source: list.source, sourceName: list.sourceName,
                                     policy: .local, state: .idle)
             if let page = showAll(row, aozoraIndex: aozoraIndex) { return page }

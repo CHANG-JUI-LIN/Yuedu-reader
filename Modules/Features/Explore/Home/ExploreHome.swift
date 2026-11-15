@@ -425,6 +425,16 @@ private struct ExploreHomeRoot: View {
                 Spacer()
             }
         } else {
+            // 分類, as at the top of Apple Books' store (maintainer, 2026-11-15): 所有類型. Only
+            // while a module gives lists with a store.
+            if !ModuleStores.listings(in: modules).isEmpty {
+                ToolbarItem(placement: .topBarTrailing) { genresButton }
+                #if compiler(>=6.2)
+                if #available(iOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                }
+                #endif
+            }
             ToolbarItem(placement: .topBarTrailing) { configurationsButton }
             // 首頁配置 in its own glass, apart from ••• (maintainer, 2026-10-22).
             #if compiler(>=6.2)
@@ -434,6 +444,15 @@ private struct ExploreHomeRoot: View {
             #endif
             ToolbarItem(placement: .topBarTrailing) { moreControl }
         }
+    }
+
+    private var genresButton: some View {
+        Button { path.append(ExploreNavigationRoute.genres) } label: {
+            Image(systemName: "square.grid.2x2")
+                .accessibilityHidden(true)
+        }
+        .accessibilityLabel(localized("按鈕：分類"))
+        .accessibilityIdentifier("explore.genres")
     }
 
     /// 首頁配置's page, a button of its own since 2026-10-22 (maintainer, after Rex's 管理配置):

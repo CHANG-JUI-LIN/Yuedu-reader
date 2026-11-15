@@ -151,10 +151,17 @@ final class HomeSectionEditor: ObservableObject {
     }
 
     /// 加入清單: `cards` after the ones there, each once, up to `HomeSection.listCardLimit`.
-    func addCards(_ cards: [HomeListCard]) {
+    /// The place of the first of them among the cards, there already or added, so the form can
+    /// open its page; nil when none of them is among the cards (the section is full).
+    @discardableResult
+    func addCards(_ cards: [HomeListCard]) -> Int? {
         var kept = listCards
-        for card in cards where kept.count < HomeSection.listCardLimit && !kept.contains(card) { kept.append(card) }
+        // Once by its list, whatever the card there is named: the photo is the list's.
+        for card in cards.flatMap(\.expanded) where kept.count < HomeSection.listCardLimit && !kept.contains(where: card.showsSameList) {
+            kept.append(card)
+        }
         setCards(kept)
+        return cards.first?.expanded.first.flatMap { added in listCards.firstIndex(where: added.showsSameList) }
     }
 
     /// The last card stays: without it the section would show nothing.
@@ -185,10 +192,25 @@ final class HomeSectionEditor: ObservableObject {
         setCards(cards)
     }
 
+    /// A card's own name (maintainer, 2026-11-15: 「大圖卡片的分類也要可以更改名字」), in place of
+    /// its list's; empty goes back to the list's. A list with no name of its own (a feed) keeps
+    /// the one it has rather than none. The photo is the list's, so it stays.
+    func setCardTitle(at index: Int, to title: String) {
+        var cards = listCards
+        guard cards.indices.contains(index) else { return }
+        // As it is typed: trimmed at every key, the field lost the space between two words. Only
+        // a name of nothing but spaces is none.
+        let isBlank = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !isBlank || cards[index].binding.namesItsList else { return }
+        cards[index].title = isBlank ? "" : title
+        setCards(cards)
+    }
+
     /// A card's list picked again: a category under other filters.
     func replaceCard(at index: Int, with card: HomeListCard) {
         var cards = listCards
-        guard cards.indices.contains(index), !cards.contains(card) else { return }
+        guard cards.indices.contains(index),
+              !cards.enumerated().contains(where: { $0.offset != index && card.showsSameList(as: $0.element) }) else { return }
         cards[index] = card
         moveCardPhoto(from: listCards[index], to: card)
         setCards(cards)
@@ -217,13 +239,19 @@ final class HomeSectionEditor: ObservableObject {
         guard !cards.isEmpty else { return }
         var kept = cards
         if case .lists(let stored) = draft.binding {
-            kept += stored.filter(\.isDrawable).dropFirst(HomeSection.listCardLimit) + stored.filter { !$0.isDrawable }
+            kept += stored.filter(\.isDrawable).flatMap(\.expanded).dropFirst(HomeSection.listCardLimit)
+                + stored.filter { !$0.isDrawable }
         }
-        let base = HomeSection(id: draft.id, layout: draft.layout, title: draft.title, subtitle: draft.subtitle,
-                               binding: draft.binding ?? .lists([]), isEnabled: draft.isEnabled, parameters: draft.parameters)
-        let written = base.settingCards(kept)
         let followsChoice = draft.title.isEmpty || draft.title == chosenTitle
-        let title = cards.count == 1 ? cards[0].title : ""
+        // Only a list with no name of its own titles the section: a name the reader gave a card
+        // is the card's, not the header's.
+        let title = cards.count == 1 && !cards[0].binding.namesItsList ? cards[0].title : ""
+        // Titled first: a feed's one card is written as the section only when the section's
+        // title is the card's name (`HomeSection.settingCards`).
+        let base = HomeSection(id: draft.id, layout: draft.layout, title: followsChoice ? title : draft.title,
+                               subtitle: draft.subtitle, binding: draft.binding ?? .lists([]), isEnabled: draft.isEnabled,
+                               parameters: draft.parameters)
+        let written = base.settingCards(kept)
         change {
             $0.binding = written.binding
             $0.parameters = written.parameters
