@@ -679,7 +679,8 @@ struct BookDetailHero<Cover: View>: View {
     /// The block of colour behind the hero. It runs up past the hero's own top edge, under the
     /// navigation and status bars (a card clips it to its rounded top), and stays inside the
     /// safe area at the sides: a colour's own `.background` ran out under iPadOS 26's sidebar
-    /// (FB-136).
+    /// (FB-136). But for a folded iPhone Duo's side, where the status bar stands: the page's
+    /// block runs out under it (FB-207).
     private var block: some View {
         GeometryReader { proxy in
             let extensionHeight = DSLayout.bookDetailBackdropTopExtension
@@ -693,6 +694,7 @@ struct BookDetailHero<Cover: View>: View {
             .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
             .offset(y: -extensionHeight)
         }
+        .groundUnderVerticalBar(isEnabled: !isCard)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

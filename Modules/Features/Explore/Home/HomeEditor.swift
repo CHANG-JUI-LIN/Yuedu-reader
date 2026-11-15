@@ -341,7 +341,7 @@ private struct HomeSectionMorph<Mark: View, Surface: View, Gestures: ViewModifie
                 }
                 // The sideways rows draw past their bounds (`scrollClipDisabled`): the card cuts
                 // them at its edge; on the home the cut is past the screen's.
-                .clipShape(HomeSectionFrame(outset: DSSpacing.xxl * (1 - edited)))
+                .clipShape(HomeSectionFrame(home: 1 - edited))
                 .modifier(gestures)
                 .overlay {
                     if isEditing { surface.accessibilityHidden(presence < 1) }
@@ -394,11 +394,14 @@ extension View {
 /// row cut there with it. The section is drawn on the grey as on the home, so its own white
 /// cards stand apart from the frame; a white frame round them read as one white card.
 private struct HomeSectionFrame: Shape {
-    /// Past the rect on every side: the home cuts nothing.
-    var outset: CGFloat = 0
+    /// 1 on the home, which cuts nothing; 0 in 編輯首頁, the card itself.
+    var home: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
-        var frame = rect.insetBy(dx: -outset, dy: -outset)
+        // Sideways a screen's width past the rect, not a margin's: beside a folded iPhone Duo's
+        // status bar the screen's edge is some 84pt past the row's, and a cut 32pt out showed
+        // down the middle of that strip (FB-202).
+        var frame = rect.insetBy(dx: -rect.width * home, dy: -DSSpacing.xxl * home)
         // The trailing corners past the screen's edge, where the card ends.
         frame.size.width += DSRadius.xxl
         return RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous).path(in: frame)
@@ -414,6 +417,8 @@ private struct HomeSectionShade: View {
     var body: some View {
         LinearGradient(colors: [DSColor.homeSectionShade.opacity(0), DSColor.homeSectionShade],
                        startPoint: .top, endPoint: .bottom)
+            // Across a folded iPhone Duo's status bar side too, as the page is (FB-202).
+            .groundUnderVerticalBar()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

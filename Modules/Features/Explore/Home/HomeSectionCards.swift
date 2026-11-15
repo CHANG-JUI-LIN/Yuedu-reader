@@ -547,7 +547,11 @@ struct HomeBandGround: ViewModifier {
             .padding(.top, isActive ? DSSpacing.xl : 0)
             .padding(.bottom, isActive && !cutsCovers ? DSSpacing.xl : 0)
             .frame(maxWidth: isActive ? .infinity : nil, alignment: .leading)
-            .background { isActive ? Self.ground(for: cover, contrast: contrast) : .clear }
+            // Inside the safe area beside iPadOS 26's sidebar (FB-136); out under a folded
+            // iPhone Duo's status bar side (FB-202).
+            .background {
+                (isActive ? Self.ground(for: cover, contrast: contrast) : .clear).groundUnderVerticalBar()
+            }
             .animation(DSAnimation.standard, value: cover)
     }
 }
