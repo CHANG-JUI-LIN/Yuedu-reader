@@ -309,6 +309,11 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
     /// spine → the background restyle of its installed layout after a theme change.
     private var appearanceTasks: [Int: Task<Void, Never>] = [:]
     private var layoutGeneration: Int = 0
+    /// The reader that owned this engine has gone for good (`readerTeardown`), so no new
+    /// layout may start. Cancelling alone was not enough: a waiter on a chapter retries an
+    /// attempt the generation bump superseded (`preloadChapter`), and that restarted the
+    /// closed reader's layout of an 857,793-character chapter (Crashlytics 7d6c4b95).
+    private var isTornDown = false
     private var nextLayoutInvalidationOperationID: UInt64 = 0
     private var activeLayoutInvalidationOperationID: UInt64?
 
@@ -729,6 +734,9 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
         Task { @MainActor [weak self] in
             // The engine went away mid-flight; nobody is left to receive a layout.
             guard let self else { return .cancelled }
+            // Every preload starts here, a retry included: nothing is laid out for a
+            // reader that has closed.
+            guard !self.isTornDown else { return .cancelled }
             defer {
                 if self.preloadTaskIDs[spineIndex] == taskID {
                     self.preloadTasks.removeValue(forKey: spineIndex)
@@ -792,6 +800,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
             "⟐ layoutGeneration \(layoutGeneration) → \(layoutGeneration + 1) cause=\(cause.rawValue) discardingPreloads",
             level: .notice
         )
+        if cause == .readerTeardown { isTornDown = true }
         cancelPendingWorkInternal()
     }
 
