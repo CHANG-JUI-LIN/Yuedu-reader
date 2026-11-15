@@ -270,7 +270,7 @@ struct OnlineBookView: View {
                 cover: coverArtwork(shown),
                 title: shown.name,
                 author: shown.author,
-                meta: tags.joined(separator: " · "),
+                meta: BookDetailMainGenre.main(of: tags).joined(),
                 primary: readAction,
                 secondary: shelfAction,
                 authorActions: authorActions(shown.author),

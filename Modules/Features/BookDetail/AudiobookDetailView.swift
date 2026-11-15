@@ -238,7 +238,7 @@ struct AudiobookDetailView: View {
                 cover: coverArtwork(shown),
                 title: shown.name,
                 author: shown.author,
-                meta: tags.joined(separator: " · "),
+                meta: BookDetailMainGenre.main(of: tags).joined(),
                 primary: playAction,
                 secondary: shelfAction,
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],

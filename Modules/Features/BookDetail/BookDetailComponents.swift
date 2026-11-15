@@ -87,6 +87,35 @@ struct BookDetailLink: Identifiable {
     var hint: String? = nil
 }
 
+/// The one genre the page shows (maintainer, 2026-11-15: 「詳情頁顯示主分類就行」). A source's
+/// `kind` has no main and sub genre in Legado's format, only a string; the first is the main one by
+/// the sources' own habit, so it is the first that is not a word about the book's state (連載,
+/// 完結, VIP…), which some sources put first. The rest still feed 同題材, which reads them all.
+enum BookDetailMainGenre {
+    /// State words, folded, that sources write among their genres.
+    private static let stateWords: Set<String> = Set([
+        "連載", "連載中", "完結", "已完結", "完本", "全本", "新書", "簽約", "公眾", "免費", "精品", "vip",
+        "完结", "已完结", "连载", "连载中", "新书", "签约", "公众", "免费", "暫停", "暂停", "斷更", "断更", "太監", "太监",
+    ].map(WorkMatchKey.title))
+
+    static func isGenre(_ title: String) -> Bool {
+        let key = WorkMatchKey.title(title)
+        return !key.isEmpty && !stateWords.contains(key)
+    }
+
+    /// The first genre among `tags`, alone; none when every one is a state word.
+    static func main(of tags: [String]) -> [String] {
+        tags.first(where: isGenre).map { [$0] } ?? []
+    }
+
+    /// The first genre link among `links`, alone, then the series link where there is one: a
+    /// series is not a genre.
+    static func main(of links: [BookDetailLink]) -> [BookDetailLink] {
+        let genre = links.first { $0.id != "series" && isGenre($0.title) }
+        return (genre.map { [$0] } ?? []) + links.filter { $0.id == "series" }
+    }
+}
+
 // MARK: - Page scaffold
 
 /// Set by a container that scrolls the detail page itself — the public-library card
@@ -759,7 +788,7 @@ struct BookDetailHero<Cover: View>: View {
     /// The series the book belongs to, the link `series` among `links`.
     private var seriesLink: BookDetailLink? { links.first { $0.id == "series" } }
     /// The links of the line under the author: every one but the series'.
-    private var genreLinks: [BookDetailLink] { links.filter { $0.id != "series" } }
+    private var genreLinks: [BookDetailLink] { BookDetailMainGenre.main(of: links.filter { $0.id != "series" }) }
 
     /// The series over the title, as Apple Books' store names a book's (maintainer, 2026-11-14,
     /// from its page: 「第 4 冊, 6:20 MAN ›」): small capitals over a rule, the whole a button to
@@ -1436,8 +1465,10 @@ struct BookDetailIntroSection: View {
     /// secondary, as the card draws it.
     var isUnavailable = false
     var placement = Placement.section
-    /// Every genre that leads somewhere, listed under the whole description.
+    /// Every genre that leads somewhere; the main one is listed under the whole description.
     var links: [BookDetailLink] = []
+
+    private var genreLinks: [BookDetailLink] { BookDetailMainGenre.main(of: links) }
 
     /// What was tapped on the whole description's page, run once that page is gone: a sheet
     /// or a push begun while it dismisses is dropped on iOS 17
@@ -1575,7 +1606,7 @@ struct BookDetailIntroSection: View {
                         },
                         readsSourceFormats: readsSourceFormats, isUnavailable: isUnavailable, placement: .full
                     )
-                    if !links.isEmpty { genres }
+                    if !genreLinks.isEmpty { genres }
                 }
                 .padding(.vertical, DSSpacing.lg)
             }
@@ -1605,7 +1636,7 @@ struct BookDetailIntroSection: View {
                 .font(DSFont.subheadline.weight(.semibold))
                 .foregroundStyle(DSColor.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            ForEach(links) { link in
+            ForEach(genreLinks) { link in
                 Button {
                     pendingLink = link
                     isExpanded = false
