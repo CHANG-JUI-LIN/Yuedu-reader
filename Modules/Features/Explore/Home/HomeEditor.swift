@@ -88,7 +88,8 @@ extension EnvironmentValues {
     /// The section 編輯首頁's long press lifts, wherever it starts in its card; nil on the home.
     @Entry var homeSectionDrag: HomeSectionDrag? = nil
     /// The width the home lays its sections out in, which its sideways rows size their cards from
-    /// (`homeSidewaysCardWidth`); nil off the home, and before the home has a width.
+    /// (`homeSidewaysCardWidth`) and 固定封面網格, 一大四小 and 色帶 their covers (`HomeSectionCards`);
+    /// 呈現方式's gallery hands down its own. Nil elsewhere, and before the page has a width.
     @Entry var homeRowWidth: CGFloat? = nil
 }
 

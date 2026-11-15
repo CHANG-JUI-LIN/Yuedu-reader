@@ -258,6 +258,10 @@ struct HomeLayoutGallery: View {
     /// The choices' accessibility identifiers, `<prefix>.<layout>`.
     let identifierPrefix: String
     let choose: (HomeLayoutStyle) -> Void
+    /// The gallery's width, which the previews size their covers from, as the home's rows do
+    /// (`homeRowWidth`): a lazy stack makes a preview again as it scrolls back to it, and one
+    /// that measured its own width a pass later grew under the finger (回饋中心 #198).
+    @State private var width: CGFloat = 0
 
     var body: some View {
         ScrollView {
@@ -267,7 +271,9 @@ struct HomeLayoutGallery: View {
                 }
             }
             .padding(.vertical, DSSpacing.xl)
+            .environment(\.homeRowWidth, width > 0 ? width : nil)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
     }

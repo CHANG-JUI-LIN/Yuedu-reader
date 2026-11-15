@@ -55,11 +55,26 @@ struct HomeSectionCards: View {
     @ScaledMetric(relativeTo: .subheadline) private var continueCardWidth = DSLayout.homeContinueCardWidth
     @ScaledMetric(relativeTo: .headline) private var featuredCoverWidth = DSLayout.homeFeaturedCoverWidth
     @ScaledMetric(relativeTo: .subheadline) private var scaledLargeCoverWidth = DSLayout.homeLargeCoverWidth
+    /// The width the home and 呈現方式's gallery lay their sections out in, which 固定封面網格,
+    /// 一大四小 and 色帶 size their covers from (`homeRowWidth`). Known as the row is first laid
+    /// out: the widths below are measured a pass later, and a row sized by them was first laid
+    /// out at no width, then grew by its covers' height. In a lazy stack, scrolling back up to
+    /// such a row made it again, and the page jumped by what it grew: 355 points for 一大四小,
+    /// 378 for 色帶 and 483 for 固定封面網格 (iPad, iOS 27 simulator; 回饋中心 #198 and #199).
+    @Environment(\.homeRowWidth) private var rowWidth
+    /// What `rowWidth` stands for on a page that hands none down — 作品詳情's and 模組's grids,
+    /// alone on their pages, where the pass the measuring takes moves nothing on the screen.
     @State private var gridWidth: CGFloat = 0
     /// 一大四小's page width, which sizes its groups.
     @State private var heroWidth: CGFloat = 0
     /// 色帶's width, which sizes its covers.
     @State private var fanWidth: CGFloat = 0
+
+    /// 固定封面網格's width, inside the row's margins.
+    private var gridLength: CGFloat { rowWidth.map { max(0, $0 - DSSpacing.lg * 2) } ?? gridWidth }
+    /// 一大四小's and 色帶's width: the row's.
+    private var heroLength: CGFloat { rowWidth ?? heroWidth }
+    private var fanLength: CGFloat { rowWidth ?? fanWidth }
     /// 色帶's colour where no row draws its band (呈現方式's gallery): it draws its own.
     @State private var ownBandCover: CoverTint.RGB?
 
@@ -194,7 +209,7 @@ struct HomeSectionCards: View {
     /// the header leads to the rest. The first one's colour is the band's.
     private func fan(cover: Binding<CoverTint.RGB?>) -> some View {
         let count = min(cards.count, DSLayout.homeFanCount)
-        let width = max(0, fanWidth - DSSpacing.lg * 2) * DSLayout.homeFanCoverShare
+        let width = max(0, fanLength - DSSpacing.lg * 2) * DSLayout.homeFanCoverShare
         let height = width / DSLayout.discoverCoverAspectRatio
         return ZStack(alignment: .bottomLeading) {
             // In reading order, the first in front.
@@ -234,7 +249,7 @@ struct HomeSectionCards: View {
         let gap = DSSpacing.lg
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
         // The page less its leading margin, the gaps and the peek: `HomeSidewaysScroll`'s margins.
-        let groupWidth = max(0, (heroWidth - DSSpacing.lg - gap * CGFloat(perScreen) - DSLayout.homePagePeek) / CGFloat(perScreen))
+        let groupWidth = max(0, (heroLength - DSSpacing.lg - gap * CGFloat(perScreen) - DSLayout.homePagePeek) / CGFloat(perScreen))
         let smallWidth = max(0, (groupWidth - gap * 2) / (DSLayout.homeHeroLargeToSmall + 2))
         let small = CGSize(width: smallWidth, height: smallWidth / DSLayout.discoverCoverAspectRatio)
         let large = CGSize(width: smallWidth * DSLayout.homeHeroLargeToSmall,
@@ -377,18 +392,18 @@ struct HomeSectionCards: View {
     /// As many columns as fit at the compact cover's width, never fewer than two.
     private var gridColumns: Int {
         let spacing = DSSpacing.md
-        return max(2, Int((gridWidth + spacing) / (compactCoverWidth + spacing)))
+        return max(2, Int((gridLength + spacing) / (compactCoverWidth + spacing)))
     }
 
     private var grid: some View {
         let spacing = DSSpacing.md
         let count = gridColumns
-        let coverWidth = max(0, (gridWidth - spacing * CGFloat(count - 1)) / CGFloat(count))
+        let coverWidth = max(0, (gridLength - spacing * CGFloat(count - 1)) / CGFloat(count))
         let rows = previewRows ?? (hasShowAll ? Self.gridRows : nil)
         let shown = rows.map { Array(cards.prefix(count * $0)) } ?? cards
         return LazyVGrid(columns: Array(repeating: GridItem(.fixed(coverWidth), spacing: spacing, alignment: .top), count: count),
                          alignment: .leading, spacing: DSSpacing.lg) {
-            if gridWidth > 0 {
+            if gridLength > 0 {
                 ForEach(shown.indices, id: \.self) { index in
                     button(index, in: shown) {
                         HomeBookCard(content: shown[index], coverWidth: coverWidth, reservesTextSpace: true)
@@ -461,8 +476,8 @@ extension View {
 /// row knows as it is first measured. Sized by `containerRelativeFrame` there, a row of lists
 /// reported less height than it drew — mid-scroll 編輯首頁 sat over 月票榜's card — and each scroll
 /// up was taken back to 編輯首頁 at the end (回饋中心 #120, a reader's iOS 17.0 recording; the 17.5
-/// and 27 simulators lay it out right either way). Off the home — 作品詳情's series, 模組, a
-/// layout's preview — the container's length, as before: those pages hand down no width.
+/// and 27 simulators lay it out right either way). 呈現方式's gallery hands down its width too.
+/// Elsewhere — 作品詳情's series, 模組 — the container's length: those pages hand down no width.
 private struct HomeSidewaysCardWidth: ViewModifier {
     let width: (CGFloat) -> CGFloat
     @Environment(\.homeRowWidth) private var rowWidth
