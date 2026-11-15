@@ -1,9 +1,3 @@
-// Built only against a YueduCoreText that lays out pictures a client adds with no character of
-// the chapter's source text (`BrowserAddedContent`, 0.19.0). On an older package every added
-// picture would take a character and move each offset after it, so until the project asks for
-// that version this file is compiled only when a build sets `YUEDU_ADDED_CONTENT` (a workspace
-// build over the local package). Delete the condition with the version bump.
-#if YUEDU_ADDED_CONTENT
 import Foundation
 import SwiftSoup
 import UIKit
@@ -201,4 +195,3 @@ final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
         value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
     }
 }
-#endif

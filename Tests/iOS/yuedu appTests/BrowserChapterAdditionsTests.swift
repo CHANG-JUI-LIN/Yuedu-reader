@@ -1,5 +1,3 @@
-// As `BrowserChapterAdditions`: compiled only against a YueduCoreText with `BrowserAddedContent`.
-#if YUEDU_ADDED_CONTENT
 @testable import YueduCoreText
 import Testing
 import UIKit
@@ -202,4 +200,3 @@ struct BrowserChapterAdditionsTests {
         #expect(image.size.width == bare.size.width && image.size.height >= bare.size.height)
     }
 }
-#endif

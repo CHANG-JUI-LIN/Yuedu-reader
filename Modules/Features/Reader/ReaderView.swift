@@ -1193,6 +1193,7 @@ struct ReaderView: View {
             progressTrace("onPageChanged page=\(newPage) noPosition — the reading position stays")
             return
         }
+        openingRestore.readerSettled(at: settledPosition)
         let newChapter = settledPosition.spineIndex
         let chapterChanged = newChapter != currentChapterIndex
 
@@ -3485,6 +3486,8 @@ struct ReaderView: View {
         )
         ensureChapterReady(chapterIndex: position.spineIndex)
         epubRenderer.updateCurrentPosition(globalPage: page, engine: engine)
+        // A saved place among a module's comment cards has no page until the comments arrive.
+        openingRestore.restoreShown(at: position, shownAs: engine.readingPosition(forPage: page))
         finishCoreTextRestore(restoredSpine: position.spineIndex)
     }
 

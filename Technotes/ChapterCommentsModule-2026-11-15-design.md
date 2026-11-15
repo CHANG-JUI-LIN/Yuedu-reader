@@ -9,14 +9,13 @@
 > - 點擊：`ydreview://` 的 payload 多一個 `m`（`ModuleCommentTargets` 的 token），`ReaderReviewSheetContent` 開 `ChapterCommentsSheet`。
 > - 段落對位 `ChapterParagraphMatch`：`quote` 文字唯一命中，或 `index`＋`paragraphCount` 與本機段數相同。
 > - EPUB（維護者 2026-11-15：「直接做新引擎的吧」，原本「有評論的章改用舊引擎」作廢並已拆掉）：
->   - **套件** YueduCoreText 0.19.0（`f3f34dc`，本機 `main` 與標籤 `0.19.0` 都有了，**還沒推上 GitHub**）：帶 `data-added-content` 的 `<img>` 在原文**不佔字元**（`SourceTextBuilder.addedPictureRange()`，長度 0 的範圍）；`BrowserPageGeometry.buildPageAddedStarts`／`pageIndex(forCharOffset:addedIndex:…)` 讓「整頁只有卡片」的頁找得到。
+>   - **套件** YueduCoreText 0.19.0（`f3f34dc`，2026-11-16 已發佈，專案釘 0.19.0）：帶 `data-added-content` 的 `<img>` 在原文**不佔字元**（`SourceTextBuilder.addedPictureRange()`，長度 0 的範圍）；`BrowserPageGeometry.buildPageAddedStarts`／`pageIndex(forCharOffset:addedIndex:…)` 讓「整頁只有卡片」的頁找得到。
 >   - **App**：`BrowserChapterAdditions` 包住書的資源，把氣泡／卡片當 `<a href="ydreview://…"><img src="yd-added:…" data-added-content></a>` 塞進章節 HTML，圖片由它供應（同一個 `ReviewCardRaster`、同一套氣泡畫法）。位置沿用 `CoreTextReadingPosition.translationOffset`＝該頁第一張外加圖片的序號（維護者選的「位置多記第幾張卡片」）；開書還原（`ReaderOpeningRestore.target`）也帶著它，否則還原會落到後一頁。點擊由引擎的 `onLinkActivate` 轉給 `presentReview`。
 >   - 卡片的玻璃底：`BrowserLayoutPageView` 對顯示清單裡每張有玻璃的卡片放一個 `ReviewCardGlassView`（跟 CoreText 頁同一個），分頁的整頁和捲動的磚格都是；底下的繪製（頁面自己的 `draw`、捲動的片段點陣圖）略過卡片（`ReaderDisplayListDrawer.draw(glassCards: .liveViews)`）。翻頁用的快照畫靜態替身（`.baked`）。
->   - **旗標**：套件還沒發佈，App 這邊的程式包在 `#if YUEDU_ADDED_CONTENT` 裡（主專案釘 0.18.1、旗標關著照常編譯，EPUB 沒有評論）。驗證用 `/tmp/YueduFontDemand.xcworkspace`（指到套件工作樹 `~/.config/superpowers/worktrees/YueduCoreText-added-content/YueduCoreText`）加 `'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) YUEDU_ADDED_CONTENT'`。
->   - **發佈後要做**：在 `~/Desktop/YueduCoreText` 推 `main` 與 `0.19.0`；`project.pbxproj` 的 YueduCoreText `minimumVersion` 改 0.19.0 並重新解析套件（`Package.resolved` 應指到 `f3f34dc`）；刪掉 `EPUBPageRenderer`、`BrowserLayoutPageEngine`、`BrowserChapterAdditions`、`BrowserChapterAdditionsTests` 裡的 `#if YUEDU_ADDED_CONTENT`（`#else` 分支一起刪）；主專案跑一次 `BrowserChapterAdditionsTests`。
+>   - 冷啟動重開在卡片頁：評論比第一次排版晚到，還原當下那一頁還不存在，先落在同一位移的正文頁。`ReaderOpeningRestore.awaitingAdditions` 記著存下來的位置；那一章的評論排好之後（`submitChapterContentRefresh` 的 supply 之後）把位置補回去。讀者在那之前自己翻過頁就不補（feedback #112 的規矩：不蓋掉讀者的翻頁）。CoreText 路徑（TXT、線上）走同一段。
 >   - 順帶修的競態：`notifyChapterDataChanged` 會先取消並等完還在跑的 preload（評論在第一次排版途中到達時，舊內容的頁被當成新內容的答案）。
-> - 已知未解：冷啟動重開在「整頁只有卡片」的那頁，會落在它前一頁。評論比第一次排版晚到，還原時那一頁還不存在；評論到了重排之後，分頁視圖照畫面上那頁的位置（`currentCoreTextPosition`，沒有卡片序號）重新擺放（`CoreTextPagedView.handleChapterReady`）。要修得讓重排後的擺放用閱讀器 session 的位置。
-> - 驗證：分頁與捲動在模擬器看過；卡片頁的翻頁／跨章／還原、直排的排版是單元測試（直排沒在畫面上看過）。未驗證：翻譯與評論同時開啟的實機畫面（單元測試有蓋位置對應）。
+> - 驗證：分頁、捲動、冷啟動重開回到卡片頁在模擬器看過；卡片頁的翻頁／跨章、直排的排版是單元測試（直排沒在畫面上看過）。未驗證：翻譯與評論同時開啟的實機畫面（單元測試有蓋位置對應）。
+> - 模擬器裡每次翻頁的落定（commit／onPageChanged／存檔）都拖到下一次輸入才出現在 log，普通頁也一樣（2026-11-16 兩個 session 都看到）；沒有查是工具還是 App。
 
 ## 1. 目標與不做的事
 

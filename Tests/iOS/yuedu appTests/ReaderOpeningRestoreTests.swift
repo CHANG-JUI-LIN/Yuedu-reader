@@ -89,4 +89,42 @@ struct ReaderOpeningRestoreTests {
         #expect(restore.pageSettled(7, pageIndex: pageIndex))
         #expect(restore.target == nil)
     }
+
+    /// A module's comments arrive after the chapter's first layout: at the open the page of
+    /// cards the reader left is not there, and the restore lands on the text page at that
+    /// offset. The saved place is owed again once the cards are laid out.
+    @Test("a restore to a page of cards is placed there once the cards arrive")
+    func restoreWaitsForAdditions() {
+        let restore = ReaderOpeningRestore()
+        let saved = CoreTextReadingPosition(spineIndex: 2, charOffset: 96, translationOffset: 1)
+        let textPage = CoreTextReadingPosition(spineIndex: 2, charOffset: 0)
+        restore.restoreShown(at: saved, shownAs: textPage)
+        // The relayout re-places the page on screen: not the reader's move.
+        restore.readerSettled(at: textPage)
+        // The comments of another chapter, then this one's before they change anything.
+        #expect(restore.additionsArrived(spine: 1, pagePosition: { _ in saved }) == nil)
+        #expect(restore.additionsArrived(spine: 2, pagePosition: { _ in textPage }) == nil)
+        #expect(restore.additionsArrived(spine: 2, pagePosition: { _ in saved }) == saved)
+        #expect(restore.additionsArrived(spine: 2, pagePosition: { _ in saved }) == nil, "placed once")
+    }
+
+    @Test("a turn the reader made before the cards arrived is not undone")
+    func readerTurnDropsAwaitedAdditions() {
+        let restore = ReaderOpeningRestore()
+        let saved = CoreTextReadingPosition(spineIndex: 2, charOffset: 96, translationOffset: 1)
+        restore.restoreShown(at: saved, shownAs: CoreTextReadingPosition(spineIndex: 2, charOffset: 0))
+        restore.readerSettled(at: CoreTextReadingPosition(spineIndex: 3, charOffset: 0))
+        #expect(restore.additionsArrived(spine: 2, pagePosition: { _ in saved }) == nil)
+    }
+
+    @Test("a restore shown on its own page, or to the book's own text, waits for nothing")
+    func ordinaryRestoreAwaitsNothing() {
+        let restore = ReaderOpeningRestore()
+        let saved = CoreTextReadingPosition(spineIndex: 2, charOffset: 96, translationOffset: 1)
+        restore.restoreShown(at: saved, shownAs: saved)
+        #expect(restore.awaitingAdditions == nil)
+        restore.restoreShown(at: CoreTextReadingPosition(spineIndex: 2, charOffset: 249),
+                             shownAs: CoreTextReadingPosition(spineIndex: 2, charOffset: 200))
+        #expect(restore.awaitingAdditions == nil)
+    }
 }

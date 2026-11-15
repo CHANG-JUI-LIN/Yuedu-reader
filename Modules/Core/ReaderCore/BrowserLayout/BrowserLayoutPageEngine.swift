@@ -186,14 +186,10 @@ struct BrowserChapterLayout {
         BrowserPageGeometry.buildPageRanges(pages, sourceText: sourceText)
     }
 
-    /// Empty until the package tells added pictures from the book's (`YUEDU_ADDED_CONTENT`,
-    /// `BrowserChapterAdditions`): no page is found by one.
+    /// For each page, the added picture it starts with when it shows nothing of the book's
+    /// (`BrowserChapterAdditions`): a page of cards alone is found by it.
     static func buildPageAddedStarts(_ pages: [PageFragments], sourceText: String) -> [Int?] {
-        #if YUEDU_ADDED_CONTENT
         BrowserPageGeometry.buildPageAddedStarts(pages, sourceText: sourceText)
-        #else
-        []
-        #endif
     }
 
     /// Page index containing `charOffset` (binary search, clamped to the page
@@ -201,12 +197,8 @@ struct BrowserChapterLayout {
     /// are approximate; the spec restores to *nearby* content). With `addedIndex`, the page
     /// of added pictures that holds that picture, when there is one.
     func pageIndex(forCharOffset charOffset: Int, addedIndex: Int? = nil) -> Int {
-        #if YUEDU_ADDED_CONTENT
         BrowserPageGeometry.pageIndex(forCharOffset: charOffset, addedIndex: addedIndex, ranges: pageSourceRanges,
                                       addedStarts: pageAddedStarts, sourceText: sourceText)
-        #else
-        BrowserPageGeometry.pageIndex(forCharOffset: charOffset, ranges: pageSourceRanges, sourceText: sourceText)
-        #endif
     }
 
     func displayList(forPage localPage: Int, themeTextColor: UIColor, oldThemeColor: UIColor) -> DisplayList {
