@@ -96,16 +96,19 @@ final class NavigationBackSwipeReservationController: NSObject, UIGestureRecogni
     /// interactive pop between a page that hides the navigation bar (a reader) and one that shows
     /// it (the detail page it was opened from) starts an interactive bar transition:
     /// `-[UINavigationController _startInteractiveBarTransition:]` turns on
-    /// `+[UIViewPropertyAnimator _startTrackingAnimations]`, and `_setNavigationBarHidden:edge:duration:`
-    /// then ends it through the other API, `+[UIView _finishAnimationTracking]`. The animator's
-    /// tracking stays on for the life of the process, and every later navigation transition and
-    /// alert is built paused and never started: the screen answers touches and moves one step each
-    /// time the app goes to the background and back (FB-204, an iPhone 13 Pro Max on iOS 17.0,
-    /// and FB-132's dead taps before it; traced on the iOS 17.0 simulator, 21A328, 2026-11-16).
-    /// A pop that is not interactive between the same two pages leaves nothing behind.
+    /// `+[UIViewPropertyAnimator _startTrackingAnimations]`, and no `_finishTrackingAnimations`
+    /// follows. The one finish after it in the trace is `+[UIView _finishAnimationTracking]`, the
+    /// other API, from `_setNavigationBarHidden:edge:duration:`: read as a mismatched pair, without
+    /// a trace of a healthy system to compare. Measured: `_trackingAnimationsCurrentlyEnabled` is
+    /// still YES once the app is idle, and the next pop's animations sit at speed 0. Every later
+    /// navigation transition and alert is built paused and never started: the screen answers
+    /// touches and moves one step each time the app goes to the background and back (FB-204, an
+    /// iPhone 13 Pro Max on iOS 17.0, and likely FB-132's dead taps before it; traced on the
+    /// iOS 17.0 simulator, 21A328, 2026-11-16). A pop that is not interactive between the same
+    /// two pages does not freeze.
     ///
-    /// iOS 17.5 does not leak (same test, same trace). 17.1 to 17.4 could not be run, so they
-    /// take this branch too. Delete it, `ownedPan` and `popWithoutInteractiveTransition(_:)`
+    /// iOS 17.5 does not freeze on the same test; its tracking was not traced. 17.1 to 17.4 could
+    /// not be run, so they take this branch too. Delete it, `ownedPan` and `popWithoutInteractiveTransition(_:)`
     /// when the deployment target is iOS 17.5 or later.
     static let popsWithoutInteractiveTransition: Bool = {
         if #available(iOS 17.5, *) { return false }
