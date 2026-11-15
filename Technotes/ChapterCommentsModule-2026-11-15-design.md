@@ -15,6 +15,7 @@
 >   - **旗標**：套件還沒發佈，App 這邊的程式包在 `#if YUEDU_ADDED_CONTENT` 裡（主專案釘 0.18.1、旗標關著照常編譯，EPUB 沒有評論）。驗證用 `/tmp/YueduFontDemand.xcworkspace`（指到套件工作樹 `~/.config/superpowers/worktrees/YueduCoreText-added-content/YueduCoreText`）加 `'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) YUEDU_ADDED_CONTENT'`。
 >   - **發佈後要做**：在 `~/Desktop/YueduCoreText` 推 `main` 與 `0.19.0`；`project.pbxproj` 的 YueduCoreText `minimumVersion` 改 0.19.0 並重新解析套件（`Package.resolved` 應指到 `f3f34dc`）；刪掉 `EPUBPageRenderer`、`BrowserLayoutPageEngine`、`BrowserChapterAdditions`、`BrowserChapterAdditionsTests` 裡的 `#if YUEDU_ADDED_CONTENT`（`#else` 分支一起刪）；主專案跑一次 `BrowserChapterAdditionsTests`。
 >   - 順帶修的競態：`notifyChapterDataChanged` 會先取消並等完還在跑的 preload（評論在第一次排版途中到達時，舊內容的頁被當成新內容的答案）。
+> - 已知未解：冷啟動重開在「整頁只有卡片」的那頁，會落在它前一頁。評論比第一次排版晚到，還原時那一頁還不存在；評論到了重排之後，分頁視圖照畫面上那頁的位置（`currentCoreTextPosition`，沒有卡片序號）重新擺放（`CoreTextPagedView.handleChapterReady`）。要修得讓重排後的擺放用閱讀器 session 的位置。
 > - 驗證：分頁與捲動在模擬器看過；卡片頁的翻頁／跨章／還原、直排的排版是單元測試（直排沒在畫面上看過）。未驗證：翻譯與評論同時開啟的實機畫面（單元測試有蓋位置對應）。
 
 ## 1. 目標與不做的事
