@@ -107,11 +107,16 @@ def runtime_version(identifier):
     tail = identifier.rsplit(".", 1)[-1]          # iOS-27-0
     if not tail.startswith("iOS-"):
         return None
-    try:
-        v = tuple(int(p) for p in tail[4:].split("-"))
-    except ValueError:
+    # A device-specific runtime carries its model after the version
+    # (iOS-27-2-iPhone19-4, the iPhone Duo's): only the leading numbers are the version.
+    v = []
+    for p in tail[4:].split("-"):
+        if not p.isdigit():
+            break
+        v.append(int(p))
+    if not v:
         return None
-    return (v + (0, 0))[:2]
+    return (tuple(v) + (0, 0))[:2]
 
 def tier(name):
     # Strip parenthetical chip/runtime suffixes first, so "iPad mini (A17 Pro)"
