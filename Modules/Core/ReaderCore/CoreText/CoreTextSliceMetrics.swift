@@ -19,7 +19,10 @@ struct CoreTextSliceMetrics: Sendable {
     /// Chunks the slicer produced.
     var chunkCount: Int = 0
 
-    /// `CTFramesetterCreateWithAttributedString` (via `CoreTextFramesetterFactory`).
+    /// `CTFramesetterCreateWithAttributedString` (via `CoreTextFramesetterFactory`). Zero for a
+    /// chapter long enough to be laid out in windows (`CoreTextChapterFramesetter`): a window
+    /// is built by the first call that needs it, inside that call's bucket, and reported by
+    /// its own `⏱ coreText.typesetter.window` line.
     var framesetterSeconds: Double = 0
 
     /// `CTFramesetterSuggestFrameSizeWithConstraints`. Not a cheap estimate — it line-breaks —

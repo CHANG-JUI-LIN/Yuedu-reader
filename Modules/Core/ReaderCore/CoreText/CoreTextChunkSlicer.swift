@@ -97,6 +97,11 @@ enum CoreTextChunkSlicer {
         }
 
         let nsString = attrStr.string as NSString
+        // Once for the chapter. Finding the floats walks every attribute run of the chapter;
+        // done for each chunk's height and each of its frames it made slicing grow with
+        // characters × chunks: 8.2 s of a 12.7 s slice of 857,762 characters (643 chunks,
+        // iOS 27.2 simulator).
+        let floatMarkers = CoreTextPaginator.floatMarkers(in: attrStr)
         var chunks: [CoreTextChunk] = []
         var offset: CFIndex = 0
 
@@ -151,11 +156,11 @@ enum CoreTextChunkSlicer {
 
             // Ensure chunk height accommodates block images (drawHeight) within the range
             actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
-            actualHeight = max(actualHeight, floatImageHeight(in: attrStr, range: actualRange))
+            actualHeight = max(actualHeight, floatImageHeight(of: floatMarkers, in: actualRange))
 
             var frameBuild = makeHorizontalFrame(
                 framesetter: framesetter,
-                attrStr: attrStr,
+                floatMarkers: floatMarkers,
                 range: actualRange,
                 chunkSize: CGSize(width: contentWidth, height: actualHeight),
                 writingMode: writingMode,
@@ -173,7 +178,7 @@ enum CoreTextChunkSlicer {
                 actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
                 frameBuild = makeHorizontalFrame(
                     framesetter: framesetter,
-                    attrStr: attrStr,
+                    floatMarkers: floatMarkers,
                     range: actualRange,
                     chunkSize: CGSize(width: contentWidth, height: actualHeight),
                     writingMode: writingMode,
@@ -201,7 +206,7 @@ enum CoreTextChunkSlicer {
                     actualHeight = laidOut
                     frameBuild = makeHorizontalFrame(
                         framesetter: framesetter,
-                        attrStr: attrStr,
+                        floatMarkers: floatMarkers,
                         range: actualRange,
                         chunkSize: CGSize(width: contentWidth, height: actualHeight),
                         writingMode: writingMode,
@@ -216,7 +221,7 @@ enum CoreTextChunkSlicer {
                 actualRange.length = visible.length
                 frameBuild = makeHorizontalFrame(
                     framesetter: framesetter,
-                    attrStr: attrStr,
+                    floatMarkers: floatMarkers,
                     range: actualRange,
                     chunkSize: CGSize(width: contentWidth, height: actualHeight),
                     writingMode: writingMode,
@@ -236,7 +241,7 @@ enum CoreTextChunkSlicer {
                 actualHeight = max(actualHeight, textBottom(of: frameBuild.frame, height: actualHeight) + seamGap)
                 frameBuild = makeHorizontalFrame(
                     framesetter: framesetter,
-                    attrStr: attrStr,
+                    floatMarkers: floatMarkers,
                     range: actualRange,
                     chunkSize: CGSize(width: contentWidth, height: actualHeight),
                     writingMode: writingMode,
@@ -267,6 +272,7 @@ enum CoreTextChunkSlicer {
             contentWidth: contentWidth,
             framesetter: framesetter,
             attrStr: attrStr,
+            floatMarkers: floatMarkers,
             chapterIndex: chapterIndex,
             writingMode: writingMode,
             pageBackgroundColor: pageBackgroundColor,
@@ -299,6 +305,7 @@ enum CoreTextChunkSlicer {
         contentWidth: CGFloat,
         framesetter: CoreTextChapterFramesetter,
         attrStr: NSAttributedString,
+        floatMarkers: [CoreTextPaginator.FloatMarker],
         chapterIndex: Int,
         writingMode: ReaderWritingMode,
         pageBackgroundColor: UIColor?,
@@ -322,7 +329,7 @@ enum CoreTextChunkSlicer {
         // nesting them would be overlapping exclusive access to the same variable.
         let paddedBuild = makeHorizontalFrame(
             framesetter: framesetter,
-            attrStr: attrStr,
+            floatMarkers: floatMarkers,
             range: last.charRange,
             chunkSize: paddedSize,
             writingMode: writingMode,
@@ -630,7 +637,7 @@ enum CoreTextChunkSlicer {
 
     private static func makeHorizontalFrame(
         framesetter: CoreTextChapterFramesetter,
-        attrStr: NSAttributedString,
+        floatMarkers: [CoreTextPaginator.FloatMarker],
         range: CFRange,
         chunkSize: CGSize,
         writingMode: ReaderWritingMode,
@@ -639,7 +646,7 @@ enum CoreTextChunkSlicer {
         let contentRect = CGRect(origin: .zero, size: chunkSize)
         let rectangularPath = CGPath(rect: contentRect, transform: nil)
         guard !writingMode.isVertical,
-              let marker = CoreTextPaginator.floatMarkers(in: attrStr).first(where: { marker in
+              let marker = floatMarkers.first(where: { marker in
                   marker.offset >= range.location
                       && marker.offset < range.location + range.length
                       && marker.placeholder.image != nil
@@ -813,8 +820,8 @@ enum CoreTextChunkSlicer {
         return maxHeight
     }
 
-    private static func floatImageHeight(in attrStr: NSAttributedString, range: CFRange) -> CGFloat {
-        CoreTextPaginator.floatMarkers(in: attrStr)
+    private static func floatImageHeight(of floatMarkers: [CoreTextPaginator.FloatMarker], in range: CFRange) -> CGFloat {
+        floatMarkers
             .filter { marker in
                 marker.offset >= range.location && marker.offset < range.location + range.length
             }

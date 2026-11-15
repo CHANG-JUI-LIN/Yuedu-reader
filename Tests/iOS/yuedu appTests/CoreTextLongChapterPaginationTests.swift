@@ -73,6 +73,26 @@ struct CoreTextLongChapterPaginationTests {
         #expect(full.pageRanges.last.map { $0.location + $0.length } == attributedString.length)
     }
 
+    /// Scroll mode's side of the same chapter. Each chunk looked for the chapter's CSS floats
+    /// three times, and each look walks every attribute run of the chapter, so slicing grew
+    /// with characters × chunks: 8.2 s of a 12.7 s slice of 857,762 characters, and 432 ms of
+    /// 1,362 ms at 200k (iOS 27.2 simulator). What the slicer does outside Core Text and the
+    /// per-chunk extraction is bookkeeping, and has to stay a sliver of the slice.
+    @Test("Slicing one long chapter spends its time in Core Text, not in per-chunk chapter scans")
+    @MainActor
+    func longChapterSliceBookkeepingStaysSmall() async {
+        let attributedString = await Self.chapter(characterCount: 200_000)
+        let metrics = CoreTextChunkSlicer.slice(
+            attributedString: attributedString, chapterIndex: 0, contentWidth: 350
+        ).metrics
+        let bookkeeping = max(0, metrics.totalSeconds - metrics.attributedSeconds)
+        print("⏱ longChapter slice=\(Int(metrics.totalSeconds * 1000))ms \(metrics.logDetail)")
+        #expect(metrics.chunkCount > 100)
+        // 1% after the fix, 32% before it.
+        #expect(bookkeeping < metrics.totalSeconds * 0.1,
+                "bookkeeping took \(Int(bookkeeping * 1000)) of \(Int(metrics.totalSeconds * 1000)) ms")
+    }
+
     @MainActor
     private func layout(characterCount: Int) async -> (milliseconds: Double, pages: Int, characters: Int) {
         let attributedString = await Self.chapter(characterCount: characterCount)
