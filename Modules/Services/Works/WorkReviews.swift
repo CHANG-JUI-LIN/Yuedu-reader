@@ -105,12 +105,14 @@ enum WorkReviews {
         return nil
     }
 
-    /// The modules with reviews that 資料來源 has checked, in its order.
-    static func modules(in library: RuleModuleLibrary, order: MetadataFillOrderStore) -> [RuleModule] {
+    /// The modules with reviews that 資料來源 has checked, in its order; with `having`, the ones
+    /// with something else a work is asked about the same way (本章說, `ChapterComments`).
+    static func modules(in library: RuleModuleLibrary, order: MetadataFillOrderStore,
+                        having has: (RuleModule) -> Bool = { $0.reviews != nil }) -> [RuleModule] {
         let filling = library.fillingModules
         return order.order(modules: filling.map(\.id)).entries.filter(\.isEnabled).compactMap { entry in
             guard case .module(let id) = entry.place else { return nil }
-            return filling.first { $0.id == id && $0.reviews != nil }
+            return filling.first { $0.id == id && has($0) }
         }
     }
 }

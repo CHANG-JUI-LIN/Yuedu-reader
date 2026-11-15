@@ -23,7 +23,10 @@ final class ReaderOpeningRestore {
         case restore(CoreTextReadingPosition, page: Int)
     }
 
-    var target: (chapterIndex: Int, charOffset: Int)?
+    /// `translationOffset` as the saved position has it (`CoreTextReadingPosition`): a page
+    /// of a translation, or of nothing but comment cards, shares its offset with the page
+    /// after it and is found by this.
+    var target: (chapterIndex: Int, charOffset: Int, translationOffset: Int?)?
 
     /// A page settled on screen. Returns whether it delivered the restore.
     @discardableResult
@@ -34,6 +37,7 @@ final class ReaderOpeningRestore {
               ReaderProgressRestoreResolver.resolvePage(
                   chapterIndex: target.chapterIndex,
                   charOffset: target.charOffset,
+                  translationOffset: target.translationOffset,
                   resolver: pageIndex
               ) == page
         else { return false }
@@ -54,10 +58,12 @@ final class ReaderOpeningRestore {
         // The executor can show the restore while its chapter lays out, and the reader turn on
         // from there; it was delivered then, and applying it now would undo those turns.
         guard let owed = self.target, owed == target else { return .nothingOwed }
-        let position = CoreTextReadingPosition(spineIndex: spineIndex, charOffset: max(0, target.charOffset))
+        let position = CoreTextReadingPosition(spineIndex: spineIndex, charOffset: max(0, target.charOffset),
+                                               translationOffset: target.translationOffset)
         guard let page = ReaderProgressRestoreResolver.resolvePage(
             chapterIndex: position.spineIndex,
             charOffset: position.charOffset,
+            translationOffset: position.translationOffset,
             resolver: pageIndex
         ) else { return .unresolved }
         return .restore(position, page: page)

@@ -193,15 +193,24 @@ final class ModuleFillProvider: MetadataFillProvider {
     /// one per upload (`ModuleReviewProvider`).
     static func sameWork(in items: [RuleListItem], of entry: RuleModule.Entry, title: String, authors: [String],
                          contentKind: ContentKind) -> [RuleListItem] {
+        var seen = Set<String>()
+        return sameTitle(in: items, of: entry, title: title, contentKind: contentKind).filter { item in
+            WorkMatchKey.authorsCompatible(authors, Self.names(item.author))
+                // One work listed twice is still one.
+                && seen.insert(item.bookUrl.isEmpty ? "\(item.name)\u{1F}\(item.author)" : item.bookUrl).inserted
+        }
+    }
+
+    /// The items called what the work is called (its title or one of their `aliases`,
+    /// `WorkMatchKey`) and of its kind, whoever wrote them. Not yet the work: `sameWork` asks
+    /// for its author too, and 本章說 for its chapters (`ChapterComments`).
+    static func sameTitle(in items: [RuleListItem], of entry: RuleModule.Entry, title: String,
+                          contentKind: ContentKind) -> [RuleListItem] {
         let titleKey = WorkMatchKey.title(title)
         guard !titleKey.isEmpty else { return [] }
-        var seen = Set<String>()
         return items.filter { item in
             entry.contentKind(of: item) == contentKind
                 && ([item.name] + (item.aliases ?? [])).contains { WorkMatchKey.title($0) == titleKey }
-                && WorkMatchKey.authorsCompatible(authors, Self.names(item.author))
-                // One work listed twice is still one.
-                && seen.insert(item.bookUrl.isEmpty ? "\(item.name)\u{1F}\(item.author)" : item.bookUrl).inserted
         }
     }
 

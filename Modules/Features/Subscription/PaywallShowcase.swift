@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The paywall's picture: a small drawing of what the pillar feels like in use — a
 /// question answered with its source, the page in other colours with dialogue as
-/// bubbles, the page cut into tap zones. Built from the reader's own themes and design
+/// bubbles, the page cut into tap zones, modules being added. Built from the reader's own themes and design
 /// tokens, so it follows light and dark with the app.
 ///
 /// Decorative: the headline next to it says the same thing in words, so VoiceOver skips it.
@@ -15,6 +15,7 @@ struct PaywallShowcase: View {
             case .understanding: understanding
             case .comfort: comfort
             case .habits: habits
+            case .modules: modules
             }
         }
         .frame(maxWidth: .infinity)
@@ -161,6 +162,43 @@ struct PaywallShowcase: View {
             RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
                 .stroke(DSColor.separator, lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - 接上更多內容
+
+private extension PaywallShowcase {
+    /// Three modules in a list: two already in, one about to be added.
+    var modules: some View {
+        VStack(spacing: DSSpacing.sm) {
+            moduleRow("books.vertical", widthRatio: 0.7, isAdded: true)
+            moduleRow("magnifyingglass", widthRatio: 0.55, isAdded: true)
+            moduleRow("text.bubble", widthRatio: 0.62, isAdded: false)
+        }
+        .padding(DSSpacing.lg)
+        .frame(maxHeight: .infinity)
+        .interfaceCardSurface()
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+    }
+
+    func moduleRow(_ symbol: String, widthRatio: CGFloat, isAdded: Bool) -> some View {
+        HStack(spacing: DSSpacing.md) {
+            Image(systemName: symbol)
+                .font(DSFont.subheadline)
+                .foregroundStyle(DSColor.accent)
+                .frame(width: DSSpacing.xl, height: DSSpacing.xl)
+                .background(DSColor.accentLight, in: RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+            GeometryReader { proxy in
+                Capsule()
+                    .fill(DSColor.textSecondary.opacity(0.28))
+                    .frame(width: proxy.size.width * widthRatio, height: DSSpacing.sm)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(height: DSSpacing.xl)
+            Image(systemName: isAdded ? "checkmark.circle.fill" : "plus.circle.fill")
+                .font(DSFont.headline)
+                .foregroundStyle(isAdded ? DSColor.textSecondary : DSColor.accent)
+        }
     }
 }
 

@@ -19,7 +19,7 @@ struct ReaderOpeningRestoreTests {
     @Test("a turn made while the restored chapter lays out is not undone")
     func turnDuringLayoutIsKept() async {
         let restore = ReaderOpeningRestore()
-        restore.target = (chapterIndex: 2, charOffset: 249)
+        restore.target = (chapterIndex: 2, charOffset: 249, translationOffset: nil)
         let resolution = await restore.resolve(
             chapterCount: 4,
             preload: { _ in
@@ -37,7 +37,7 @@ struct ReaderOpeningRestoreTests {
     @Test("a restore the reader was shown is not applied again by a later run")
     func shownRestoreIsNotReapplied() async {
         let restore = ReaderOpeningRestore()
-        restore.target = (chapterIndex: 2, charOffset: 249)
+        restore.target = (chapterIndex: 2, charOffset: 249, translationOffset: nil)
         var laidOut = false
         let pageIndex = { (position: CoreTextReadingPosition) -> Int? in
             laidOut ? Self.page(of: position) : nil
@@ -56,7 +56,7 @@ struct ReaderOpeningRestoreTests {
     @Test("a page that is not the restore's leaves it owed")
     func otherPagesLeaveRestoreOwed() async {
         let restore = ReaderOpeningRestore()
-        restore.target = (chapterIndex: 2, charOffset: 249)
+        restore.target = (chapterIndex: 2, charOffset: 249, translationOffset: nil)
         var laidOut = false
         let pageIndex = { (position: CoreTextReadingPosition) -> Int? in
             laidOut ? Self.page(of: position) : nil
@@ -69,5 +69,24 @@ struct ReaderOpeningRestoreTests {
         #expect(restore.target != nil)
         let resolution = await restore.resolve(chapterCount: 4, preload: { _ in }, pageIndex: pageIndex)
         #expect(resolution == .restore(CoreTextReadingPosition(spineIndex: 2, charOffset: 249), page: 11))
+    }
+
+    /// A page of a translation, or of nothing but comment cards, shares its offset with the page
+    /// after it: the saved position says which it is (`translationOffset`), and the restore
+    /// asks for the page by all of it. Asked by offset alone it named the page after.
+    @Test("a saved position inside what was added at an offset restores to its own page")
+    func addedContentPositionRestoresToItsPage() async {
+        let restore = ReaderOpeningRestore()
+        restore.target = (chapterIndex: 2, charOffset: 96, translationOffset: 1)
+        let pageIndex = { (position: CoreTextReadingPosition) -> Int? in
+            guard position.spineIndex == 2, position.charOffset == 96 else { return nil }
+            // Page 7 is the cards before offset 96, page 8 the text at it.
+            return position.translationOffset == 1 ? 7 : 8
+        }
+        #expect(!restore.pageSettled(8, pageIndex: pageIndex))
+        let resolution = await restore.resolve(chapterCount: 4, preload: { _ in }, pageIndex: pageIndex)
+        #expect(resolution == .restore(CoreTextReadingPosition(spineIndex: 2, charOffset: 96, translationOffset: 1), page: 7))
+        #expect(restore.pageSettled(7, pageIndex: pageIndex))
+        #expect(restore.target == nil)
     }
 }

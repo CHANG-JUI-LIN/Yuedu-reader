@@ -87,8 +87,12 @@ struct ReaderTranslationLayout: Equatable, Sendable {
         let anchor: Int
         /// Everything the block adds to the display text.
         let inserted: NSRange
-        /// The translation itself, inside `inserted`.
+        /// The translation itself, inside `inserted`; empty for a block that adds only
+        /// decorations.
         let translation: NSRange
+        /// The translation stands in place of `source` (譯文 only); otherwise the block is added
+        /// beside the book's own text, which stays on screen.
+        var replacesSource = false
     }
 
     let mode: Mode
@@ -108,11 +112,37 @@ struct ReaderTranslationLayout: Equatable, Sendable {
     /// The attribute marking translated text in the display string.
     static let attribute = NSAttributedString.Key("YDReaderTranslation")
 
-    /// Splices the translations `translation(key)` returns into `source`. Nil when no
-    /// paragraph has one, so an untranslated chapter keeps its document untouched.
-    static func splice(_ source: NSAttributedString, mode: Mode,
+    /// What is added to a chapter beside its own text and its translations: a module's 段評
+    /// bubbles, 熱評 and 本章說 cards (`ReaderChapterDecorationSource`). Each piece is laid out
+    /// as it is given, and owns no character of the chapter.
+    struct Decorations {
+        struct Paragraph {
+            /// Set at the end of the paragraph's last line (a 段評 bubble).
+            var trailing: NSAttributedString?
+            /// Blocks under the paragraph, each ending in its own line break (a 熱評 card).
+            var below: [NSAttributedString] = []
+            var isEmpty: Bool { (trailing?.length ?? 0) == 0 && below.allSatisfy { $0.length == 0 } }
+        }
+
+        /// By position in `ReaderTranslationText.paragraphs(in:)` of the chapter's own text.
+        var paragraphs: [Int: Paragraph] = [:]
+        /// Blocks after the chapter's last character (本章說, 作者說).
+        var chapterEnd: [NSAttributedString] = []
+
+        var isEmpty: Bool { paragraphs.values.allSatisfy(\.isEmpty) && chapterEnd.allSatisfy { $0.length == 0 } }
+    }
+
+    /// Splices the translations `translation(key)` returns, and `decorations`, into `source`.
+    /// Nil when nothing is added, so such a chapter keeps its document untouched.
+    ///
+    /// A decoration is added whatever `mode` is; under a paragraph it goes after the paragraph's
+    /// translation, so a position inside that translation stays where it was when comments
+    /// arrive. Additions that touch are one block: a position inside one is written against one
+    /// anchor (`block(anchoredAt:)`).
+    static func splice(_ source: NSAttributedString, mode: Mode, decorations: Decorations? = nil,
                        translation: (String) -> String?) -> (display: NSAttributedString, layout: ReaderTranslationLayout)? {
-        guard mode != .off else { return nil }
+        let decorations = decorations.flatMap { $0.isEmpty ? nil : $0 }
+        guard mode != .off || decorations != nil else { return nil }
         let text = source.string
         let display = NSMutableAttributedString()
         var blocks: [Block] = []
@@ -126,16 +156,56 @@ struct ReaderTranslationLayout: Equatable, Sendable {
             cursor = end
         }
 
-        for paragraph in ReaderTranslationText.paragraphs(in: text) {
-            guard let raw = translation(paragraph.key) else { continue }
-            let translated = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !translated.isEmpty, let look = look(of: paragraph.range, in: source) else { continue }
+        /// Adds a block, or grows the last one when this one starts where it ends.
+        func add(_ block: Block) {
+            guard let last = blocks.last, NSMaxRange(last.inserted) == block.inserted.location,
+                  !last.replacesSource, !block.replacesSource else {
+                blocks.append(block)
+                return
+            }
+            blocks[blocks.count - 1] = Block(
+                source: last.source, anchor: last.anchor,
+                inserted: NSRange(location: last.inserted.location, length: last.inserted.length + block.inserted.length),
+                translation: last.translation.length > 0 ? last.translation : block.translation)
+        }
+
+        /// A decoration added at the display's end, anchored to the source character `anchor`.
+        func decorate(_ pieces: [NSAttributedString], of paragraph: NSRange, anchor: Int) {
+            let pieces = pieces.filter { $0.length > 0 }
+            guard !pieces.isEmpty else { return }
+            let start = display.length
+            pieces.forEach(display.append)
+            add(Block(source: paragraph, anchor: anchor, inserted: NSRange(location: start, length: display.length - start),
+                      translation: NSRange(location: start, length: 0)))
+        }
+
+        for (index, paragraph) in ReaderTranslationText.paragraphs(in: text).enumerated() {
+            let decoration = decorations?.paragraphs[index]
+            let translated = mode == .off ? nil : translation(paragraph.key)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let translated, !translated.isEmpty, let look = look(of: paragraph.range, in: source) else {
+                // The book's own paragraph, with what is added to it: the bubble after its last
+                // character, the cards after its line break (their own, at the chapter's end).
+                guard let decoration, !decoration.isEmpty, paragraph.range.length > 0 else { continue }
+                let last = NSMaxRange(paragraph.range) - 1
+                copy(upTo: NSMaxRange(paragraph.range))
+                decorate([decoration.trailing].compactMap { $0 }, of: paragraph.range, anchor: last)
+                if let terminator = paragraph.terminator {
+                    copy(upTo: NSMaxRange(terminator))
+                    decorate(decoration.below, of: paragraph.range, anchor: terminator.location)
+                } else if !decoration.below.isEmpty {
+                    decorate([NSAttributedString(string: "\n", attributes: source.attributes(at: last, effectiveRange: nil))]
+                             + decoration.below, of: paragraph.range, anchor: last)
+                }
+                continue
+            }
             let attributes = look.attributes
             let block: Block
             switch mode {
             case .off:
-                return nil
+                continue
             case .bilingual:
+                copy(upTo: NSMaxRange(paragraph.range))
+                decorate([decoration?.trailing].compactMap { $0 }, of: paragraph.range, anchor: NSMaxRange(paragraph.range) - 1)
                 if let terminator = paragraph.terminator {
                     copy(upTo: NSMaxRange(terminator))
                     let start = display.length
@@ -161,13 +231,38 @@ struct ReaderTranslationLayout: Equatable, Sendable {
                 display.append(NSAttributedString(string: translated, attributes: attributes))
                 block = Block(source: paragraph.range, anchor: paragraph.range.location,
                               inserted: NSRange(location: start, length: display.length - start),
-                              translation: NSRange(location: start, length: display.length - start))
+                              translation: NSRange(location: start, length: display.length - start), replacesSource: true)
                 cursor = NSMaxRange(paragraph.range)
             }
             if let bubble = look.bubble {
                 ReaderDialogueBubbleMarker.markAdded(block.translation, like: bubble, in: display)
             }
-            blocks.append(block)
+            add(block)
+            guard let decoration, !decoration.isEmpty else { continue }
+            // After the translation, each on its own side of the paragraph's line break.
+            if mode == .translationOnly {
+                decorate([decoration.trailing].compactMap { $0 }, of: paragraph.range, anchor: paragraph.range.location)
+                if let terminator = paragraph.terminator {
+                    copy(upTo: NSMaxRange(terminator))
+                    decorate(decoration.below, of: paragraph.range, anchor: terminator.location)
+                } else if !decoration.below.isEmpty {
+                    decorate([NSAttributedString(string: "\n", attributes: attributes)] + decoration.below,
+                             of: paragraph.range, anchor: paragraph.range.location)
+                }
+            } else if paragraph.terminator != nil {
+                decorate(decoration.below, of: paragraph.range, anchor: block.anchor)
+            } else if !decoration.below.isEmpty {
+                // The chapter's last paragraph: its translation ended without a line break.
+                decorate([NSAttributedString(string: "\n", attributes: attributes)] + decoration.below,
+                         of: paragraph.range, anchor: block.anchor)
+            }
+        }
+        if let end = decorations?.chapterEnd.filter({ $0.length > 0 }), !end.isEmpty, source.length > 0 {
+            copy(upTo: source.length)
+            let last = source.length - 1
+            let endsLine = (text as NSString).character(at: last) == 0x0A
+            decorate((endsLine ? [] : [NSAttributedString(string: "\n", attributes: source.attributes(at: last, effectiveRange: nil))]) + end,
+                     of: NSRange(location: last, length: 1), anchor: last)
         }
         guard !blocks.isEmpty else { return nil }
         copy(upTo: source.length)
@@ -313,15 +408,11 @@ struct ReaderTranslationLayout: Equatable, Sendable {
         }
         guard let block = blocks.first(where: { NSLocationInRange(offset, $0.inserted) }) else { return (sourceLength, nil) }
         let into = offset - block.inserted.location
-        switch mode {
-        case .translationOnly:
-            // The approximate source character, so a reader who turns translation off lands in
-            // the same paragraph at about the same place.
-            let share = Double(into) / Double(max(1, block.inserted.length))
-            return (block.source.location + min(max(0, block.source.length - 1), Int(share * Double(block.source.length))), into)
-        case .bilingual, .off:
-            return (block.anchor, into)
-        }
+        guard block.replacesSource else { return (block.anchor, into) }
+        // The approximate source character, so a reader who turns translation off lands in
+        // the same paragraph at about the same place.
+        let share = Double(into) / Double(max(1, block.inserted.length))
+        return (block.source.location + min(max(0, block.source.length - 1), Int(share * Double(block.source.length))), into)
     }
 
     /// Where a stretch of source text is on screen. Parts hidden behind a translation are
@@ -360,12 +451,13 @@ struct ReaderTranslationLayout: Equatable, Sendable {
         }
     }
 
+    /// The block a position with a `translationOffset` is inside: the one standing in place of
+    /// the paragraph the offset is in, else the one added at that anchor.
     private func block(anchoredAt offset: Int) -> Block? {
-        switch mode {
-        case .translationOnly:
-            return blocks.first { offset >= $0.source.location && offset < max(NSMaxRange($0.source), $0.source.location + 1) }
-        case .bilingual, .off:
-            return blocks.first { $0.anchor == offset }
+        blocks.first { block in
+            block.replacesSource
+                ? offset >= block.source.location && offset < max(NSMaxRange(block.source), block.source.location + 1)
+                : block.anchor == offset
         }
     }
 

@@ -50,6 +50,116 @@ struct RuleModule: Codable, Hashable, Sendable {
     /// The module's books of one genre, by `{{tag}}` (format 3.0.2): where a genre of one of its
     /// books opens. Without it the genre opens what `search` finds for the word.
     var genre: Entry?
+    /// Its rules and requests may run JavaScript (format 3.0.2; `RuleModuleScriptRuntime`): `@js:`
+    /// and `<js>` in a rule, and a request's `script`. The script computes and never connects:
+    /// every request is still the module's own, to its `hosts`. Without it a rule with JS is
+    /// refused at import, as before.
+    var javascript: Bool?
+    /// What readers wrote about a chapter (format 3.0.2), drawn in the text as a 來源配置's own
+    /// are: 段評 (a count at the end of a paragraph), 熱評 (a card under a paragraph), 本章說 (a
+    /// card after the chapter) and 作者說. Asked for the record that is the book being read,
+    /// found as `reviews` finds a work's, then for the chapter of the site's whose title is the
+    /// chapter's. Any book: one from a file, or from a source with no comments.
+    var comments: Comments?
+
+    /// A record's chapters on the site, and what the site holds about one chapter.
+    struct Comments: Codable, Hashable, Sendable {
+        /// Seconds a book's chapter list, and each of a chapter's answers, answer again without a
+        /// request.
+        var cacheDuration: Int?
+        var chapters: CommentChapters
+        /// 本章說: the chapter's comments, and the card after the chapter.
+        var chapter: ChapterComments
+        /// 段評: how many comments each paragraph has. With it, `paragraph` reads one paragraph's.
+        var counts: ParagraphCounts?
+        /// One paragraph's comments: `{{paragraphId}}` is the paragraph's, as `counts` or `hot`
+        /// gave it.
+        var paragraph: ChapterComments?
+        /// 熱評: a picked comment under a paragraph.
+        var hot: HotComments?
+        /// 作者說: the author's note on the chapter.
+        var authorSay: AuthorSay?
+    }
+
+    /// Which paragraph an item is about. The paragraph is told by its text (`quote`, the
+    /// paragraph or its first words), or by its number (`index`, from 1) when the site's count of
+    /// the chapter's paragraphs (`paragraphCount`) is the reader's own: the reader's copy and the
+    /// site's are two editions, and a number alone would put a comment under another paragraph.
+    struct ParagraphRules: Codable, Hashable, Sendable {
+        var quote: String?
+        var index: String?
+        /// The site's own id of the paragraph, `{{paragraphId}}`; its `index` when absent.
+        var id: String?
+    }
+
+    /// 段評: `{{chapterId}}` is the chapter's; each item is a paragraph and how many comments it has.
+    struct ParagraphCounts: Codable, Hashable, Sendable {
+        var request: Request
+        var list: ParagraphCountRules
+        /// How many paragraphs the site's chapter has, read on the page itself.
+        var paragraphCount: String?
+    }
+
+    struct ParagraphCountRules: Codable, Hashable, Sendable {
+        var items: String
+        var count: String
+        var quote: String?
+        var index: String?
+        var id: String?
+
+        var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id) }
+    }
+
+    /// 熱評: each item is a comment and the paragraph it is under.
+    struct HotComments: Codable, Hashable, Sendable {
+        var request: Request
+        var list: HotCommentRules
+        var paragraphCount: String?
+    }
+
+    struct HotCommentRules: Codable, Hashable, Sendable {
+        var items: String
+        var text: String
+        var author: String?
+        var likes: String?
+        var quote: String?
+        var index: String?
+        var id: String?
+
+        var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id) }
+    }
+
+    /// 作者說: the note, read on the page itself (no `items`).
+    struct AuthorSay: Codable, Hashable, Sendable {
+        var request: Request
+        var text: String
+        var author: String?
+    }
+
+    /// The record's chapters as the site lists them: `{{id}}` and `{{url}}` are the record's.
+    struct CommentChapters: Codable, Hashable, Sendable {
+        var request: Request
+        var list: CommentChapterRules
+    }
+
+    struct CommentChapterRules: Codable, Hashable, Sendable {
+        var items: String
+        /// The chapter's own id on the site: the comments request's `{{chapterId}}`.
+        var id: String
+        var title: String
+    }
+
+    /// One chapter's comments: `{{chapterId}}` is the chapter's `id`, `{{id}}` and `{{url}}` the
+    /// record's, `{{page}}` the page from 1, `{{sort}}` the chosen order's `value`.
+    struct ChapterComments: Codable, Hashable, Sendable {
+        var request: Request
+        /// The orders the site has (最熱, 最新), the first the default; the reader picks one.
+        var sorts: [Option]?
+        /// Each comment, read as a review is; `rating` is not drawn.
+        var list: ReviewRules
+        /// How many comments there are in all, read on the page itself: the card's 「N 則」.
+        var total: String?
+    }
 
     /// A record's related works, on one page of the site's.
     struct Related: Codable, Hashable, Sendable {
@@ -384,6 +494,11 @@ struct RuleModule: Codable, Hashable, Sendable {
         var author: String?
         var cover: String?
         var intro: String?
+        /// JavaScript run once the templates are filled, in a module that declares `javascript`
+        /// (format 3.0.2): `request` is `{url, method, body, headers}` and `values` the templates'
+        /// values; the request sent is the object it returns, else `request` as it left it. For a
+        /// site that signs its requests. The address it writes is still held to `hosts`.
+        var script: String?
         var url: String?
         var kind: String?
         var language: String?
@@ -463,8 +578,8 @@ enum RuleModuleFormat {
     static let version3 = "3.0"
     /// `reviews`, a list's `id` and `volumes`, and a search's `searchesAuthors`.
     static let version3_0_1 = "3.0.1"
-    /// `icon`, `globalParams`, `detail`, `related`, `genre`, a list's `store`, and a parameter's
-    /// `belongTo` and `placeholders`.
+    /// `icon`, `globalParams`, `detail`, `related`, `genre`, a list's `store`, a parameter's
+    /// `belongTo` and `placeholders`, `javascript`, a request's `script`, and `comments`.
     static let version3_0_2 = "3.0.2"
 }
 

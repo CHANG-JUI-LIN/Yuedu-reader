@@ -18,7 +18,7 @@ extension RuleModuleRejection {
         case .tooManyEntries(let count): String(format: localized("模組有 %d 個清單，上限是 50 個。"), count)
         case .duplicateEntryID(let id): String(format: localized("清單代號「%@」重複。"), id)
         case .emptyRule(let field): String(format: localized("%@ 的規則是空的。"), field)
-        case .javaScript(let field): String(format: localized("%@ 含有 JavaScript，模組不執行 JavaScript。"), field)
+        case .javaScript(let field): String(format: localized("%@ 含有 JavaScript，但模組沒有宣告 \"javascript\": true。"), field)
         case .variables(let field): String(format: localized("%@ 用到 @get 或 @put，模組不支援變數。"), field)
         case .undeclaredTemplate(let field, let name):
             String(format: localized("%1$@ 的 {{%2$@}} 不是宣告過的參數。"), field, name)

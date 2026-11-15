@@ -67,13 +67,32 @@ extension ReaderView {
     /// The reader reached another chapter: in scroll mode, bring in translations that
     /// arrived while it was off screen, then ask for what it still lacks.
     func translationChapterDidChange() {
-        guard effectiveReaderTranslation.isActive else { return }
+        // Translations and a module's comments alike: what arrived while the chapter was off screen.
         if effectiveScrollMode, let spine = translationReadingPosition?.spineIndex, staleTranslatedChapters.remove(spine) != nil {
             let request = chapterContentRefreshRequest(chapterIndex: spine)
             let renderer = epubRenderer
             Task { @MainActor in _ = await renderer.refresh(request) }
         }
+        guard effectiveReaderTranslation.isActive else { return }
         translateVisibleChapterIfNeeded()
+    }
+
+    /// A chapter's comments arrived from a module (`ReaderChapterCommentDecorator`): lay the
+    /// chapter out again with them, as a batch of translations is. The comments own no character
+    /// of the chapter, so the reader stays where it is.
+    func applyCommentUpdate(spine: Int) {
+        if effectiveScrollMode {
+            if spine == translationReadingPosition?.spineIndex {
+                let request = chapterContentRefreshRequest(chapterIndex: spine)
+                let renderer = epubRenderer
+                Task { @MainActor in _ = await renderer.refresh(request) }
+            } else {
+                epubRenderer.scrollEngine?.invalidateChapterDocument(at: spine)
+                staleTranslatedChapters.insert(spine)
+            }
+        } else {
+            submitChapterContentRefresh(chapterIndex: spine, update: .replaced)
+        }
     }
 
     /// Pro started or lapsed. The layout follows by itself (`effectiveReaderTranslation` is

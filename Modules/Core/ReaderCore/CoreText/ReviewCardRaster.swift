@@ -87,6 +87,30 @@ enum ReviewCardRaster {
         )
     }
 
+    /// A card drawn from its content alone: a module's 熱評, 本章說 or 作者說, which has no card of
+    /// a source's to redraw. In the template its kind wears, else the built-in one.
+    @MainActor
+    static func image(card: ReviewCardContent, columnWidth: CGFloat, reader: Reader) async -> UIImage? {
+        let isNight = CommentBubbleSVGRecognizer.isNightTheme(themeTextColor: reader.textColor)
+        var source = ReviewCardTemplate.builtinSource(for: card.kind)
+        var customColor: String?
+        if case .custom(let style)? = GlobalSettings.snapshot.wornCommentCardTemplate(for: card.kind) {
+            source = style.svg
+            customColor = style.colorHex(isNight: isNight)
+        }
+        do {
+            let appearance = appearance(for: reader, theme: ReaderConfig.shared.theme)
+            let filled = try ReviewCardTemplate(source: source).filled(
+                with: card, appearance: appearance, width: columnWidth, colorHex: customColor ?? appearance.textColorHex)
+            return await SVGWebViewRasterizer.shared.renderCard(svgString: filled, width: columnWidth, isNight: isNight)
+        } catch {
+            AppLogger.error("comment card template unreadable; the card is not drawn", error: error, context: [
+                "kind": card.kind.rawValue, "path": "module",
+            ])
+            return nil
+        }
+    }
+
     /// The card redrawn from the template its kind wears, or nil when the source's card is
     /// drawn instead.
     ///

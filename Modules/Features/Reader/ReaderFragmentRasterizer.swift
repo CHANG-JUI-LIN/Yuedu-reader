@@ -163,7 +163,10 @@ final class ReaderFragmentRasterizer: @unchecked Sendable {
                     skipAuthoredBackgroundPaint: browser.skipBackground,
                     textPaintPhase: browser.fragment.textPaintPhase,
                     highlightSpans: browser.highlightSpans,
-                    origin: browser.fragment.renderingRect.origin)
+                    origin: browser.fragment.renderingRect.origin,
+                    // The tile over this bitmap holds the card's glass and its text
+                    // (`BrowserLayoutPageView.syncReviewCardGlass`).
+                    glassCards: .liveViews)
             }.cgImage
         }
     }

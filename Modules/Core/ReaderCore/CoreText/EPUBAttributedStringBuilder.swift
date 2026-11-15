@@ -64,6 +64,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     // MARK: - AttributedStringBuilding Basic Info
 
     var chapterCount: Int { session.chapters.count }
+    var decorationRenderWidth: CGFloat? { renderSize.width }
 
     func updateRenderSize(_ size: CGSize) {
         renderSize = size

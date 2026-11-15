@@ -92,6 +92,10 @@ protocol AttributedStringBuilding: Sendable {
     func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText
     /// Whether 替換規則 change this book's text on screen, so a search can offer to skip them.
     var appliesReplaceRules: Bool { get }
+    /// The width the builder lays its chapters out in, before the reader's content insets: what
+    /// a card added to a chapter is drawn to (`ReaderChapterDecorationSource`). Nil for a builder
+    /// nothing is added to.
+    var decorationRenderWidth: CGFloat? { get }
 }
 
 extension AttributedStringBuilding {
@@ -102,6 +106,7 @@ extension AttributedStringBuilding {
         .init(text: nil, status: .unsupported)
     }
     var appliesReplaceRules: Bool { false }
+    var decorationRenderWidth: CGFloat? { nil }
 
     /// The text as the reader shows it, rules applied.
     func localChapterText(at index: Int) async -> AILocalChapterText {

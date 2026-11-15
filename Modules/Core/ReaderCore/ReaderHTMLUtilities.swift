@@ -551,6 +551,9 @@ enum ReaderHTMLUtilities {
         let sourceBrowserPage: SourceBrowserPage?
         /// Ephemeral: credentials are resolved on tap, never serialized into chapter markers.
         let browserRequest: URLRequest?
+        /// A module's comments (`ModuleCommentTargets`): shown in the app's own list, since a
+        /// module has no page of its own to open. Empty for a source's.
+        let moduleToken: String
 
         init(
             url: String,
@@ -559,7 +562,8 @@ enum ReaderHTMLUtilities {
             sourceURL: String = "",
             actionContext: LegadoSourceActionContext? = nil,
             sourceBrowserPage: SourceBrowserPage? = nil,
-            browserRequest: URLRequest? = nil
+            browserRequest: URLRequest? = nil,
+            moduleToken: String = ""
         ) {
             self.url = url
             self.title = title
@@ -568,6 +572,7 @@ enum ReaderHTMLUtilities {
             self.actionContext = actionContext
             self.sourceBrowserPage = sourceBrowserPage
             self.browserRequest = browserRequest
+            self.moduleToken = moduleToken
         }
 
         /// True when the source runtime must prepare the page, including authentication for a known URL.
@@ -577,6 +582,7 @@ enum ReaderHTMLUtilities {
             if let sourceBrowserPage {
                 return "\(sourceBrowserPage.sourceURL)#page#\(sourceBrowserPage.baseURL)"
             }
+            if !moduleToken.isEmpty { return "module#\(moduleToken)" }
             return url.isEmpty ? "\(sourceURL)#\(sourceJS)" : url
         }
     }
@@ -737,6 +743,8 @@ enum ReaderHTMLUtilities {
         let sourceJS: String
         let sourceURL: String
         let actionContext: LegadoSourceActionContext?
+        /// A module's comments, by their token (`ReviewTarget.moduleToken`).
+        let moduleToken: String
 
         init(
             count: String,
@@ -744,7 +752,8 @@ enum ReaderHTMLUtilities {
             title: String,
             sourceJS: String = "",
             sourceURL: String = "",
-            actionContext: LegadoSourceActionContext? = nil
+            actionContext: LegadoSourceActionContext? = nil,
+            moduleToken: String = ""
         ) {
             self.count = count
             self.url = url
@@ -752,6 +761,7 @@ enum ReaderHTMLUtilities {
             self.sourceJS = sourceJS
             self.sourceURL = sourceURL
             self.actionContext = actionContext
+            self.moduleToken = moduleToken
         }
     }
 
@@ -1186,15 +1196,17 @@ enum ReaderHTMLUtilities {
             guard let contextData = base64URLDecode(encoded) else { return nil }
             return try? JSONDecoder().decode(LegadoSourceActionContext.self, from: contextData)
         }
-        // A marker is meaningful with either a ready URL or a source-JS action to run.
-        guard !url.isEmpty || !sourceJS.isEmpty else { return nil }
+        let moduleToken = obj["m"] ?? ""
+        // A marker is meaningful with a ready URL, a source-JS action to run, or a module's comments.
+        guard !url.isEmpty || !sourceJS.isEmpty || !moduleToken.isEmpty else { return nil }
         return ReviewMarker(
             count: obj["c"] ?? "",
             url: url,
             title: obj["t"] ?? "",
             sourceJS: sourceJS,
             sourceURL: obj["s"] ?? "",
-            actionContext: actionContext
+            actionContext: actionContext,
+            moduleToken: moduleToken
         )
     }
 
@@ -1206,8 +1218,18 @@ enum ReaderHTMLUtilities {
             title: marker.title,
             sourceJS: marker.sourceJS,
             sourceURL: marker.sourceURL,
-            actionContext: marker.actionContext
+            actionContext: marker.actionContext,
+            moduleToken: marker.moduleToken
         )
+    }
+
+    /// The href of a bubble or card a module's comments are behind (`ReaderCommentPieces`): the
+    /// same anchor a source's are, naming the comments by `token` in place of a page.
+    static func moduleReviewHref(count: String, title: String, token: String) -> String? {
+        guard !token.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: ["c": count, "t": title, "m": token]),
+              let encoded = base64URLEncode(data) else { return nil }
+        return "\(reviewURLScheme)://r?d=\(encoded)"
     }
 
     /// Title-level Qidian reviews use the sentinel paragraph ID `-1`. Recognizing the decoded

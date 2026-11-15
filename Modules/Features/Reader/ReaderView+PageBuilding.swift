@@ -42,8 +42,20 @@ extension ReaderView {
     /// 整章翻譯's translations for this book, handed to the renderer before any chapter of
     /// it is built, so both engines lay out the same translated documents.
     func attachTranslationSource() {
+        attachCommentDecorator()
         guard epubRenderer.translationSource == nil else { return }
         epubRenderer.translationSource = AIChapterTranslationService.shared.source(for: bookId)
+    }
+
+    /// A module's comments for this book, handed to the renderer with the translations, before
+    /// any chapter is built. The book is named as 讀者評論 names a work: its title and author.
+    func attachCommentDecorator() {
+        guard epubRenderer.decorationSource == nil, let book = book ?? snapshotBook, !book.title.isEmpty else { return }
+        let online = book.onlineChapters.flatMap { $0.isEmpty ? nil : $0.map(\.title) }
+        commentDecorator.reset(
+            work: WorkReviewQuery(title: book.title, authors: [book.author], contentKind: .text),
+            chapterTitles: { online ?? spineChapters.map(\.title) })
+        epubRenderer.decorationSource = commentDecorator
     }
 
     func readerRenderSettings(for mode: ReaderDisplayMode) -> ReaderRenderSettings {

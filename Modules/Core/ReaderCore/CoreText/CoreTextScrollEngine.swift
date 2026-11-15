@@ -410,6 +410,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     func invalidateChapterDocument(at chapterIndex: Int) {
         guard chapterIndex >= 0, chapterIndex < builder.chapterCount else { return }
         chapterDocumentStore.invalidate(spineIndex: chapterIndex)
+        // A chapter the browser engine lays out has no document: its scroll layout is the copy.
+        browserAutoEngine?.discardScrollChapter(at: chapterIndex)
     }
 
     func invalidateChapterDocuments() {

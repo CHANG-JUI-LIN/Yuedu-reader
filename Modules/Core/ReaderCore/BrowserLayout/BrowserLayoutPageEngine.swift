@@ -117,7 +117,10 @@ enum ChapterEngineChoice {
 struct BrowserChapterLayout {
     let spineIndex: Int
     var pages: [PageFragments] {
-        didSet { pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText) }
+        didSet {
+            pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
+            pageAddedStarts = Self.buildPageAddedStarts(pages, sourceText: sourceText)
+        }
     }
     let sourceText: String
     let anchorOffsets: [String: Int]
@@ -138,6 +141,10 @@ struct BrowserChapterLayout {
     /// chapter cost ~7 full rebuilds (tens of thousands of fragment visits), on
     /// every page turn and every progress update.
     private(set) var pageSourceRanges: [NSRange]
+    /// For a page of nothing but pictures added to the chapter (a module's comment cards), the
+    /// picture it starts with; nil for every other page. Such a page shows no character of the
+    /// source, so this is what its reading position is found by (`BrowserAddedContent`).
+    private(set) var pageAddedStarts: [Int?] = []
     let fontSize: CGFloat
     let themeTextColor: UIColor
     let themeBackgroundColor: UIColor
@@ -169,6 +176,7 @@ struct BrowserChapterLayout {
         self.paragraphRanges = paragraphRanges
         // `didSet` does not run during init.
         self.pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
+        self.pageAddedStarts = Self.buildPageAddedStarts(pages, sourceText: sourceText)
         self.fontSize = fontSize
         self.themeTextColor = themeTextColor
         self.themeBackgroundColor = themeBackgroundColor
@@ -178,11 +186,27 @@ struct BrowserChapterLayout {
         BrowserPageGeometry.buildPageRanges(pages, sourceText: sourceText)
     }
 
+    /// Empty until the package tells added pictures from the book's (`YUEDU_ADDED_CONTENT`,
+    /// `BrowserChapterAdditions`): no page is found by one.
+    static func buildPageAddedStarts(_ pages: [PageFragments], sourceText: String) -> [Int?] {
+        #if YUEDU_ADDED_CONTENT
+        BrowserPageGeometry.buildPageAddedStarts(pages, sourceText: sourceText)
+        #else
+        []
+        #endif
+    }
+
     /// Page index containing `charOffset` (binary search, clamped to the page
     /// whose range is nearest — offsets from another engine's collapse space
-    /// are approximate; the spec restores to *nearby* content).
-    func pageIndex(forCharOffset charOffset: Int) -> Int {
+    /// are approximate; the spec restores to *nearby* content). With `addedIndex`, the page
+    /// of added pictures that holds that picture, when there is one.
+    func pageIndex(forCharOffset charOffset: Int, addedIndex: Int? = nil) -> Int {
+        #if YUEDU_ADDED_CONTENT
+        BrowserPageGeometry.pageIndex(forCharOffset: charOffset, addedIndex: addedIndex, ranges: pageSourceRanges,
+                                      addedStarts: pageAddedStarts, sourceText: sourceText)
+        #else
         BrowserPageGeometry.pageIndex(forCharOffset: charOffset, ranges: pageSourceRanges, sourceText: sourceText)
+        #endif
     }
 
     func displayList(forPage localPage: Int, themeTextColor: UIColor, oldThemeColor: UIColor) -> DisplayList {
@@ -376,6 +400,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private let resource: any BrowserLayoutResourceProviding
     private let delegate: CoreTextPageEngine
     private var settings: ReaderRenderSettings
+    /// The settings chapters are laid out with now.
+    var renderSettings: ReaderRenderSettings { settings }
     /// Each chapter's writing mode in a publisher EPUB. Handed to the legacy delegate too, so a chapter
     /// this engine refuses is laid out in the same mode. Nil lays every chapter out in
     /// `settings.writingMode`, the user's 排版方向 or the mode a test fixes. Scroll mode lays chapters
@@ -462,6 +488,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // delegate lays it out only when admission hands it over.
             await preloadChapter(at: 0)
         }
+    }
+
+    /// One chapter's scroll layout is of content that changed (a module's comments arrived for a
+    /// chapter off screen): it is prepared again when the chapter is next asked for.
+    func discardScrollChapter(at spineIndex: Int) {
+        scrollPreparations.removeValue(forKey: spineIndex)?.cancel()
+        scrollPreparationIDs.removeValue(forKey: spineIndex)
+        scrollChapters.removeValue(forKey: spineIndex)
+        scrollSizes.removeValue(forKey: spineIndex)
     }
 
     private func discardScrollPreparation() {
@@ -1227,6 +1262,16 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
         CrashContext.breadcrumb("browser notifyChapterDataChanged spine=\(spineIndex)")
+        // A preload still in flight was started from the chapter as it was, and `preloadChapter`
+        // below joins a preload in flight: the old content's pages came back as the answer to
+        // the new content, or nothing did (seen 2026-11-15: a chapter whose comments arrived
+        // while its first layout ran kept its plain pages, the next stayed on 載入中). The old
+        // preload is ended and waited for, so nothing of it is written after the state is cleared.
+        if let inFlight = preloadTasks.removeValue(forKey: spineIndex) {
+            inFlight.cancel()
+            browserSessions[spineIndex]?.cancel()
+            await inFlight.value
+        }
         scrollPreparations.removeValue(forKey: spineIndex)?.cancel()
         scrollPreparationIDs.removeValue(forKey: spineIndex)
         scrollChapters.removeValue(forKey: spineIndex)
@@ -1257,8 +1302,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         return base + localPageIndex(in: spineIndex, charOffset: charOffset)
     }
 
+    /// A position inside pictures added to a browser chapter carries which one in
+    /// `translationOffset`, as a position inside a translation does on the CoreText path: the
+    /// page of nothing but such pictures is found by it (`BrowserChapterLayout.pageAddedStarts`).
     func pageIndex(for position: CoreTextReadingPosition) -> Int? {
-        pageIndex(forSpine: position.spineIndex, charOffset: position.charOffset)
+        let base = spinePageOffsets.indices.contains(position.spineIndex) ? spinePageOffsets[position.spineIndex] : 0
+        return base + localPageIndex(in: position.spineIndex, charOffset: position.charOffset,
+                                     addedIndex: position.translationOffset)
     }
 
     func estimatedGlobalPage(for position: CoreTextReadingPosition) -> Int? {
@@ -1266,9 +1316,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     func readingPosition(forPage page: Int) -> CoreTextReadingPosition? {
-        let (spine, _) = localPosition(for: page)
+        let (spine, local) = localPosition(for: page)
         let offset = charOffset(forPage: page).charOffset
-        return CoreTextReadingPosition(spineIndex: spine, charOffset: offset)
+        var added: Int?
+        if case .browser = choices[spine] ?? .browser, let starts = browserChapters[spine]?.pageAddedStarts,
+           starts.indices.contains(local) {
+            added = starts[local]
+        }
+        return CoreTextReadingPosition(spineIndex: spine, charOffset: offset, translationOffset: added)
     }
 
     func charOffset(forPage page: Int) -> (spineIndex: Int, charOffset: Int) {
@@ -1563,9 +1618,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let list = artifacts.displayList
             let pageRange = layout.pageSourceRanges[local]
             let offset = pageRange.location
+            // A page of nothing but added pictures is found by the one it starts with.
+            let added = layout.pageAddedStarts.indices.contains(local) ? layout.pageAddedStarts[local] : nil
             let vc = BrowserLayoutPageViewController(
                 globalPageIndex: index,
-                readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: offset),
+                readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: offset, translationOffset: added),
                 displayList: list,
                 mediaAttachments: layout.mediaAttachments,
                 backgroundColor: themeBackgroundColor,
@@ -1584,7 +1641,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             ) { _ in }
             vc.pageView.configureTextInteraction(sourceText: layout.sourceText, spineIndex: spine,
                                                 annotations: textAnnotations, paragraphRanges: layout.paragraphRanges)
-            vc.pageView.readingPositionForBars = CoreTextReadingPosition(spineIndex: spine, charOffset: offset)
+            vc.pageView.readingPositionForBars = CoreTextReadingPosition(spineIndex: spine, charOffset: offset, translationOffset: added)
             vc.pageView.pageBars = pageBarsProvider?(index)
             annotationPages.add(vc.pageView)
             // Bound after construction so the closure can reference THIS page's
@@ -1593,6 +1650,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // detached view controller and show nothing).
             vc.pageView.onLinkActivate = { [weak self, weak vc] region in
                 guard let self, let vc else { return }
+                // A comment bubble or card (`ReaderHTMLUtilities.reviewHref`): its comments, as on
+                // a CoreText page. No link of the book has this scheme.
+                if let target = ReaderHTMLUtilities.reviewTarget(fromHref: region.href) {
+                    vc.presentReview(target)
+                    return
+                }
                 self.activateLink(region) { note in
                     vc.presentFootnote(note, anchor: region.pageLocalRect)
                 }
@@ -1880,10 +1943,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         max(1, renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom)
     }
 
-    private func localPageIndex(in spineIndex: Int, charOffset: Int) -> Int {
+    private func localPageIndex(in spineIndex: Int, charOffset: Int, addedIndex: Int? = nil) -> Int {
         switch choices[spineIndex] ?? .browser {
         case .browser:
-            return browserChapters[spineIndex]?.pageIndex(forCharOffset: charOffset) ?? 0
+            return browserChapters[spineIndex]?.pageIndex(forCharOffset: charOffset, addedIndex: addedIndex) ?? 0
         case .legacyFallback, .legacyEngineFailure:
             let delegateBase = delegate.pageIndex(forSpine: spineIndex, charOffset: 0)
             return max(0, delegate.pageIndex(forSpine: spineIndex, charOffset: charOffset) - delegateBase)

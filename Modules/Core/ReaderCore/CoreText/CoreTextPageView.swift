@@ -2812,7 +2812,7 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
             return
         }
         weak var weakHost: UIViewController?
-        let view = LegadoReviewBrowserView(target: target) { _ in
+        let view = ReaderReviewSheetContent(target: target) { _ in
             weakHost?.dismiss(animated: true)
         }
         let host = UIHostingController(rootView: view)

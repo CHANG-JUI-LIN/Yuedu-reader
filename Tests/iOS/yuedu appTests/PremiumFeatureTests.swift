@@ -37,8 +37,9 @@ struct PremiumFeatureTests {
 
     @Test("the tapped feature's pillar leads; the Pro row keeps the default order")
     func tappedPillarLeads() {
-        #expect(PremiumPillar.ordered(leading: .customFonts) == [.comfort, .understanding, .habits])
-        #expect(PremiumPillar.ordered(leading: .touchZoneEditor) == [.habits, .understanding, .comfort])
+        #expect(PremiumPillar.ordered(leading: .customFonts) == [.comfort, .understanding, .habits, .modules])
+        #expect(PremiumPillar.ordered(leading: .touchZoneEditor) == [.habits, .understanding, .comfort, .modules])
+        #expect(PremiumPillar.ordered(leading: .moduleImport) == [.modules, .understanding, .comfort, .habits])
         #expect(PremiumPillar.ordered(leading: nil) == PremiumPillar.allCases)
         #expect(PremiumPillar.ordered(leading: .alternateAppIcons) == PremiumPillar.allCases)
     }
@@ -58,6 +59,32 @@ struct PremiumFeatureTests {
         #expect(ai.noteKey != nil)
         #expect(Set(PremiumPillar.allCases.flatMap { $0.benefits.map(\.id) }).count
             == PremiumPillar.allCases.flatMap(\.benefits).count)
+    }
+
+    // MARK: - 新增模組
+
+    @Test("新增模組 is sold as its own group, and says what stays free")
+    func modulePillar() {
+        #expect(PremiumFeature.marketedFeatures().contains(.moduleImport))
+        #expect(PremiumPillar.pillar(for: .moduleImport) == .modules)
+        #expect(PremiumPillar.modules.benefits.allSatisfy { $0.feature == .moduleImport })
+        #expect(PremiumPillar.modules.noteKey != nil)
+    }
+
+    @Test("without Pro a route of 新增模組 opens the paywall: no disclaimer, no sheet, no picker")
+    @MainActor
+    func addingAModuleNeedsPro() {
+        for route in RuleModuleAddRoute.allCases {
+            let locked = RuleModuleAddFlow(mayAdd: { false })
+            locked.begin(route, clipboard: { nil })
+            #expect(locked.showsPaywall, "\(route)")
+            #expect(!locked.showsSheet && !locked.showsFileImporter && !locked.showsDisclaimer, "\(route)")
+
+            let open = RuleModuleAddFlow(mayAdd: { true })
+            open.begin(route, clipboard: { nil })
+            #expect(!open.showsPaywall, "\(route)")
+            #expect(open.showsSheet || open.showsFileImporter || open.showsDisclaimer, "\(route)")
+        }
     }
 
     // MARK: - Price framing

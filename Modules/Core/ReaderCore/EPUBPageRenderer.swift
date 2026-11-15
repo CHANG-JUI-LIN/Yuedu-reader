@@ -62,6 +62,23 @@ final class EPUBPageRenderer: ObservableObject {
     var translationSource: (any ReaderTranslationSource)? {
         didSet { chapterDocumentStore?.translationSource = translationSource }
     }
+    /// What is added to the book's chapters beside their text (a module's comments). Handed to
+    /// every document store: the chapters the CoreText path lays out (TXT, online, a module's,
+    /// and an EPUB chapter the browser engine does not take). A chapter the browser engine lays
+    /// out reads no document: it gets them through `BrowserChapterAdditions`, once the project
+    /// asks for a YueduCoreText that gives added pictures no character (`YUEDU_ADDED_CONTENT`).
+    var decorationSource: (any ReaderChapterDecorationSource)? {
+        didSet {
+            chapterDocumentStore?.decorationSource = decorationSource
+            #if YUEDU_ADDED_CONTENT
+            browserAdditions?.source = decorationSource
+            #endif
+        }
+    }
+    #if YUEDU_ADDED_CONTENT
+    /// The comments in the chapters the browser engine lays out (`BrowserChapterAdditions`).
+    private var browserAdditions: BrowserChapterAdditions?
+    #endif
     /// Handed to every browser engine this renderer makes:
     /// `BrowserLayoutPageEngine.onBrowserChapterPictures`.
     var onBrowserChapterPictures: ((_ spine: Int, _ sourceText: String, _ pictures: BrowserPictureOffsets) -> Void)? {
@@ -552,6 +569,7 @@ final class EPUBPageRenderer: ObservableObject {
         )
         let chapterDocumentStore = ChapterDocumentStore(builder: builder)
         chapterDocumentStore.translationSource = translationSource
+        chapterDocumentStore.decorationSource = decorationSource
         self.chapterDocumentStore = chapterDocumentStore
         self.epubBuilder = builder
         self.contentBuilder = builder
@@ -568,10 +586,20 @@ final class EPUBPageRenderer: ObservableObject {
         )
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
+        let bookResource: any BrowserLayoutResourceProviding = resolved?.resource ?? EPUBBrowserLayoutResourceAdapter(session: session)
+        #if YUEDU_ADDED_CONTENT
+        let additions = BrowserChapterAdditions(base: bookResource, source: decorationSource)
+        browserAdditions = additions
+        let resource: any BrowserLayoutResourceProviding = additions
+        #else
+        let resource = bookResource
+        #endif
         let browserEngine = BrowserLayoutPageEngine(
-            resource: resolved?.resource ?? EPUBBrowserLayoutResourceAdapter(session: session),
-            delegate: newEngine, settings: settings, mode: .browserAuto
+            resource: resource, delegate: newEngine, settings: settings, mode: .browserAuto
         )
+        #if YUEDU_ADDED_CONTENT
+        additions.settings = { [weak browserEngine] in browserEngine?.renderSettings }
+        #endif
         browserEngine.writingModes = resolved?.modes
         scrollEngine?.writingModes = resolved?.modes
         browserEngine.onBrowserChapterPictures = onBrowserChapterPictures
@@ -659,6 +687,7 @@ final class EPUBPageRenderer: ObservableObject {
         let store = CharOffsetStore(directoryURL: progressDir)
         let chapterDocumentStore = ChapterDocumentStore(builder: attributedBuilder)
         chapterDocumentStore.translationSource = translationSource
+        chapterDocumentStore.decorationSource = decorationSource
         self.chapterDocumentStore = chapterDocumentStore
         let newEngine = CoreTextPageEngine(
             attributedBuilder: attributedBuilder,
@@ -733,6 +762,7 @@ final class EPUBPageRenderer: ObservableObject {
         )
         let chapterDocumentStore = ChapterDocumentStore(builder: onlineBuilder)
         chapterDocumentStore.translationSource = translationSource
+        chapterDocumentStore.decorationSource = decorationSource
         self.chapterDocumentStore = chapterDocumentStore
         let newEngine = CoreTextPageEngine(
             attributedBuilder: onlineBuilder,

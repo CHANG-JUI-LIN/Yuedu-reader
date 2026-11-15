@@ -197,6 +197,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
     }
 
     var appliesReplaceRules: Bool { true }
+    var decorationRenderWidth: CGFloat? { renderSize.value.width }
 
     func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
         .extracted(plainText(at: index, applyingReplaceRules: applyingReplaceRules))

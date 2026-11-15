@@ -34,11 +34,11 @@ extension RuleModuleClient {
             }
             let page = try await send(address, headers: reading.headers ?? [:], charset: reading.charset, in: module)
             pages += 1
-            if pages == 1, Self.isSingleChapter(page.text, baseURL: page.baseURL, toc: reading.toc) {
+            if pages == 1, Self.isSingleChapter(page.text, baseURL: page.baseURL, toc: reading.toc, scripts: module.scripts) {
                 chapters = [ModuleChapter(title: title, url: page.baseURL)]
                 break
             }
-            let read = Self.chapters(in: page.text, baseURL: page.baseURL, toc: reading.toc)
+            let read = Self.chapters(in: page.text, baseURL: page.baseURL, toc: reading.toc, scripts: module.scripts)
             chapters += read.chapters
             guard let next = read.next else { break }
             address = next
@@ -48,16 +48,17 @@ extension RuleModuleClient {
         return chapters
     }
 
-    nonisolated static func isSingleChapter(_ html: String, baseURL: String, toc: RuleModule.TableOfContents) -> Bool {
+    nonisolated static func isSingleChapter(_ html: String, baseURL: String, toc: RuleModule.TableOfContents,
+                                            scripts: RuleModuleScriptRuntime? = nil) -> Bool {
         guard let rule = toc.singleChapter, !rule.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
-        return !ModernRuleEngine().setContent(html, baseUrl: baseURL).getString(ruleStr: rule)
+        return !RuleModuleScriptRuntime.engine(scripts).setContent(html, baseUrl: baseURL).getString(ruleStr: rule)
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// One page of the list, and the next page's address.
-    nonisolated static func chapters(in html: String, baseURL: String,
-                                     toc: RuleModule.TableOfContents) -> (chapters: [ModuleChapter], next: String?) {
-        let engine = ModernRuleEngine()
+    nonisolated static func chapters(in html: String, baseURL: String, toc: RuleModule.TableOfContents,
+                                     scripts: RuleModuleScriptRuntime? = nil) -> (chapters: [ModuleChapter], next: String?) {
+        let engine = RuleModuleScriptRuntime.engine(scripts)
         engine.setContent(html, baseUrl: baseURL)
         let next = toc.nextPage.map { engine.getOptionalURL(ruleStr: $0) }.flatMap { $0.isEmpty ? nil : $0 }
         var chapters: [ModuleChapter] = []
@@ -79,28 +80,30 @@ extension RuleModuleClient {
         let content = reading.content
         let first = try await send(chapter.url, headers: headers, charset: reading.charset, in: module)
         guard let firstURL = URL(string: first.baseURL) else { throw FetchError.invalidURL(first.baseURL) }
-        let client = self
+        let client = self, scripts = module.scripts
         return try await ChapterFetcher.shared.buildChapterPackage(
             bookId: bookId, chapterIndex: chapterIndex, sourceURL: chapter.url, tocTitle: chapter.title,
             initialHTML: first.text, initialURL: firstURL, initialBaseURL: first.baseURL,
-            parsePage: { html, baseURL, _ in Self.parse(html, baseURL: baseURL, content: content) },
-            extractNextURLs: { html, baseURL, _ in Self.nextPages(html, baseURL: baseURL, content: content) },
+            parsePage: { html, baseURL, _ in Self.parse(html, baseURL: baseURL, content: content, scripts: scripts) },
+            extractNextURLs: { html, baseURL, _ in Self.nextPages(html, baseURL: baseURL, content: content, scripts: scripts) },
             fetchNextPageHTML: { link in
                 guard let url = AnalyzeUrl.requestURL(link) else { throw FetchError.invalidURL(link) }
                 return try await client.send(url.absoluteString, headers: headers, charset: reading.charset, in: module).text
             })
     }
 
-    nonisolated static func parse(_ html: String, baseURL: String, content: RuleModule.Content) -> ChapterParsePayload {
-        let engine = ModernRuleEngine()
+    nonisolated static func parse(_ html: String, baseURL: String, content: RuleModule.Content,
+                                  scripts: RuleModuleScriptRuntime? = nil) -> ChapterParsePayload {
+        let engine = RuleModuleScriptRuntime.engine(scripts)
         engine.setContent(html, baseUrl: baseURL)
         let title = content.title.map { engine.getString(ruleStr: $0) } ?? ""
         return ChapterParsePayload(content: engine.getString(ruleStr: content.text), title: title, sourceMatched: true, isPay: false)
     }
 
-    nonisolated static func nextPages(_ html: String, baseURL: String, content: RuleModule.Content) -> [String] {
+    nonisolated static func nextPages(_ html: String, baseURL: String, content: RuleModule.Content,
+                                      scripts: RuleModuleScriptRuntime? = nil) -> [String] {
         guard let rule = content.nextPage else { return [] }
-        let next = ModernRuleEngine().setContent(html, baseUrl: baseURL).getOptionalURL(ruleStr: rule)
+        let next = RuleModuleScriptRuntime.engine(scripts).setContent(html, baseUrl: baseURL).getOptionalURL(ruleStr: rule)
         return next.isEmpty ? [] : [next]
     }
 }

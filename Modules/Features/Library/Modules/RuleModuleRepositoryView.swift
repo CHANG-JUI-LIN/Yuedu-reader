@@ -17,6 +17,7 @@ struct RuleModuleRepositoryView: View {
     @State private var outcome: RuleModuleRepositoryModel.BatchOutcome?
     @State private var hasLoaded = false
     @State private var confirmsUnsubscription = false
+    @State private var showsPaywall = false
     @Environment(\.dismiss) private var dismiss
 
     init(url: URL, repositories: RuleModuleRepositoryModel? = nil, library: RuleModuleLibrary? = nil) {
@@ -51,6 +52,7 @@ struct RuleModuleRepositoryView: View {
         .sheet(isPresented: $showsImport) {
             RuleModuleImportSheet(model: importer, title: importTitle)
         }
+        .moduleImportPaywall(isPresented: $showsPaywall)
         .task {
             guard !hasLoaded else { return }
             hasLoaded = true
@@ -241,6 +243,11 @@ struct RuleModuleRepositoryView: View {
     }
 
     private func offer(_ entry: RuleModuleRepositoryIndex.Entry, isUpdate: Bool) {
+        // A new module is 閱讀Pro's; an update of an installed one is not.
+        guard isUpdate || RuleModuleAddAccess.isGranted() else {
+            showsPaywall = true
+            return
+        }
         importer.reset()
         importTitle = localized(isUpdate ? "更新模組" : "新增模組")
         showsImport = true
@@ -252,6 +259,11 @@ struct RuleModuleRepositoryView: View {
         isInstalling = true
         defer { isInstalling = false }
         let chosen = index.modules.filter { selection.contains($0.id) }
+        // Updates alone go through; a selection that adds a module is 閱讀Pro's.
+        guard RuleModuleAddAccess.isGranted() || !chosen.contains(where: { repositories.status(of: $0) == .notInstalled }) else {
+            showsPaywall = true
+            return
+        }
         outcome = await repositories.install(chosen)
         selection.removeAll()
         editMode = .inactive

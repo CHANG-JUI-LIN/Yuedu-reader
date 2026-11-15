@@ -54,16 +54,10 @@ extension RuleModuleClient {
     /// percent-encoded anywhere else, as `detail` has it.
     func reviews(of item: RuleListItem, by reviews: RuleModule.Reviews,
                  in module: RuleModule) async throws -> (reviews: [WorkReview], rating: WorkRating?) {
-        let request = reviews.request
         let values = module.withGlobalValues(["id": item.id ?? "", "url": item.bookUrl], language: nil)
-        let leading = request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
-        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
         let started = SourcePerfTrace.now
-        let page = try await send(Self.fill(request.url, values, encode: !leading), method: (request.method ?? "GET").uppercased(),
-                                  body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
-                                  headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) },
-                                  charset: request.charset, in: module)
-        let read = await Self.readReviews(page.text, baseURL: page.baseURL, by: reviews)
+        let page = try await perform(reviews.request, values: values, ofRecord: true, in: module)
+        let read = await Self.readReviews(page.text, baseURL: page.baseURL, by: reviews, scripts: module.scripts)
         SourcePerfTrace.record("module.reviews", "module=\(module.id) reviews=\(read.reviews.count)", since: started, thresholdMs: 0)
         return read
     }
@@ -71,11 +65,29 @@ extension RuleModuleClient {
     /// The page's reviews and rating. Off the caller's actor: a page of a hundred reviews is a
     /// hundred HTML-to-text passes.
     @concurrent
-    nonisolated static func readReviews(_ text: String, baseURL: String,
-                                        by reviews: RuleModule.Reviews) async -> (reviews: [WorkReview], rating: WorkRating?) {
-        let engine = ModernRuleEngine()
+    nonisolated static func readReviews(_ text: String, baseURL: String, by reviews: RuleModule.Reviews,
+                                        scripts: RuleModuleScriptRuntime? = nil) async -> (reviews: [WorkReview], rating: WorkRating?) {
+        let engine = RuleModuleScriptRuntime.engine(scripts)
         let scale = reviews.ratingScale ?? Double(WorkRating.stars)
-        let rules = reviews.list
+        let found = readList(reviews.list, in: text, baseURL: baseURL, scale: scale, engine: engine)
+        var rating: WorkRating?
+        if let summary = reviews.rating {
+            engine.setContent(text, baseUrl: baseURL)
+            if let score = stars(engine.getString(ruleStr: summary.score), outOf: scale) {
+                let count = summary.count.flatMap { Int(engine.getString(ruleStr: $0).trimmingCharacters(in: .whitespaces)) }
+                let bars = summary.distribution.map { engine.getStringList(ruleStr: $0).map { Int($0.trimmingCharacters(in: .whitespaces)) } } ?? []
+                // A bar per star, or none: a site's four or ten buckets are not five stars'.
+                let distribution = bars.count == WorkRating.stars ? bars.compactMap { $0 }.filter { $0 >= 0 } : []
+                rating = WorkRating(score: score, count: count.flatMap { $0 > 0 ? $0 : nil },
+                                    distribution: distribution.count == WorkRating.stars ? distribution : nil)
+            }
+        }
+        return (found, rating)
+    }
+
+    /// The page's reviews, or a chapter's comments (`comments.chapter.list`): one rule set reads both.
+    nonisolated static func readList(_ rules: RuleModule.ReviewRules, in text: String, baseURL: String, scale: Double,
+                                     engine: ModernRuleEngine) -> [WorkReview] {
         engine.setContent(text, baseUrl: baseURL)
         var found: [WorkReview] = []
         for element in engine.getElements(ruleStr: rules.items) {
@@ -96,19 +108,7 @@ extension RuleModuleClient {
                 rating: line(rules.rating, limit: 20).flatMap { stars($0, outOf: scale) },
                 likes: line(rules.likes, limit: 20).flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil }))
         }
-        var rating: WorkRating?
-        if let summary = reviews.rating {
-            engine.setContent(text, baseUrl: baseURL)
-            if let score = stars(engine.getString(ruleStr: summary.score), outOf: scale) {
-                let count = summary.count.flatMap { Int(engine.getString(ruleStr: $0).trimmingCharacters(in: .whitespaces)) }
-                let bars = summary.distribution.map { engine.getStringList(ruleStr: $0).map { Int($0.trimmingCharacters(in: .whitespaces)) } } ?? []
-                // A bar per star, or none: a site's four or ten buckets are not five stars'.
-                let distribution = bars.count == WorkRating.stars ? bars.compactMap { $0 }.filter { $0 >= 0 } : []
-                rating = WorkRating(score: score, count: count.flatMap { $0 > 0 ? $0 : nil },
-                                    distribution: distribution.count == WorkRating.stars ? distribution : nil)
-            }
-        }
-        return (found, rating)
+        return found
     }
 
     /// A site's number as stars out of `WorkRating.stars`; nil for no number, zero (unrated), or

@@ -27,9 +27,17 @@ extension CoreTextPaginator.RenderedAttachment {
             return
         }
         guard glassCards == .baked else { return }
-        let isNight = card.isNight
-        for panel in card.glassPanels {
-            let placed = panel.placed(in: rect, imageSize: card.size)
+        card.drawGlassStandIn(in: rect)
+        image.draw(in: rect, blendMode: .normal, alpha: opacity)
+    }
+}
+
+extension ReviewCardImage {
+    /// The still stand-in for the card's glass, in the current UIKit context: what a picture
+    /// of a page draws under the card's text (`ReviewCardGlassDrawing.baked`).
+    func drawGlassStandIn(in rect: CGRect) {
+        for panel in glassPanels {
+            let placed = panel.placed(in: rect, imageSize: size)
             let path = UIBezierPath(roundedRect: placed.rect, cornerRadius: placed.cornerRadius)
             // The live glass shows the page through it, barely lifted, with a bright rim: on
             // a paper page it reads as the paper. A denser fill turned the card a white slab
@@ -40,7 +48,6 @@ extension CoreTextPaginator.RenderedAttachment {
             path.lineWidth = 0.5
             path.stroke()
         }
-        image.draw(in: rect, blendMode: .normal, alpha: opacity)
     }
 }
 

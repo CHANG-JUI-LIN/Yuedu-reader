@@ -105,6 +105,21 @@ struct ModuleReviewProvider {
                                            authors: query.authors, contentKind: query.contentKind)
     }
 
+    /// The search results called what the work is called, for a work that names no author
+    /// (`records` finds none for it: a title alone is not a work). The caller must tell the
+    /// work among them by something else; 本章說 does by its chapters.
+    func titleRecords(for query: WorkReviewQuery) async throws -> [RuleListItem] {
+        let module = provider.module, provider = provider, timeout = timeout
+        guard let search = module.search, search.listedKinds.contains(query.contentKind), search.takes(keyword: query.title) else {
+            return []
+        }
+        let title = query.title
+        let items = try await LibrarySearch.within(timeout) { try await provider.searchItems(title) } ?? []
+        var seen = Set<String>()
+        return ModuleFillProvider.sameTitle(in: items, of: search, title: query.title, contentKind: query.contentKind)
+            .filter { seen.insert($0.bookUrl.isEmpty ? "\($0.name)\u{1F}\($0.author)" : $0.bookUrl).inserted }
+    }
+
     /// The work as the cache names it: what was asked, folded as it is matched.
     nonisolated static func cacheKey(_ query: WorkReviewQuery) -> [String: String] {
         ["title": WorkMatchKey.title(query.title),

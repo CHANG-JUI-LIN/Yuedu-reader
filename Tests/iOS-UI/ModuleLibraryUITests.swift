@@ -25,6 +25,8 @@ final class ModuleLibraryUITests: XCTestCase {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleLibraryUITests-\(UUID().uuidString)")
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
+                               // 新增模組 is 閱讀Pro's (`PremiumFeature.moduleImport`).
+                               "-debug-force-pro",
                                "-yd_source_disclaimer_accepted", disclaimerAccepted ? "YES" : "NO",
                                "-rule-module-store-dir", folder.path] + extra
         app.launch()
@@ -285,8 +287,9 @@ final class ModuleLibraryUITests: XCTestCase {
         for _ in 0..<6 where !network.isHittable { app.swipeUp() }
         network.tap()
         let sources = app.buttons["network.metadataFillSources"].firstMatch
+        // The row is in the page's last section and the list is lazy: it exists once scrolled to.
+        for _ in 0..<8 where !sources.exists || !sources.isHittable { app.swipeUp() }
         XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
-        for _ in 0..<6 where !sources.isHittable { app.swipeUp() }
         sources.tap()
 
         let bookSources = app.switches["metadataFill.place.bookSources"].firstMatch

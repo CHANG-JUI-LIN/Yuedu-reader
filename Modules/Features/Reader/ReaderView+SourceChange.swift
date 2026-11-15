@@ -522,7 +522,7 @@ extension ReaderView {
         chapterConsistencyRecoveryAttempts.removeAll()
 
         if let position {
-            savedCoreTextRestoreTarget = (position.spineIndex, position.charOffset)
+            savedCoreTextRestoreTarget = (position.spineIndex, position.charOffset, position.translationOffset)
             setCoreTextExternalTarget(position)
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex

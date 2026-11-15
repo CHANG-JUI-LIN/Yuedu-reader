@@ -80,6 +80,9 @@ final class ChapterDocumentStore {
     /// Supplies translations when the request's settings show them. Set by the renderer
     /// for the book being read; nil leaves every document as the builder made it.
     var translationSource: (any ReaderTranslationSource)?
+    /// Supplies what is added to a chapter beside its text (a module's comments). Set by the
+    /// renderer for the book being read; nil adds nothing.
+    var decorationSource: (any ReaderChapterDecorationSource)?
     private let capacity: Int
     private var cache: [CacheEntry] = []
     private var inFlight: [InFlightEntry] = []
@@ -104,7 +107,7 @@ final class ChapterDocumentStore {
 
         let entryID = UUID()
         let requestGeneration = generation
-        let task = Task { @MainActor [builder, translationSource] in
+        let task = Task { @MainActor [builder, translationSource, decorationSource] in
             // Binds the spine index for the `⏱ coreText.document.*` lines emitted deep inside
             // the chapter-agnostic HTML/CSS builders. See `ReaderDocumentTrace`.
             try await ReaderDocumentTrace.$spineIndex.withValue(request.spineIndex) {
@@ -114,14 +117,33 @@ final class ChapterDocumentStore {
                     themeTextColor: request.themeTextColor,
                     themeBackgroundColor: request.themeBackgroundColor
                 )
-                let presentation = request.settings.translation
-                guard presentation.isActive, result.imagePage == nil, let translationSource else {
+                guard result.imagePage == nil else {
                     return ChapterDocument(spineIndex: request.spineIndex, buildResult: result)
                 }
-                let translated = ReaderTranslationLayout.splice(result.attributedString, mode: presentation.mode) {
-                    translationSource.translation(forParagraph: $0, language: presentation.language)
+                var decorations: ReaderTranslationLayout.Decorations?
+                let built = result.attributedString
+                if let decorationSource, let width = builder.decorationRenderWidth, built.length > 0,
+                   !ReaderCommentPieces.hasSourceComments(built) {
+                    let paragraphs = ReaderTranslationText.paragraphs(in: built.string)
+                    if let placements = decorationSource.placements(
+                        forSpine: request.spineIndex, title: builder.chapterTitle(at: request.spineIndex),
+                        paragraphs: paragraphs.map(\.key)) {
+                        let insets = request.settings.contentInsets
+                        let pieces = ReaderCommentPieces(settings: request.settings, textColor: request.themeTextColor,
+                                                         columnWidth: max(1, width - insets.left - insets.right))
+                        decorations = await pieces.decorations(placements, in: built, paragraphs: paragraphs)
+                    }
                 }
-                return ChapterDocument(spineIndex: request.spineIndex, buildResult: result, translated: translated)
+                let presentation = request.settings.translation
+                let source = presentation.isActive ? translationSource : nil
+                guard source != nil || decorations != nil else {
+                    return ChapterDocument(spineIndex: request.spineIndex, buildResult: result)
+                }
+                let spliced = ReaderTranslationLayout.splice(result.attributedString, mode: source == nil ? .off : presentation.mode,
+                                                             decorations: decorations) {
+                    source?.translation(forParagraph: $0, language: presentation.language)
+                }
+                return ChapterDocument(spineIndex: request.spineIndex, buildResult: result, translated: spliced)
             }
         }
         inFlight.append(

@@ -22,7 +22,7 @@ struct ModuleFormatDocumentationTests {
        "params":[{"name":"p","title":"t","type":"enumeration","description":"d","value":"v",
                   "enumOptions":[{"title":"t","value":"v"}]}],
        "request":{"url":"https://example.com/{{p}}","method":"POST","body":"b","headers":{"h":"v"},"charset":"utf-8",
-                  "bodyEncoding":"json"},
+                  "bodyEncoding":"json","script":"request"},
        "list":{"items":"i","title":"t","author":"a","cover":"c","intro":"i","url":"u","kind":"k","language":"l",
                "aliases":"a","tags":"t","publisher":"p","isbn":"i","series":"s","contentKind":"c"},
        "contentKind":"comic","excludeTags":["x"],"store":[{"layout":"heroCards","params":{"p":"v"}}]}],
@@ -41,6 +41,17 @@ struct ModuleFormatDocumentationTests {
      "related":{"request":{"url":"https://example.com/rel/{{id}}"},"cacheDuration":60,"list":{"items":"i","title":"t"}},
      "genre":{"request":{"url":"https://example.com/g?t={{tag}}"},"list":{"items":"i","title":"t","url":"u"}},
      "attribution":{"text":"t","url":"https://example.com"},
+     "javascript":true,
+     "comments":{"cacheDuration":60,
+                 "chapters":{"request":{"url":"https://example.com/b/{{id}}"},"list":{"items":"i","id":"d","title":"t"}},
+                 "chapter":{"request":{"url":"https://example.com/c/{{chapterId}}?s={{sort}}"},
+                            "sorts":[{"title":"t","value":"v"}],"list":{"items":"i","text":"t"},"total":"n"},
+                 "paragraph":{"request":{"url":"https://example.com/c/{{chapterId}}/{{paragraphId}}"},"list":{"items":"i","text":"t"}},
+                 "counts":{"request":{"url":"https://example.com/n/{{chapterId}}"},"paragraphCount":"c",
+                           "list":{"items":"i","count":"c","quote":"q","index":"n","id":"d"}},
+                 "hot":{"request":{"url":"https://example.com/h/{{chapterId}}"},"paragraphCount":"c",
+                        "list":{"items":"i","text":"t","author":"a","likes":"l","quote":"q","index":"n","id":"d"}},
+                 "authorSay":{"request":{"url":"https://example.com/a/{{chapterId}}"},"text":"t","author":"a"}},
      "localizations":{"en":{"title":"t","description":"d","entries":{"e":{"title":"t","description":"d"}}}}}
     """
 

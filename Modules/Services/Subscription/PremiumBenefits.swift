@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the paywall says, grouped the way readers weigh it: three benefits, each carried by
+/// What the paywall says, grouped the way readers weigh it: four benefits, each carried by
 /// a few concrete things Pro does. Keys only — the view localizes them.
 ///
 /// A row names a `PremiumFeature` so the paywall can mark the one that was tapped; the AI
@@ -10,6 +10,8 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
     case understanding
     case comfort
     case habits
+    /// 新增模組 (maintainer, 2026-11-15: its own group, not a row of 照你的習慣讀).
+    case modules
 
     var id: String { rawValue }
 
@@ -18,6 +20,7 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
         case .understanding: return "AI 讀懂一本書"
         case .comfort: return "讀得更舒服"
         case .habits: return "照你的習慣讀"
+        case .modules: return "接上更多內容"
         }
     }
 
@@ -26,6 +29,7 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
         case .understanding: return "sparkles"
         case .comfort: return "paintpalette"
         case .habits: return "hand.tap"
+        case .modules: return "puzzlepiece.extension"
         }
     }
 
@@ -35,6 +39,8 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
         // Said up front: finding out after paying that AI needs your own key is a refund.
         case .understanding: return "AI 功能用你自己的 AI 服務金鑰，支援 DeepSeek、OpenAI、Claude、Gemini 等。"
         case .comfort, .habits: return nil
+        // Said up front, as the AI key is: what was free before the gate stays free.
+        case .modules: return "官方模組、已安裝的模組和它們的更新，不需要 Pro。"
         }
     }
 
@@ -74,6 +80,17 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
                                titleKey: "底部分頁", detailKey: "自訂底部 Tab 的頁面、大小與圖示"),
                 PremiumBenefit(feature: .launchScreen, iconName: "app.dashed",
                                titleKey: "啟動圖", detailKey: "換上你自己的開屏畫面"),
+            ]
+        case .modules:
+            // One entitlement, three reasons, as AI is: the way in, the repository, what a
+            // module brings.
+            return [
+                PremiumBenefit(feature: .moduleImport, iconName: "doc.badge.plus",
+                               titleKey: "新增模組", detailKey: "從網址、檔案或剪貼簿加入第三方模組"),
+                PremiumBenefit(feature: .moduleImport, iconName: "shippingbox",
+                               titleKey: "模組倉庫", detailKey: "訂閱一個倉庫，裡面的模組選了就裝"),
+                PremiumBenefit(feature: .moduleImport, iconName: "books.vertical",
+                               titleKey: "書單、搜尋與評論", detailKey: "模組把榜單、搜尋結果和讀者評論帶進探索與詳情頁"),
             ]
         }
     }
@@ -137,9 +154,12 @@ struct PremiumPitch: Equatable {
         case .launchScreen?:
             return .init(headlineKey: "打開 App，先看到你的畫面",
                          pitchKey: "換上自己的開屏圖片。")
+        case .moduleImport?:
+            return .init(headlineKey: "用模組接上更多內容",
+                         pitchKey: "從網址、檔案或模組倉庫加入第三方模組，榜單、搜尋和評論跟著進來。")
         case .alternateAppIcons?, nil:
             return .init(headlineKey: "每一本書，都讀得更懂、更舒服",
-                         pitchKey: "AI 讀書助手、外觀與字體、你的閱讀習慣，一次解鎖。")
+                         pitchKey: "AI 讀書助手、外觀與字體、你的閱讀習慣、第三方模組，一次解鎖。")
         }
     }
 }

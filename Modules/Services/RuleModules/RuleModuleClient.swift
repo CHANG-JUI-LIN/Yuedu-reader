@@ -139,8 +139,9 @@ extension RuleModule.Param {
 }
 
 /// Reads a module's pages: the request its entry describes, through `WebFetcher` under the
-/// module's `rateLimit`, then its list rules on a bare `ModernRuleEngine` (no JS evaluator,
-/// never `BookSourceSession`), through the mapping 來源配置 use.
+/// module's `rateLimit`, then its list rules on a `ModernRuleEngine` (never `BookSourceSession`;
+/// with the module's own scripts when it declares `javascript`, `RuleModuleScriptRuntime`),
+/// through the mapping 來源配置 use.
 ///
 /// Every address it sends to passes `safeURL` and the module's `hosts`, a redirect included;
 /// a refused redirect is never sent.
@@ -193,15 +194,9 @@ struct RuleModuleClient: Sendable {
     // MARK: - Request
 
     private func fetch(_ entry: RuleModule.Entry, in module: RuleModule, values: [String: String]) async throws -> [RuleListItem] {
-        let request = entry.request
-        let address = Self.fill(request.url, values, encode: true)
-        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
-        let page = try await send(address, method: (request.method ?? "GET").uppercased(),
-                                  body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
-                                  headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) },
-                                  charset: request.charset, in: module)
+        let page = try await perform(entry.request, values: values, in: module)
         let list = entry.list
-        return RuleListMapping.items(engine: ModernRuleEngine(), content: page.text, baseURL: page.baseURL,
+        return RuleListMapping.items(engine: module.ruleEngine(), content: page.text, baseURL: page.baseURL,
                                      listRule: list.items, fields: list.fields)
     }
 
@@ -209,16 +204,10 @@ struct RuleModuleClient: Sendable {
     /// its empty description and tags given from it. `{{url}}` is the item's `url`, as it is at
     /// the start of the address, percent-encoded anywhere else.
     func detailed(_ item: RuleListItem, by detail: RuleModule.Detail, in module: RuleModule) async throws -> RuleListItem {
-        let request = detail.request
         let values = module.withGlobalValues(["url": item.bookUrl], language: nil)
-        let leading = request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
-        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
         let started = SourcePerfTrace.now
-        let page = try await send(Self.fill(request.url, values, encode: !leading), method: (request.method ?? "GET").uppercased(),
-                                  body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
-                                  headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) },
-                                  charset: request.charset, in: module)
-        let engine = ModernRuleEngine()
+        let page = try await perform(detail.request, values: values, ofRecord: true, in: module)
+        let engine = module.ruleEngine()
         engine.setContent(page.text, baseUrl: page.baseURL)
         var item = item
         if item.intro.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let rule = detail.intro, !rule.isEmpty {
@@ -229,6 +218,29 @@ struct RuleModuleClient: Sendable {
         }
         SourcePerfTrace.record("module.detail", "module=\(module.id)", since: started, thresholdMs: 0)
         return item
+    }
+
+    /// A request as the module wrote it, sent: its templates filled with `values`, then its
+    /// `script` (a module that declares `javascript`), then `send`, which holds whatever address
+    /// came of both to the module's hosts. `ofRecord`: `{{url}}` at the start of the address is a
+    /// record's own address and goes in as it is; anywhere else a value is percent-encoded.
+    func perform(_ request: RuleModule.Request, values: [String: String], ofRecord: Bool = false,
+                 in module: RuleModule) async throws -> (text: String, baseURL: String) {
+        let leading = ofRecord && request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
+        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
+        var filled = RuleModuleScriptRuntime.Request(
+            url: Self.fill(request.url, values, encode: !leading), method: (request.method ?? "GET").uppercased(),
+            body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
+            headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) })
+        if let script = request.script, let scripts = module.scripts {
+            filled = try scripts.rewrite(filled, by: script, values: values)
+            // The validator checked the method as written; the script's own is held to the same two.
+            guard filled.method == "GET" || filled.method == "POST" else {
+                throw SourceFailure(kind: .parse, underlying: RuleModuleScriptError.requestScriptFailed(module: module.id))
+            }
+        }
+        return try await send(filled.url, method: filled.method, body: filled.body, headers: filled.headers,
+                              charset: request.charset, in: module)
     }
 
     /// One request of the module's: `safeURL` and its hosts on the address and every redirect,

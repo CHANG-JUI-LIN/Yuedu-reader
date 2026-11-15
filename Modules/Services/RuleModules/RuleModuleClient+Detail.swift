@@ -47,15 +47,9 @@ extension RuleModuleClient {
            now().timeIntervalSince(cached.fetchedAt) < duration {
             return cached.items
         }
-        let request = related.request
-        let leading = request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
-        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
         let started = SourcePerfTrace.now
-        let page = try await send(Self.fill(request.url, values, encode: !leading), method: (request.method ?? "GET").uppercased(),
-                                  body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
-                                  headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) },
-                                  charset: request.charset, in: module)
-        let items = Array(RuleListMapping.items(engine: ModernRuleEngine(), content: page.text, baseURL: page.baseURL,
+        let page = try await perform(related.request, values: values, ofRecord: true, in: module)
+        let items = Array(RuleListMapping.items(engine: module.ruleEngine(), content: page.text, baseURL: page.baseURL,
                                                 listRule: related.list.items, fields: related.list.fields)
             .prefix(Self.relatedLimit))
         SourcePerfTrace.record("module.related", "module=\(module.id) items=\(items.count)", since: started, thresholdMs: 0)

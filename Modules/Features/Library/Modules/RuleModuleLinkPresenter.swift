@@ -1,9 +1,11 @@
+import Combine
 import SwiftUI
 import UIKit
 
 /// A `yuedu://module?src=` link (Phase 6e-2), from the system (`onOpenURL`) or from a page in
 /// the in-app browser: the same import sheet as 從網址, already loading the linked address,
-/// behind the same source disclaimer (`SourceDisclaimerGate`).
+/// behind the same source disclaimer (`SourceDisclaimerGate`) and the same 閱讀Pro gate
+/// (`RuleModuleAddAccess`): without Pro the link opens the paywall.
 ///
 /// Presented from the top view controller rather than a SwiftUI sheet on the root: a link can
 /// arrive while the reader or the in-app browser covers the screen, and a root sheet cannot
@@ -13,8 +15,23 @@ enum RuleModuleLinkPresenter {
     private static var disclaimer = SourceDisclaimerGate<URL>()
 
     static func present(_ address: URL) {
+        // A link can be what launches the app, before the entitlement has been read: a member
+        // would be shown the paywall. The read's own signal is awaited, then the link is taken.
+        let subscriptions = SubscriptionStore.shared
+        guard subscriptions.hasResolvedEntitlements else {
+            Task {
+                for await isResolved in subscriptions.$hasResolvedEntitlements.values where isResolved { break }
+                present(address)
+            }
+            return
+        }
         guard let top = BookSourceFormLoginView.topViewController() else {
             AppLogger.error("Module link: nowhere to present", context: ["address": address.absoluteString], level: .warning)
+            return
+        }
+        guard RuleModuleAddAccess.isGranted() else {
+            top.present(UIHostingController(rootView: PaywallView(highlightedFeature: .moduleImport)
+                .environmentObject(SubscriptionStore.shared)), animated: true)
             return
         }
         guard let address = disclaimer.pass(address) else {

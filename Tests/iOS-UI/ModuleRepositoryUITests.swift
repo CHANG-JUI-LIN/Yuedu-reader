@@ -44,6 +44,8 @@ final class ModuleRepositoryUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
                                "-yd_source_disclaimer_accepted", "YES", "-rule-module-store-dir", folder.path,
+                               // 新增模組 is 閱讀Pro's (`PremiumFeature.moduleImport`).
+                               "-debug-force-pro",
                                // An earlier run's 停用 is in the app's defaults; this run starts with none.
                                "-ruleModules.disabled", "()", "-ruleModules.hiddenInLibrary", "()"]
         app.launch()

@@ -196,6 +196,9 @@ struct RuleModuleManifestSections: View {
             if let lookup = module.lookup {
                 entryRow(title: localized("以 ISBN 查詢"), description: lookup.description)
             }
+            if module.comments != nil {
+                entryRow(title: localized("正文裡的評論"), description: localized("段評、熱評、本章說、作者說"))
+            }
         } header: {
             Text(localized("清單")).foregroundStyle(DSColor.textSecondary)
         }
@@ -230,6 +233,15 @@ struct RuleModuleManifestSections: View {
                     Text(localized("自動補齊書籍資料開啟時，書架上的書名、作者與 ISBN 也會送到這些網站，用來補上空白的封面、簡介與分類；可在「資料來源」取消勾選。"))
                 case (false, false):
                     EmptyView()
+                }
+                // Comments in the text (format 3.0.2): asked for each chapter as it is read.
+                if module.comments != nil {
+                    Text(localized("讀書時，那本書的書名、作者與 ISBN 也會送到這些網站，用來找這一章的評論；可在「模組」關掉「在正文顯示模組的評論」。"))
+                }
+                // Its scripts compute and never connect (`RuleModuleScriptRuntime`).
+                if module.javascript == true {
+                    Text(localized("這個模組會執行 JavaScript，只用來計算簽名與解讀回應；連線仍然只到這些網站。"))
+                        .accessibilityIdentifier("module.import.javascript")
                 }
             }
             .dsSectionFooter()

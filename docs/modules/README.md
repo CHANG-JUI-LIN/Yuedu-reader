@@ -40,6 +40,9 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 加入方式：資源庫 ••• → 新增模組（從網址／從檔案／從剪貼簿），或 `yuedu://module?src=<網址>` 連結，
 或設定 → 來源配置管理 → 模組 → 右上角。加入前會先顯示模組的作者、清單和**會連線的網站**，按 ✓ 才寫入。
 
+新增模組是「閱讀Pro」的功能（官方模組、已安裝的模組和它們的更新不需要）。開發時用 Debug 版加啟動參數
+`-debug-force-pro` 就能在模擬器裡加入自己的模組。
+
 ---
 
 ## 2. 頂層欄位
@@ -193,7 +196,7 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 
 驗證器會拒絕，並在匯入畫面說出是哪個欄位：
 
-- `@js:`、`<js>…</js>`、`{{ }}` 裡的 JavaScript —— 模組不執行 JavaScript。
+- `@js:`、`<js>…</js>`、`request` 的 `script` —— 除非模組宣告了 `"javascript": true`（§4.1）。`{{ }}` 裡的 JavaScript 一律不行。
 - `@get:`、`@put:` —— 模組沒有變數。
 - 沒宣告的 `{{…}}`。
 - `request.url` 連到 `hosts` 沒列的主機，或主機由參數組成。
@@ -221,6 +224,46 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 ### 5.1 書的詳情頁 `detail`
 
 有些網站的搜尋結果沒有簡介，要再開那本書自己的頁面才有（Open Library 的簡介在 `/works/<編號>.json`）。
+### 4.1 JavaScript `javascript`
+
+網站的請求要簽名、回應是加密的，規則讀不了的時候，在頂層寫 `"javascript": true`，就可以：
+
+- 在任何規則裡用 `@js:` 和 `<js>…</js>`，寫法跟來源配置一樣：`result` 是上一步的結果，`baseUrl` 是這一頁的網址。
+  回傳字串就是字串，回傳陣列或物件會當成 JSON 給下一步（清單的 `items` 可以直接回傳陣列）。
+- 在任何 `request` 加 `script`：樣板填完之後、送出之前執行。`request` 是 `{url, method, body, headers}`，
+  `values` 是各個 `{{…}}` 的值；改 `request`，或回傳一個新的。
+
+```json
+"javascript": true,
+"search": {
+  "request": {
+    "url": "https://example.com/api/search?q={{keyword}}&t={{page}}",
+    "script": "request.headers['X-Sign'] = java.md5Encode(values.keyword + 'salt'); request"
+  },
+  "list": { "items": "@js:JSON.parse(java.aesBase64DecodeToString(JSON.parse(result).data, 'key……', 'AES/CBC/PKCS5Padding', 'iv……')).books", "title": "$.title", "url": "$.href" }
+}
+```
+
+**腳本只做運算，不能連線。** 沒有 `fetch`、`XMLHttpRequest`、計時器，也沒有來源配置的 `java.ajax`、`java.connect`、
+`java.webView`、`cookie`、`source`、`cache`。所有請求還是模組自己的 `request`，`script` 改出來的網址一樣只能連到 `hosts`
+（連別的主機，那個請求直接失敗、不會送出）。`eval` 和 `new Function` 不能用。
+
+`java` 有這些函式，名稱照來源配置的：
+
+| 函式 | 說明 |
+|------|------|
+| `java.md5Encode(s)`、`java.md5Encode16(s)` | MD5，32 位／中間 16 位十六進位。 |
+| `java.digestHex(s, 演算法)` | `MD5`、`SHA-1`、`SHA-256`、`SHA-384`、`SHA-512`。 |
+| `java.HMacHex(s, 演算法, key)`、`java.HMacBase64(…)` | `HmacMD5`、`HmacSHA1`、`HmacSHA256`、`HmacSHA384`、`HmacSHA512`。 |
+| `java.base64Encode(s)`、`java.base64Decode(s)` | UTF-8 文字。`base64DecodeStr` 是同一個。 |
+| `java.hexEncodeToString(s)`、`java.hexDecodeToString(hex)` | |
+| `java.aesEncodeToBase64String(s, key, 轉換, iv)`、`java.aesBase64DecodeToString(…)` | 轉換是 Java 的寫法（`AES/CBC/PKCS5Padding`），DES、3DES 也可以。 |
+| `java.aesEncodeToString(…)`、`java.aesDecodeToString(…)` | 同上，密文是十六進位。 |
+| `java.randomUUID()`、`java.encodeURI(s)`、`java.log(s)` | |
+
+一段腳本最多跑 2 秒、最長 100 KB。跑超過時間的腳本停不下來，這個模組的腳本會整個關掉，到 App 重新啟動為止。
+匯入畫面會告訴使用者這個模組會執行 JavaScript。
+
 `search` 或 `lookup` 可以加 `detail`：
 
 ```json
@@ -322,6 +365,80 @@ App 照這個順序找紀錄：
   "cacheDuration": 86400,
   "list": { "items": "$.works[*]", "title": "$.title", "author": "$.author", "cover": "$.cover", "url": "$.href" }
 }
+### 5.2.1 正文裡的評論 `comments`
+
+讀者讀一本書時，「閱讀」會問模組有沒有**正在讀的這一章**的評論，畫在正文裡，跟來源配置自帶的段評一樣：
+
+- **段評**：段落最後一個字後面的則數氣泡，點了看那一段的評論。
+- **熱評**：某一段下面一張卡片。
+- **作者說**、**本章說**：章末的卡片；本章說點了看整章的評論。
+
+任何書都會問：本機的 TXT／EPUB、沒有評論的線上來源、別的模組的書。來源自己已經畫了段評的章不問。
+氣泡和卡片不佔正文的位置：書籤、高亮、閱讀進度不會因為評論有沒有出現而移動。樣式跟著讀者的「氣泡設定」和評論卡片模板。
+
+```json
+"comments": {
+  "cacheDuration": 3600,
+  "chapters": {
+    "request": { "url": "https://example.com/api/books/{{id}}/chapters" },
+    "list": { "items": "$.chapters[*]", "id": "$.id", "title": "$.title" }
+  },
+  "chapter": {
+    "request": { "url": "https://example.com/api/chapters/{{chapterId}}/comments?sort={{sort}}&page={{page}}" },
+    "sorts": [{ "title": "最熱", "value": "hot" }, { "title": "最新", "value": "new" }],
+    "total": "$.total",
+    "list": { "items": "$.list[*]", "text": "$.content", "author": "$.user", "date": "$.time", "likes": "$.likes" }
+  },
+  "counts": {
+    "request": { "url": "https://example.com/api/chapters/{{chapterId}}/paragraphs" },
+    "list": { "items": "$.paragraphs[*]", "count": "$.reviewNum", "quote": "$.text", "id": "$.segmentId" }
+  },
+  "paragraph": {
+    "request": { "url": "https://example.com/api/chapters/{{chapterId}}/paragraphs/{{paragraphId}}?page={{page}}" },
+    "list": { "items": "$.list[*]", "text": "$.content", "author": "$.user", "likes": "$.likes" }
+  },
+  "hot": {
+    "request": { "url": "https://example.com/api/chapters/{{chapterId}}/hot" },
+    "list": { "items": "$.reviews[*]", "text": "$.content", "author": "$.user", "likes": "$.likes", "quote": "$.paragraphText" }
+  },
+  "authorSay": {
+    "request": { "url": "https://example.com/api/chapters/{{chapterId}}/author" },
+    "text": "$.say", "author": "$.authorName"
+  }
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `cacheDuration` |  | 秒數：這段時間內同一本書的章節表、同一章的每一種回答直接用上次的結果。讀者每讀一章都會問，建議設。 |
+| `chapters` | ✓ | 這本書在你網站上的章節表。`request` 跟 `reviews` 一樣只能用 `{{id}}`、`{{url}}`（至少一個）；`list` 的 `items`、`id`、`title` 都必填。 |
+| `chapter` | ✓ | 一章的評論（本章說）。`request` 必須用 `{{chapterId}}`（章節表給的 `id`），還可以用 `{{id}}`、`{{url}}`、`{{page}}`（從 1 開始）、`{{sort}}`。章末卡片畫第一頁的前三則。 |
+| `chapter.sorts` |  | 網站有的排序（`title` 顯示、`value` 送出），第一個是預設。有 `sorts` 就要用 `{{sort}}`，反過來也是。 |
+| `chapter.total` |  | `total`：這一章總共幾則，在頁面上直接讀（沒有 `items`）；`128`、`128条` 都讀得懂。卡片上的「N 條評論」。 |
+| `chapter.list` | ✓ | 每一則評論，跟 `reviews.list` 一樣（`items`、`text` 必填；`rating` 不讀）。 |
+| `counts` |  | 段評：這一章每一段有幾則。`list` 的 `items`、`count` 必填，另外要說是哪一段（見下）。有 `counts` 就要有 `paragraph`。 |
+| `paragraph` |  | 一段的評論，寫法跟 `chapter` 一樣，`request` 必須再用 `{{paragraphId}}`。 |
+| `hot` |  | 熱評：`list` 的 `items`、`text` 必填，`author`、`likes` 選填，另外要說是哪一段。一段只畫第一則。 |
+| `authorSay` |  | 作者說：`text` 必填、`author` 選填，在頁面上直接讀。 |
+
+`counts`、`hot`、`authorSay` 的 `request` 都必須用 `{{chapterId}}`。其中一個請求失敗，其他的照樣顯示。
+
+**哪一本書**：跟讀者評論（§5.2）一樣。差別是沒有作者的書（大部分 TXT）：書名相同的搜尋結果，
+要它的章節表有讀者手上八成以上的章名（至少 5 章）才算同一本。
+
+**哪一章**：用章名對，不用「第幾個」（番外、分卷會讓位置錯開）。「第十二章 風起」「第12章：風起」「Chapter 12 風起」
+是同一章。章名在你的章節表裡只有一個就對上；章名對不上但章號兩邊都只有一個也算。對不上、或有兩章可能，就不顯示評論。
+
+**哪一段**（`counts.list` 和 `hot.list`）：讀者手上的版本跟你網站的版本分段不一定一樣，所以：
+
+- `quote`：那一段的文字，或開頭幾個字（至少 4 個字）。讀者的章裡**只有一段**是這樣開頭的才對上。最可靠，建議一律給。
+- `index`：第幾段（從 1 開始）。只有同時給了 `paragraphCount`（你這一章總共幾段，在頁面上直接讀），而且讀者這一章的段數一樣多，才會用。
+- `id`：這一段在你網站上的代號，給 `paragraph` 的 `{{paragraphId}}` 用；沒寫就用 `index`。
+- 對不上的那一段不顯示氣泡或熱評，不會掛到別段去。
+
+請在模組的 `description` 寫明：讀者讀書時會把書名、作者（或 ISBN）送到你的網站。章名和內文不會送出。
+讀者可以在 設定 → 模組 關掉「在正文顯示模組的評論」，或在「資料來源」取消勾選這個模組。
+
 ```
 
 | 欄位 | 必填 | 說明 |
@@ -419,7 +536,7 @@ App 照這個順序找紀錄：
 
 格式 3.0.1 才有的（要 `"requiredVersion": "3.0.1"` 以上）：`reviews`、`searchesAuthors`，以及 `list` 的 `id`、`volumes`。
 
-格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`、清單的 `store`，以及參數的 `belongTo`、`placeholders`。
+格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`、清單的 `store`、參數的 `belongTo`、`placeholders`，以及 `javascript`、`request` 的 `script`、`comments`。
 舊版 App 會拒絕用了 `globalParams` 的模組（它看不懂那些 `{{…}}`），其他幾個會被忽略。
 
 ---

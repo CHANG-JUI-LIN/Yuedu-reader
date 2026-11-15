@@ -35,17 +35,48 @@ enum ReaderDisplayListDrawer {
     ///     tile) finds its own; a paint fragment holds part of a line, so its host passes
     ///     the spans of the document around it.
     ///   - origin: Where `list`'s own origin sits in `highlightSpans`' space.
+    ///   - glassCards: How a comment card with glass panels is drawn (`ReviewCardGlassDrawing`).
+    ///     A bitmap draws a still stand-in for the glass; a page on screen that puts a
+    ///     `ReviewCardGlassView` over the card leaves the card to it.
     static func draw(_ list: DisplayList, in context: CGContext, skipAuthoredBackgroundPaint: Bool = false,
                      textPaintPhase: TextPaintPhase = .all,
-                     highlightSpans: HighlightLineSpans? = nil, origin: CGPoint = .zero) {
+                     highlightSpans: HighlightLineSpans? = nil, origin: CGPoint = .zero,
+                     glassCards: ReviewCardGlassDrawing = .baked) {
         let spans = highlightSpans ?? HighlightLineSpans(list.items)
         let base = context.ctm
-        list.draw(in: context, skipAuthoredBackgroundPaint: skipAuthoredBackgroundPaint, textPaintPhase: textPaintPhase) { line, text, context in
-            let fragments = RegexHighlightDecorationRenderer.horizontalFragments(line: line, origin: .zero,
-                attributedString: text, range: NSRange(location: 0, length: text.length))
-            guard !fragments.isEmpty else { return }
-            spans.paint(fragments, local: context.ctm, base: base, origin: origin, context: context)
+        func paint(_ part: DisplayList) {
+            part.draw(in: context, skipAuthoredBackgroundPaint: skipAuthoredBackgroundPaint, textPaintPhase: textPaintPhase) { line, text, context in
+                let fragments = RegexHighlightDecorationRenderer.horizontalFragments(line: line, origin: .zero,
+                    attributedString: text, range: NSRange(location: 0, length: text.length))
+                guard !fragments.isEmpty else { return }
+                spans.paint(fragments, local: context.ctm, base: base, origin: origin, context: context)
+            }
         }
+        guard list.items.contains(where: { $0.reviewCardGlass != nil }) else { return paint(list) }
+        // The list paints in order and a picture ends the run of text before it, so painting
+        // it in pieces around each card paints the same page.
+        var run: [DisplayItem] = []
+        for item in list.items {
+            guard let card = item.reviewCardGlass else {
+                run.append(item)
+                continue
+            }
+            paint(DisplayList(items: run))
+            run = []
+            guard glassCards == .baked else { continue }
+            card.image.drawGlassStandIn(in: card.rect)
+            run.append(item)
+        }
+        paint(DisplayList(items: run))
+    }
+}
+
+extension DisplayItem {
+    /// The card and where it is, when this item is a comment card with glass panels.
+    var reviewCardGlass: (image: ReviewCardImage, rect: CGRect)? {
+        guard case .image(let item) = self, let card = item.image as? ReviewCardImage,
+              !card.glassPanels.isEmpty else { return nil }
+        return (card, item.rect.rawValue)
     }
 }
 
