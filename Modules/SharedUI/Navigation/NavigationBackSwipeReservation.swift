@@ -72,6 +72,8 @@ final class NavigationBackSwipeProbeController: UIViewController {
 /// Unimplemented delegate selectors must not be forwarded to UIKit's original
 /// delegate: its hidden-bar event veto runs before our public touch/begin gates.
 /// UIKit's recognizer and targets still own native progress and cancellation.
+/// Before iOS 17.5 it reserves the edge with a pan of its own that pops the page instead
+/// (`popsWithoutInteractiveTransition`).
 @MainActor
 final class NavigationBackSwipeReservationController: NSObject, UIGestureRecognizerDelegate {
     private weak var navigationController: UINavigationController?
@@ -82,6 +84,33 @@ final class NavigationBackSwipeReservationController: NSObject, UIGestureRecogni
     private weak var alternatePopGesture: UIGestureRecognizer?
     private var originalAlternatePopEnabled = false
     private var initialX: CGFloat = 0
+    /// The reservation's own pan where the system's interactive pop cannot be used
+    /// (`popsWithoutInteractiveTransition`).
+    private var ownedPan: UIPanGestureRecognizer?
+
+    /// Whether the reserved swipe pops the page with the plain animated pop, without the system's
+    /// interactive transition: the page still leaves on a swipe from the edge, it does not follow
+    /// the finger.
+    ///
+    /// A compatibility branch for a UIKit defect, not a second way to go back. On iOS 17.0 an
+    /// interactive pop between a page that hides the navigation bar (a reader) and one that shows
+    /// it (the detail page it was opened from) starts an interactive bar transition:
+    /// `-[UINavigationController _startInteractiveBarTransition:]` turns on
+    /// `+[UIViewPropertyAnimator _startTrackingAnimations]`, and `_setNavigationBarHidden:edge:duration:`
+    /// then ends it through the other API, `+[UIView _finishAnimationTracking]`. The animator's
+    /// tracking stays on for the life of the process, and every later navigation transition and
+    /// alert is built paused and never started: the screen answers touches and moves one step each
+    /// time the app goes to the background and back (FB-204, an iPhone 13 Pro Max on iOS 17.0,
+    /// and FB-132's dead taps before it; traced on the iOS 17.0 simulator, 21A328, 2026-11-16).
+    /// A pop that is not interactive between the same two pages leaves nothing behind.
+    ///
+    /// iOS 17.5 does not leak (same test, same trace). 17.1 to 17.4 could not be run, so they
+    /// take this branch too. Delete it, `ownedPan` and `popWithoutInteractiveTransition(_:)`
+    /// when the deployment target is iOS 17.5 or later.
+    static let popsWithoutInteractiveTransition: Bool = {
+        if #available(iOS 17.5, *) { return false }
+        return true
+    }()
 
     /// iOS 26 exposes the native content-pop recognizer publicly. Constraining
     /// its first touch gives this page a real 30 pt reservation, rather than the
@@ -96,8 +125,12 @@ final class NavigationBackSwipeReservationController: NSObject, UIGestureRecogni
 
     func attach(to navigationController: UINavigationController, destination: UIViewController) {
         guard navigationController.topViewController === destination,
-              navigationController.viewControllers.count > 1,
-              let gesture = Self.backGesture(in: navigationController) else { return }
+              navigationController.viewControllers.count > 1 else { return }
+        if Self.popsWithoutInteractiveTransition {
+            attachOwnedPan(to: navigationController, destination: destination)
+            return
+        }
+        guard let gesture = Self.backGesture(in: navigationController) else { return }
         if self.gesture === gesture, gesture.delegate === self {
             // SwiftUI can reapply hidden chrome while the same page stays visible.
             gesture.isEnabled = true
@@ -126,7 +159,32 @@ final class NavigationBackSwipeReservationController: NSObject, UIGestureRecogni
         gesture.isEnabled = true
     }
 
+    /// The system's recognizer is left as UIKit set it for this page; the edge is reserved by a
+    /// pan of the reservation's own, under the same gates.
+    private func attachOwnedPan(to navigationController: UINavigationController, destination: UIViewController) {
+        if let ownedPan, ownedPan.view === navigationController.view, self.destination === destination { return }
+        detach()
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(popWithoutInteractiveTransition(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = self
+        navigationController.view.addGestureRecognizer(pan)
+        self.navigationController = navigationController
+        self.destination = destination
+        ownedPan = pan
+    }
+
+    @objc private func popWithoutInteractiveTransition(_ pan: UIPanGestureRecognizer) {
+        guard pan.state == .began, let navigationController,
+              navigationController.topViewController === destination,
+              navigationController.transitionCoordinator == nil else { return }
+        navigationController.popViewController(animated: true)
+    }
+
     func detach() {
+        if let ownedPan {
+            ownedPan.view?.removeGestureRecognizer(ownedPan)
+            self.ownedPan = nil
+        }
         // A newer visible destination may already have taken ownership.
         if let gesture, gesture.delegate === self {
             gesture.delegate = originalDelegate
