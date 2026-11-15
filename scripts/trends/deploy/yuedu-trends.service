@@ -21,6 +21,9 @@ MemoryMax=450M
 Nice=10
 # Every run asks one pageview request per work, within Wikimedia's 200 a minute (171 a minute):
 # 英語's 23 188 works take about 2 h 15 min a day, and the weekly pool walk about 30 min more.
+# The genres' lists are built in the same run, one or two genres a day (`genre_due`); all eight on
+# a fresh store took 2 h 39 min more (measured 2026-11-15), so a fresh store is seeded by hand
+# with --genres-only before its first timed run.
 TimeoutStartSec=6h
 NoNewPrivileges=yes
 ProtectSystem=strict

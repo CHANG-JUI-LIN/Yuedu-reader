@@ -104,10 +104,19 @@ class Pool:
     depth: int
     finished_by: tuple = ('bangumi',)
     article_covers: bool = True
+    # The pool's name in the store, where it is not its wiki's only one: a genre's (`genre_pool`).
+    # Views are kept by wiki (`project`), so a page in several pools is asked for once a day.
+    key: str = None
+    # Subcategories never walked, though under the pool's categories (`GENRE_EXCLUDED`).
+    excluded: tuple = ()
 
     @property
     def project(self):
         return self.wiki.removesuffix('.org')
+
+    @property
+    def store_key(self):
+        return self.key or self.project
 
 
 @dataclass(frozen=True)
@@ -143,6 +152,83 @@ REGIONS = {
     'ja': Region('ja', None, ('ja',), JAPANESE),
     'en': Region('en', None, ('en',), ENGLISH),
 }
+
+# 類型's lists (maintainer, 2026-11-14: real genres — love, mystery, science fiction… — with
+# translated works, rather than kinds of content; 2026-11-15: a genre opens a store of its own, as
+# Apple Books' do). Each genre is a pool of its own on each Wikipedia: its genre categories, walked
+# down as `GENRE_DEPTH` says, ranked by the same pageviews (`Pool.key`: a page in several pools is
+# asked for once). Measured on the host 2026-11-14 (Technotes/AppleBooksHomeLayouts-2026-10-25.md
+# §10): zh.wikipedia's genre categories are mostly translated works (a quarter of a sample was
+# Chinese, nearly all of it wuxia); it has no 玄幻 or 仙俠 category. Category names checked on
+# each wiki from the host, 2026-11-15 (科幻小說 and 武俠小說 redirect to their simplified names).
+GENRES = {
+    'romance': {'zh': ('Category:愛情小說',), 'ja': ('Category:恋愛小説',), 'en': ('Category:Romance novels',)},
+    'mystery': {'zh': ('Category:推理小說', 'Category:懸疑小說', 'Category:犯罪小說'),
+                'ja': ('Category:推理小説', 'Category:サスペンス小説'),
+                'en': ('Category:Mystery novels', 'Category:Crime novels', 'Category:Thriller novels')},
+    'scifi': {'zh': ('Category:科幻小说',), 'ja': ('Category:SF小説',), 'en': ('Category:Science fiction novels',)},
+    'fantasy': {'zh': ('Category:奇幻小說',), 'ja': ('Category:ファンタジー小説',), 'en': ('Category:Fantasy novels',)},
+    # 武俠 in Chinese, 時代小説 in Japanese: the sword-and-period story each tradition has.
+    'wuxia': {'zh': ('Category:武侠小说',), 'ja': ('Category:時代小説',), 'en': ('Category:Wuxia novels',)},
+    'horror': {'zh': ('Category:恐怖小說', 'Category:驚悚小說'), 'ja': ('Category:ホラー小説',),
+               'en': ('Category:Horror novels',)},
+    'history': {'zh': ('Category:歷史小說',), 'ja': ('Category:歴史小説',), 'en': ('Category:Historical novels',)},
+    'youth': {'zh': ('Category:校園小說',), 'ja': ('Category:学園小説',), 'en': ('Category:Young adult novels',)},
+}
+# Subcategories a genre's categories hold that are not the genre. zh.wikipedia's 愛情小說 holds
+# 冒險浪漫小說, romance in its old sense, the adventure: every 金庸 novel is in it, and they led
+# 愛情's month (measured on the host 2026-11-15: 射鵰英雄傳, 天龍八部, 笑傲江湖, 鹿鼎記).
+GENRE_EXCLUDED = {
+    'romance': {'zh': ('Category:冒險浪漫小說',)},
+}
+# Genres whose works a genre's pool leaves out, on a wiki that files the one under the other.
+# zh.wikipedia's 愛情小說 holds theme categories (外遇題材小說, 殉情題材小說, 姊弟戀題材小說…) that
+# 金庸's novels are in as well: with 冒險浪漫小說 left out, 神鵰俠侶, 鹿鼎記 and 書劍恩仇錄 still led
+# 愛情's month (measured on the host 2026-11-15). A 武俠 novel is not in 愛情 (maintainer, 2026-11-15).
+GENRE_APART = {
+    'romance': {'zh': ('wuxia',)},
+}
+# English's genre categories hold their novels a level further down (Fantasy novels → Fantasy
+# novels by country → American fantasy novels), 2 of Fantasy novels' 19 members are pages.
+GENRE_DEPTH = {'zh': 2, 'ja': 2, 'en': 3}
+# A genre's store (the app's genre page): its carousel, the month's, the year's and the finished.
+GENRE_LISTS = ('week', 'month', 'year', 'completed')
+# Its lists are built once a week (maintainer, 2026-11-15), so its carousel is the week's, not the
+# day's: 8 genres on three wikis built every day asked ~31 000 pageviews a day on top of the
+# regions' ~24 000 (a first run took 2 h 39 min, measured on the host 2026-11-15).
+GENRE_WINDOWS = {'week': 7, 'month': 30, 'year': 365}
+# Each genre is built on a day of the week of its own (`genre_due`), so a day asks for one or two
+# genres' views, not all eight.
+GENRE_DAYS = 7
+# A genre's works asked about beyond what its lists show: the year's most viewed, for 完結.
+GENRE_CANDIDATES = LIST_LENGTH * 3
+# A genre's works asked of Bangumi again when not yet finished: a week, not a day, since a genre
+# pool is mostly books long finished, or works Bangumi does not have (a daily ask was ~1 200
+# searches, 20 minutes at Bangumi's pace).
+GENRE_RECHECK = timedelta(days=7)
+# Classes of a book that is one book, finished when it is out: on zh and ja, whose genre pools
+# are not told by infoboxes. A series class (novel series, light novel series, web novel) is
+# asked of Bangumi instead.
+SINGLE_BOOK_CLASSES = {'Q8261', 'Q7725634', 'Q47461344', 'Q747381'}
+SERIES_CLASSES = {'Q1667921', 'Q277759', 'Q104213567', 'Q2552040', 'Q136441690', 'Q137169253'}
+
+
+def genre_pool(language, genre):
+    """A genre's pool on `language`'s Wikipedia: its wiki's way of telling covers and endings."""
+    base = POOLS[language]
+    return Pool(base.wiki, GENRES[genre][language], GENRE_DEPTH[language],
+                ('infobox',) if 'infobox' in base.finished_by else ('bangumi',), base.article_covers,
+                key=f'{base.project}#{genre}', excluded=GENRE_EXCLUDED.get(genre, {}).get(language, ()))
+
+
+def genre_list_name(genre, list_name):
+    """A genre's list file: genre-romance-month.json beside the region's own lists."""
+    return f'genre-{genre}-{list_name}'
+
+
+def single_book(classes):
+    """Whether an item whose P31 values are `classes` is one book, not a series."""
+    return SERIES_CLASSES.isdisjoint(classes) and not SINGLE_BOOK_CLASSES.isdisjoint(classes)
 
 
 # MARK: - Pure parts
@@ -536,6 +622,8 @@ class Client:
         self.intervals = intervals
         self.last = {}
         self.lock = threading.Lock()
+        # Requests asked of each budget, for the run's last line: what a day costs.
+        self.counts = {}
 
     def _pace(self, host):
         key = budget(host)
@@ -543,6 +631,7 @@ class Client:
         with self.lock:
             turn = max(time.monotonic(), self.last.get(key, 0) + interval)
             self.last[key] = turn
+            self.counts[key] = self.counts.get(key, 0) + 1
         wait = turn - time.monotonic()
         if wait > 0:
             time.sleep(wait)
@@ -582,8 +671,9 @@ def mediawiki(client, wiki, **params):
 
 
 def category_pages(client, pool):
-    """The pool's articles: its categories' pages, `depth` levels of subcategories down."""
-    seen, pages, frontier = set(pool.categories), set(), list(pool.categories)
+    """The pool's articles: its categories' pages, `depth` levels of subcategories down, never
+    into its `excluded` ones."""
+    seen, pages, frontier = set(pool.categories) | set(pool.excluded), set(), list(pool.categories)
     for _ in range(pool.depth):
         following = []
         for category in frontier:
@@ -951,18 +1041,18 @@ class Job:
     def refresh_pool(self, name, pool):
         """The pool's works, from its categories once a week: pages whose item is a story, each
         with its series and when it was first published."""
-        stamp = self.store.meta(f'pool:{pool.project}')
-        if stamp and datetime.fromisoformat(stamp) > datetime.now(timezone.utc) - REFRESH_POOL and self.store.pool(pool.project):
-            return self.store.pool(pool.project)
+        stamp = self.store.meta(f'pool:{pool.store_key}')
+        if stamp and datetime.fromisoformat(stamp) > datetime.now(timezone.utc) - REFRESH_POOL and self.store.pool(pool.store_key):
+            return self.store.pool(pool.store_key)
         titles = category_pages(self.client, pool)
         items = page_items(self.client, pool.wiki, titles, variants=name == 'zh')
         found = entities(self.client, [item['qid'] for item in items.values()], props='claims', keep=('P31', 'P179', 'P577'))
         works = {title: {**item, 'series': (claim_ids(found.get(item['qid'], {}), 'P179') or [None])[0],
                          'published': first_published(found.get(item['qid'], {}))}
                  for title, item in items.items() if keeps_work(claim_ids(found.get(item['qid'], {}), 'P31'))}
-        self.say(f'pool {pool.project}: {len(titles)} pages, {len(items)} with an item, {len(works)} stories')
-        self.store.replace_pool(pool.project, works, self.now)
-        self.store.set_meta(f'pool:{pool.project}', self.now)
+        self.say(f'pool {pool.store_key}: {len(titles)} pages, {len(items)} with an item, {len(works)} stories')
+        self.store.replace_pool(pool.store_key, works, self.now)
+        self.store.set_meta(f'pool:{pool.store_key}', self.now)
         return works
 
     def limited(self, works):
@@ -988,24 +1078,26 @@ class Job:
         finally:
             workers.shutdown(cancel_futures=True)
 
-    def popular(self, pool, titles):
-        """`{window: {title: views}}` for today, month and year, ending on the last day
-        Wikimedia has counted."""
+    def popular(self, pool, titles, windows=WINDOWS):
+        """`{window: {title: views}}` for each of `windows` (today, month and year; a genre's
+        week, month and year), ending on the last day Wikimedia has counted."""
         self.store.forget_views(self.today - timedelta(days=FIRST_DAYS))
-        latest, sums = self.store.window_totals(pool.project, list(WINDOWS.values()))
+        latest, sums = self.store.window_totals(pool.project, list(windows.values()))
         if not latest:
-            return {name: {} for name in WINDOWS}
-        empty = (0,) * len(WINDOWS)
+            return {name: {} for name in windows}
+        empty = (0,) * len(windows)
         return {name: {title: sums.get(title, empty)[index] for title in titles}
-                for index, name in enumerate(WINDOWS)}
+                for index, name in enumerate(windows)}
 
-    def refresh_finished(self, works, details, titles_for):
+    def refresh_finished(self, works, details, titles_for, every=None):
         """Bangumi's answer for each work — whether it is finished, its cover — asked once a day
-        for a work not yet known finished; a finished work stays so."""
+        for a work not yet known finished, or once every `every` (a genre's works, `build_genre`);
+        a finished work stays so."""
         for title, work in works.items():
             qid = work['qid']
             known = self.store.finished(qid)
-            if known and (known[1] or known[2][:10] == self.today.isoformat()):
+            if known and (known[1] or (known[2][:10] == self.today.isoformat() if every is None
+                                       else datetime.fromisoformat(known[2]) > datetime.now(timezone.utc) - every)):
                 continue
             names = titles_for(title, work)
             subject = None
@@ -1097,14 +1189,15 @@ class Job:
         return order
 
 
-def build_region(job, name, region, pool_works, details, done, totals, groups, series_names, volumes):
+def build_region(job, name, region, pool_works, details, done, totals, groups, series_names, volumes, pool=None):
     """The region's lists: `{list: [work, …]}`, from each window's `totals`, where a series is
     one entry under its head (`groups`), and `done` the entries finished. A work that is a whole
     series (`volumes`: `{qid: its volumes}`, `Job.bangumi_series`) fans them and names no series:
     its title is the series'. Either kind of series lists its books (`volumes`) for the app's
     series page: a series of the pool's books each as an entry of its own, which the app can
-    open; a whole series' as Bangumi names them, in the region's language and script."""
-    pool = POOLS[region.pool]
+    open; a whole series' as Bangumi names them, in the region's language and script. `pool` is
+    the region's own unless a genre's (`build_genre`)."""
+    pool = pool or POOLS[region.pool]
     wiki = pool.wiki
     variant_key = region.variant
 
@@ -1158,7 +1251,7 @@ def build_region(job, name, region, pool_works, details, done, totals, groups, s
 
     lists = {}
     for list_name in region.lists:
-        if list_name in WINDOWS:
+        if list_name in totals:
             titles = ranked(totals[list_name])
         elif list_name == 'completed':
             titles = ranked({title: total for title, total in totals['year'].items() if title in done})
@@ -1275,6 +1368,121 @@ def build_classics(job, name, region):
     return works
 
 
+def genre_works(job, language, genre):
+    """A genre's pool on `language`'s Wikipedia, without the works of the genres it is kept
+    apart from there (`GENRE_APART`)."""
+    works = job.refresh_pool(language, genre_pool(language, genre))
+    for other in GENRE_APART.get(genre, {}).get(language, ()):
+        apart = job.refresh_pool(language, genre_pool(language, other))
+        works = {title: work for title, work in works.items() if title not in apart}
+    return works
+
+
+def build_genre(job, language, genre, names):
+    """`{region: {list: [work, …]}}` for a genre's pool on `language`'s Wikipedia (`GENRE_LISTS`),
+    for the regions `names` that read it, built as a region's lists are (`build_region`). What a
+    genre adds to a day is bounded by what its lists show: authors, Bangumi and infoboxes are
+    asked of its most viewed works only (`GENRE_CANDIDATES`), never of the whole pool."""
+    pool = genre_pool(language, genre)
+    works = job.limited(genre_works(job, language, genre))
+    job.refresh_views(pool, list(works))
+    groups = series_groups(works)
+    totals = folded(job.popular(pool, list(works), GENRE_WINDOWS), groups)
+    candidates = ranked(totals['year'], limit=GENRE_CANDIDATES)
+    first_shown = shown_entries(totals, set()) | set(candidates)
+    site = pool.wiki.replace('.wikipedia.org', 'wiki')
+    series_items = entities(job.client, sorted({groups[title][0] for title in first_shown if title in groups}),
+                            props='labels|sitelinks', site=site)
+    asked = {name: REGIONS[name] for name in names}
+
+    def authors_of(titles):
+        named = {title: works[title] for title in titles}
+        found = entities(job.client, [work['qid'] for work in named.values()], props='claims',
+                         keep=('P170', 'P50', 'P2093'))
+        return author_names(job, found, asked, pool.wiki, {work['qid']: title for title, work in named.items()})
+
+    details = authors_of(sorted(first_shown))
+    by_series = 'infobox' in pool.finished_by
+    if by_series:
+        # As 英語's own: a book alone by its article, a series by the series' article.
+        articles = {}
+        for title in candidates:
+            if title in groups:
+                key = groups[title][0]
+                article = series_items.get(key, {}).get('sitelinks', {}).get(site, {}).get('title')
+            else:
+                key, article = works[title]['qid'], title
+            if article:
+                articles[key] = article
+        finished = job.infobox_finished(pool, articles)
+    else:
+        # One book is finished once it is out; a series is finished when Bangumi says so. Bangumi
+        # is asked of every shown work all the same, for its cover (ja.wikipedia keeps none).
+        classes = entities(job.client, [works[title]['qid'] for title in candidates], props='claims', keep=('P31',))
+        shown_works = {title: works[title] for title in sorted(first_shown)}
+
+        def titles_for(title, work):
+            base = strip_disambiguation(title)
+            return [strip_disambiguation(work['variants'].get('zh-cn', base)), base]
+        job.refresh_finished(shown_works, {qid: {'authors': [a for values in detail['authors'].values() for a in values]}
+                                           for qid, detail in details.items()}, titles_for, every=GENRE_RECHECK)
+        finished = {}
+        for title, work in shown_works.items():
+            qid = work['qid']
+            alone = title not in groups and single_book(claim_ids(classes.get(qid, {}), 'P31'))
+            finished[qid] = alone or bool((job.store.finished(qid) or (None, 0))[1])
+    done = ended_entries([title for title in totals['year'] if title in first_shown], groups, works, finished, by_series)
+    shown = shown_entries(totals, done)
+    missing = sorted(title for title in shown if works[title]['qid'] not in details)
+    if missing:
+        details.update(authors_of(missing))
+    names_of = series_titles(job, {groups[title][0]: series_items[groups[title][0]]
+                                   for title in shown if title in groups and groups[title][0] in series_items},
+                             pool.wiki, asked)
+    volumes = job.bangumi_series([works[title]['qid'] for title in shown if title not in groups]) \
+        if not by_series else {}
+    lists = {}
+    for name in names:
+        region = REGIONS[name]
+        as_genre = Region(region.pool, region.variant, region.labels, region.classic_languages, GENRE_LISTS)
+        lists[name] = build_region(job, name, as_genre, works, details, done, totals, groups, names_of, volumes,
+                                   pool=pool)
+    job.say(f'genre {pool.store_key}: {len(works)} stories, {len(candidates)} candidates, {len(done)} finished')
+    return lists
+
+
+def genre_due(job, language, genre):
+    """Whether a genre's lists are built today: on its own day of the week (`GENRE_DAYS`), or
+    on any day while it has never been built on this wiki. A failed day waits for the next week,
+    its last files kept."""
+    if not job.store.meta(f'genre:{genre_pool(language, genre).store_key}'):
+        return True
+    return list(GENRES).index(genre) % GENRE_DAYS == job.today.toordinal() % GENRE_DAYS
+
+
+def run_genres(job, output, regions, genres, generated, every_day=False):
+    """The lists of the genres due today (`genre_due`; all of `genres` when `every_day`, as
+    `--genre` asks) for `regions`; a genre whose requests failed keeps its last files."""
+    failed = []
+    by_pool = {}
+    for name in regions:
+        by_pool.setdefault(REGIONS[name].pool, []).append(name)
+    for language, names in by_pool.items():
+        for genre in genres:
+            if not (every_day or genre_due(job, language, genre)):
+                continue
+            try:
+                for name, lists in build_genre(job, language, genre, names).items():
+                    for list_name, entries in lists.items():
+                        write(output, name, genre_list_name(genre, list_name), entries, generated)
+                        job.say(f'{name}/{genre_list_name(genre, list_name)}: {len(entries)} works')
+                job.store.set_meta(f'genre:{genre_pool(language, genre).store_key}', job.now)
+            except Exception as error:  # noqa: BLE001 — any failure keeps the last files
+                failed += [f'{name}/{genre_list_name(genre, list_name)}' for name in names for list_name in GENRE_LISTS]
+                job.say(f'genre {language}#{genre} failed, last files kept: {error!r}')
+    return failed
+
+
 def write(output, region, list_name, works, generated):
     folder = output / region
     folder.mkdir(parents=True, exist_ok=True)
@@ -1375,10 +1583,20 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=Path('out'))
     parser.add_argument('--region', action='append', choices=sorted(REGIONS), help='Only these regions')
     parser.add_argument('--limit', type=int, help='At most this many stories a pool (local runs); the store keeps them all')
+    parser.add_argument('--genre', action='append', choices=sorted(GENRES),
+                        help='Only these genres, built whatever the day')
+    parser.add_argument('--no-genres', action='store_true', help="The regions' own lists alone")
+    parser.add_argument('--genres-only', action='store_true', help="The genres' lists alone")
     arguments = parser.parse_args(argv)
     client = Client({'wikimedia': WIKIMEDIA_INTERVAL, 'api.bgm.tv': 1.0, 'query.wikidata.org': 1.0})
     job = Job(client, Store(arguments.db), datetime.now(timezone.utc).date(), arguments.limit)
-    failed = run(job, arguments.output, arguments.region or list(REGIONS))
+    regions = arguments.region or list(REGIONS)
+    failed = [] if arguments.genres_only else run(job, arguments.output, regions)
+    if not arguments.no_genres:
+        genres = arguments.genre or list(GENRES)
+        failed += run_genres(job, arguments.output, regions, genres, datetime.now(timezone.utc).replace(microsecond=0),
+                             every_day=bool(arguments.genre))
+    job.say('requests: ' + ', '.join(f'{key} {count}' for key, count in sorted(client.counts.items())))
     if failed:
         print('failed: ' + ', '.join(failed), file=sys.stderr)
         return 1

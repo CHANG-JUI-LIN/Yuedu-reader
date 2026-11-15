@@ -847,3 +847,117 @@ class FailureTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CountingBangumiClient:
+    """Bangumi with no match, counting its searches."""
+    def __init__(self):
+        self.asked = 0
+
+    def json(self, url, params=None, body=None, headers=None):
+        self.asked += 1
+        return {'data': []}
+
+
+class GenreTests(unittest.TestCase):
+    def test_every_genre_has_a_pool_on_each_wiki_named_apart_from_the_wikis_own(self):
+        for genre in builder.GENRES:
+            for language in ('zh', 'ja', 'en'):
+                pool = builder.genre_pool(language, genre)
+                self.assertEqual(pool.wiki, builder.POOLS[language].wiki)
+                self.assertEqual(pool.project, builder.POOLS[language].project, 'views are kept by wiki')
+                self.assertNotEqual(pool.store_key, builder.POOLS[language].store_key)
+        self.assertEqual(builder.POOLS['zh'].store_key, 'zh.wikipedia', "the wiki's own pool keeps its stored name")
+
+    def test_english_genres_are_told_by_infoboxes_and_the_others_by_bangumi(self):
+        self.assertEqual(builder.genre_pool('en', 'romance').finished_by, ('infobox',))
+        self.assertEqual(builder.genre_pool('ja', 'romance').finished_by, ('bangumi',))
+        self.assertFalse(builder.genre_pool('ja', 'romance').article_covers)
+
+    def test_a_genres_excluded_subcategory_is_never_walked(self):
+        members = {
+            'Category:愛情小說': [{'ns': 0, 'title': '傲慢與偏見'}, {'ns': 14, 'title': 'Category:冒險浪漫小說'},
+                              {'ns': 14, 'title': 'Category:瓊瑤愛情小說'}],
+            'Category:冒險浪漫小說': [{'ns': 0, 'title': '射鵰英雄傳'}],
+            'Category:瓊瑤愛情小說': [{'ns': 0, 'title': '窗外'}],
+        }
+
+        class Client:
+            def json(self, url, params=None, body=None, headers=None):
+                return {'query': {'categorymembers': members[params['cmtitle']]}}
+
+        pool = builder.genre_pool('zh', 'romance')
+        self.assertEqual(pool.excluded, ('Category:冒險浪漫小說',))
+        self.assertEqual(builder.category_pages(Client(), pool), ['傲慢與偏見', '窗外'])
+        self.assertEqual(builder.genre_pool('zh', 'mystery').excluded, ())
+
+    def test_a_wuxia_novel_is_not_in_romance_on_zh_wikipedia(self):
+        store = builder.Store(':memory:')
+        job = builder.Job(PoolClient(), store, date(2026, 11, 15))
+        stories = {title: {'qid': qid, 'variants': {}} for title, qid in
+                   (('神鵰俠侶', 'Q1'), ('窗外', 'Q2'), ('鹿鼎記', 'Q3'))}
+        for genre, titles in (('romance', ('神鵰俠侶', '窗外', '鹿鼎記')), ('wuxia', ('神鵰俠侶', '鹿鼎記'))):
+            key = builder.genre_pool('zh', genre).store_key
+            store.replace_pool(key, {title: stories[title] for title in titles}, job.now)
+            store.set_meta(f'pool:{key}', job.now)
+        self.assertEqual(list(builder.genre_works(job, 'zh', 'romance')), ['窗外'])
+        self.assertEqual(sorted(builder.genre_works(job, 'zh', 'wuxia')), ['神鵰俠侶', '鹿鼎記'])
+
+    def test_a_genre_is_built_on_its_own_day_of_the_week_once_it_has_been_built(self):
+        store = builder.Store(':memory:')
+        monday = date(2026, 11, 16)
+        days = [builder.Job(PoolClient(), store, monday + timedelta(days=offset)) for offset in range(7)]
+        self.assertTrue(all(builder.genre_due(job, 'en', genre) for job in days for genre in builder.GENRES),
+                        'never built: every day')
+        for genre in builder.GENRES:
+            store.set_meta(f"genre:{builder.genre_pool('en', genre).store_key}", days[0].now)
+        due = [[genre for genre in builder.GENRES if builder.genre_due(job, 'en', genre)] for job in days]
+        self.assertEqual(sorted(genre for genres in due for genre in genres), sorted(builder.GENRES), 'each once a week')
+        self.assertLessEqual(max(len(genres) for genres in due), 2)
+        self.assertTrue(builder.genre_due(days[0], 'zh', 'romance'), 'built on en, never on zh')
+
+    def test_a_genres_carousel_is_the_weeks(self):
+        store = builder.Store(':memory:')
+        job = builder.Job(PoolClient(), store, date(2026, 11, 15))
+        pool = builder.genre_pool('en', 'romance')
+        store.add_views(pool.project, 'Emma', {builder.format_day(date(2026, 11, 14) - timedelta(days=day)): 10 for day in range(30)})
+        totals = job.popular(pool, ['Emma'], builder.GENRE_WINDOWS)
+        self.assertEqual({window: totals[window]['Emma'] for window in totals}, {'week': 70, 'month': 300, 'year': 300})
+        self.assertEqual(builder.GENRE_LISTS, ('week', 'month', 'year', 'completed'))
+
+    def test_a_genres_lists_are_files_of_their_own(self):
+        self.assertEqual(builder.genre_list_name('romance', 'month'), 'genre-romance-month')
+
+    def test_one_book_is_finished_and_a_series_is_not_told_by_its_class(self):
+        self.assertTrue(builder.single_book(['Q8261']))                 # novel
+        self.assertFalse(builder.single_book(['Q8261', 'Q1667921']))   # also a novel series
+        self.assertFalse(builder.single_book(['Q104213567']))          # light novel series
+        self.assertFalse(builder.single_book(['Q5398426']))            # television series
+
+    def test_a_genres_pool_and_the_wikis_are_stored_apart(self):
+        store = builder.Store(':memory:')
+        job = builder.Job(PoolClient(), store, date(2026, 11, 15))
+        job.refresh_pool('zh', builder.POOLS['zh'])
+        job.refresh_pool('zh', builder.genre_pool('zh', 'romance'))
+        self.assertEqual(len(store.pool('zh.wikipedia')), 3)
+        self.assertEqual(len(store.pool('zh.wikipedia#romance')), 3)
+
+    def test_a_genres_unmatched_work_is_asked_again_after_a_week_not_a_day(self):
+        client = CountingBangumiClient()
+        store = builder.Store(':memory:')
+        job = builder.Job(client, store, date(2026, 11, 15))
+        works = {'甲': {'qid': 'Q1', 'variants': {}}}
+        job.refresh_finished(works, {}, lambda title, work: [title], every=builder.GENRE_RECHECK)
+        self.assertEqual(client.asked, 1)
+        job.refresh_finished(works, {}, lambda title, work: [title], every=builder.GENRE_RECHECK)
+        self.assertEqual(client.asked, 1, 'asked within the week')
+        store.set_finished('Q1', None, False, (datetime.now(timezone.utc) - timedelta(days=8)).isoformat())
+        job.refresh_finished(works, {}, lambda title, work: [title], every=builder.GENRE_RECHECK)
+        self.assertEqual(client.asked, 2)
+
+    def test_requests_are_counted_by_budget(self):
+        client = builder.Client({'wikimedia': 0, 'api.bgm.tv': 0})
+        client._pace('zh.wikipedia.org')
+        client._pace('wikimedia.org')
+        client._pace('api.bgm.tv')
+        self.assertEqual(client.counts, {'wikimedia': 2, 'api.bgm.tv': 1})
