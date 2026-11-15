@@ -75,7 +75,7 @@ final class ASOScreenshotUITests: XCTestCase {
         // 搜尋來源 without the catalogues of modern editions: their covers are other people's
         // artwork (a film soundtrack, a webtoon) and their titles other people's works, which a
         // store listing must not show. What is left is the shelf and the public libraries.
-        let modules = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "trends", "rakuten-books"]
+        let modules = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "trends", "zlibrary", "rakuten-books"]
         let settings = try JSONSerialization.data(withJSONObject: [
             "hiddenFromSearch": modules.map { ["type": "module", "id": $0] },
         ])
@@ -164,7 +164,7 @@ final class ASOScreenshotUITests: XCTestCase {
         }
 
         // 搜尋, then the first work's 作品詳情.
-        if wanted("search") || wanted("detail") {
+        if wanted("search") || wanted("detail") || wanted("related") {
             tab(app, locale.search).tap()
             let field = app.searchFields.firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 10), "[\(locale.code)] search field")
@@ -174,7 +174,7 @@ final class ASOScreenshotUITests: XCTestCase {
             // The keyboard off the results.
             if app.keyboards.firstMatch.exists { app.swipeDown(velocity: .slow) ; pause(1) }
             if wanted("search") { shoot("search") }
-            if wanted("detail") {
+            if wanted("detail") || wanted("related") {
                 let title = locale.detail ?? locale.query
                 let work = app.descendants(matching: .any)
                     .matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
@@ -185,7 +185,21 @@ final class ASOScreenshotUITests: XCTestCase {
                 if target.waitForExistence(timeout: 10) {
                     target.tap()
                     pause(Double(env["ASO_DETAIL_WAIT"] ?? "8") ?? 8)
-                    shoot("detail")
+                    if wanted("detail") { shoot("detail") }
+                    // 讀者評論, 同題材 and 作者其他作品, further down the same page: short drags
+                    // until 讀者評論's title sits just under the navigation bar. A work no
+                    // module has reviews of has no such title, and gets the drags' full count.
+                    if wanted("related") {
+                        let reviews = app.descendants(matching: .any)["detail.reviews.header"].firstMatch
+                        let top = app.frame.height * 0.2
+                        for _ in 0..<10 where !(reviews.exists && reviews.frame.minY < top) {
+                            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58)))
+                            pause(0.6)
+                        }
+                        pause(Double(env["ASO_RELATED_WAIT"] ?? "6") ?? 6)
+                        shoot("related")
+                    }
                 } else {
                     XCTFail("[\(locale.code)] no work for \(title)\n\(app.debugDescription)")
                 }
