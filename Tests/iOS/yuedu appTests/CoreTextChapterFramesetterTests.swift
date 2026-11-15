@@ -133,17 +133,18 @@ struct CoreTextChapterFramesetterTests {
         )
     }
 
-    /// Headings, dialogue with adjacent marks, mixed scripts, a quotation, and one paragraph
-    /// far longer than a page, through the production HTML pipeline.
+    /// Headings, dialogue with adjacent marks, ruby, mixed scripts, a quotation, and one
+    /// paragraph far longer than a page, through the production HTML pipeline.
     private static func chapter() async -> NSAttributedString {
         let dialogue = "「你來了。」他抬起頭，看見城牆上的旗幟在風中翻捲，低聲說道：「這一戰我們必須贏下來。」眾人沉默片刻，隨即齊聲應和。"
         let mixed = "他說：「這是 CoreText 的測試，English words mixed in, 123,456.78!」一段包含標點符號、引號『』與破折號——還有省略號……的文字。"
+        let ruby = "<ruby>城牆<rt>じょうへき</rt></ruby>上的<ruby>旗幟<rt>はた</rt></ruby>在風中翻捲，「<ruby>黑雲<rt>こくうん</rt></ruby>壓城。」他說。"
         let long = String(repeating: "山雨欲來風滿樓，「黑雲壓城城欲摧。」甲光向日金鱗開；", count: 90)
         var body = ""
         for section in 0..<6 {
             body += "<h2>第\(section + 1)節　風起</h2>"
             for index in 0..<14 {
-                body += "<p>\(index % 3 == 0 ? mixed : dialogue)\(String(repeating: "他沒有回答。", count: index % 5))</p>"
+                body += "<p>\(index % 3 == 0 ? mixed : index % 3 == 1 ? ruby : dialogue)\(String(repeating: "他沒有回答。", count: index % 5))</p>"
             }
             body += "<blockquote><p>\(dialogue)</p></blockquote>"
             if section == 2 { body += "<p>\(long)</p>" }

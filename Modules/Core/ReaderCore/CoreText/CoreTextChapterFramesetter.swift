@@ -53,6 +53,9 @@ final class CoreTextChapterFramesetter: @unchecked Sendable {
     static let overlap = 8_000
 
     let text: NSAttributedString
+    /// The chapter's characters, read from the attributed string's own store. `text.string`
+    /// transcodes the whole chapter into a new Swift String on every access.
+    private let string: NSString
     private let length: Int
     /// Each window's share of the chapter, in order and without gaps. Empty when the
     /// chapter is laid out whole.
@@ -76,11 +79,12 @@ final class CoreTextChapterFramesetter: @unchecked Sendable {
     init(_ text: NSAttributedString) {
         let windowLength = Self.windowLengthOverride
         self.text = text
+        string = CFAttributedStringGetString(text as CFAttributedString) as NSString
         length = text.length
         let size = windowLength
             ?? max(Self.minimumWindowLength, (length + Self.maximumWindows - 1) / Self.maximumWindows)
         overlap = windowLength.map { max(1, $0 / 8) } ?? Self.overlap
-        let shares = length > size + size / 2 ? Self.shares(of: text.string as NSString, size: size) : []
+        let shares = length > size + size / 2 ? Self.shares(of: string, size: size) : []
         if shares.count > 1 {
             self.shares = shares
             whole = nil
@@ -93,6 +97,7 @@ final class CoreTextChapterFramesetter: @unchecked Sendable {
     /// A chapter laid out by a framesetter that already exists.
     init(_ framesetter: CTFramesetter, text: NSAttributedString) {
         self.text = text
+        string = CFAttributedStringGetString(text as CFAttributedString) as NSString
         length = text.length
         shares = []
         overlap = Self.overlap
@@ -210,7 +215,7 @@ final class CoreTextChapterFramesetter: @unchecked Sendable {
     /// The end of the paragraph holding `location`, or the chapter's end.
     private func paragraphEnd(holding location: Int) -> Int {
         guard location < length else { return length }
-        return NSMaxRange((text.string as NSString).paragraphRange(for: NSRange(location: location, length: 0)))
+        return NSMaxRange(string.paragraphRange(for: NSRange(location: location, length: 0)))
     }
 
     private func build(from start: Int, to end: Int) -> Window {
