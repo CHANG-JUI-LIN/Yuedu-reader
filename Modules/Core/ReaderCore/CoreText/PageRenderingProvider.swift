@@ -16,6 +16,7 @@ enum LayoutInvalidationCause: String {
     case cjkFontInstalled
     /// The app changed lifecycle phase and nothing was narrating.
     case appPhaseChange
+    case readerTeardown
     case unspecified
 }
 

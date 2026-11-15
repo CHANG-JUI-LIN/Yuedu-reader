@@ -890,7 +890,10 @@ final class CoreTextPaginator: Sendable {
         }
 
         let sharedAttrStr = LayoutShared(attrStr)
-        let layout = await Task.detached(priority: .userInitiated) {
+        // Detached to leave the caller's actor, so it does not inherit the caller's
+        // cancellation: forward it. A reader closed mid-layout used to keep laying out its
+        // chapter for half a minute (Crashlytics 7d6c4b95).
+        let computation = Task.detached(priority: .userInitiated) {
             Self.computeLayout(spineIndex: spineIndex,
                                attrStr: sharedAttrStr.wrappedValue,
                                imagePage: imagePage,
@@ -904,8 +907,15 @@ final class CoreTextPaginator: Sendable {
                                writingMode: writingMode,
                                bottomJustify: bottomJustify,
                                centresSinglePage: centresSinglePage)
-        }.value
-
+        }
+        let layout = await withTaskCancellationHandler {
+            await computation.value
+        } onCancel: {
+            computation.cancel()
+        }
+        // A full pass is partial only when it was cancelled: it stopped at the page it had
+        // reached, and its caller discards it. It must never be served from the cache.
+        guard !layout.isPartial else { return layout }
         storeLayout(layout, for: key)
         return layout
     }
@@ -994,7 +1004,7 @@ final class CoreTextPaginator: Sendable {
             return cached
         }
         let sharedAttrStr = LayoutShared(attrStr)
-        return await Task.detached(priority: .userInitiated) {
+        let computation = Task.detached(priority: .userInitiated) {
             Self.computeLayout(spineIndex: spineIndex,
                                attrStr: sharedAttrStr.wrappedValue,
                                imagePage: nil,
@@ -1009,7 +1019,12 @@ final class CoreTextPaginator: Sendable {
                                bottomJustify: bottomJustify,
                                maxPages: 1,
                                centresSinglePage: centresSinglePage)
-        }.value
+        }
+        return await withTaskCancellationHandler {
+            await computation.value
+        } onCancel: {
+            computation.cancel()
+        }
     }
 
     private func cachedLayout(for key: CacheKey) -> ChapterLayout? {
@@ -1186,6 +1201,9 @@ final class CoreTextPaginator: Sendable {
         let layoutText = attrStr.string
 
         while currentLocation < attrStr.length {
+            // Cancelled: stop at this page. The result is partial (`currentLocation` is short
+            // of the end), which keeps it out of the cache; the caller discards it.
+            if Task.isCancelled { break }
             if let breakRange = forcedPageBreakRanges.first(where: { $0.location <= currentLocation && currentLocation < $0.location + $0.length }) {
                 currentLocation = breakRange.location + breakRange.length
                 continue

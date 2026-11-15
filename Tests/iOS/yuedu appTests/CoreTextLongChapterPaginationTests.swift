@@ -35,6 +35,42 @@ struct CoreTextLongChapterPaginationTests {
         #expect(ratio < 6, "4× the text took \(String(format: "%.1f", ratio))× the time")
     }
 
+    /// The same event's second half: a reader closed mid-layout kept laying the chapter out
+    /// for 30 s, side by side with the reopened reader's pass. Cancelling the caller has to
+    /// stop the detached computation, and what it stopped with must not be cached.
+    @Test("Cancelling a full pagination stops it early and keeps it out of the cache")
+    @MainActor
+    func cancelledPaginationStopsAndIsNotCached() async {
+        let attributedString = await Self.chapter(characterCount: 400_000)
+        let paginator = CoreTextPaginator()
+        let revision = ContentRevision()
+        let shared = LayoutShared(attributedString)
+
+        let cancelled = Task { @MainActor in
+            await paginator.paginate(
+                spineIndex: 0,
+                attrStr: shared.wrappedValue,
+                renderSize: Self.renderSize,
+                fontSize: 17,
+                revision: revision
+            )
+        }
+        cancelled.cancel()
+        let stopped = await cancelled.value
+        #expect(stopped.isPartial)
+
+        let full = await paginator.paginate(
+            spineIndex: 0,
+            attrStr: attributedString,
+            renderSize: Self.renderSize,
+            fontSize: 17,
+            revision: revision
+        )
+        #expect(!full.isPartial)
+        #expect(full.pageRanges.count > stopped.pageRanges.count)
+        #expect(full.pageRanges.last.map { $0.location + $0.length } == attributedString.length)
+    }
+
     @MainActor
     private func layout(characterCount: Int) async -> (milliseconds: Double, pages: Int, characters: Int) {
         let attributedString = await Self.chapter(characterCount: characterCount)

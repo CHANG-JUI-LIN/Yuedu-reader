@@ -1772,6 +1772,14 @@ struct ReaderView: View {
             autoReader.onProgressChanged = nil
             pageBars.releaseContent()
             renderer.pageBarsProvider = nil
+            // The reader is gone for good: stop laying out its chapters. `onDisappear` cannot
+            // (a covered reader comes back), and the engine's deinit never runs while a
+            // preload task holds it. Two closed readers of one 857,793-character chapter kept
+            // laying it out side by side until MetricKit's CPU limit (Crashlytics 7d6c4b95).
+            // Narration held past the reader still pages through this engine, so it keeps it.
+            if tts.playbackState == .stopped {
+                renderer.engine?.cancelPendingWork(cause: .readerTeardown)
+            }
             NowPlayingHub.shared.holdNarrationPastReader(tts)
         }
     }
