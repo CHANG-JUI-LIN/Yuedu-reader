@@ -1180,6 +1180,10 @@ final class CoreTextPaginator: Sendable {
         var pageFloatAttachments: [Int: [RenderedAttachment]] = [:]
         // 底部對齊 candidates: pages that end only because CoreText ran out of room.
         var columnFilledPages = IndexSet()
+        // Bridged once. `attrStr.string` transcodes the whole chapter into a new Swift String
+        // on every access; reading it once per page made pagination O(characters × pages):
+        // 27.8 s of CPU for one 857,793-character, 984-page chapter (Crashlytics 7d6c4b95).
+        let layoutText = attrStr.string
 
         while currentLocation < attrStr.length {
             if let breakRange = forcedPageBreakRanges.first(where: { $0.location <= currentLocation && currentLocation < $0.location + $0.length }) {
@@ -1251,7 +1255,7 @@ final class CoreTextPaginator: Sendable {
             let proposedEnd = currentLocation + proposedAdvance
             let protectedEnd = CJKTypographyProcessor.protectedLineBreakOffset(
                 proposedEnd,
-                in: attrStr.string,
+                in: layoutText,
                 lowerBound: currentLocation
             )
             var advance = min(remainingLength, max(1, protectedEnd - currentLocation))
@@ -2498,7 +2502,7 @@ final class CoreTextPaginator: Sendable {
         let start = max(0, lineRange.location)
         let end = min(attrStr.length, lineRange.location + lineRange.length)
         guard end > start else { return true }
-        let ns = attrStr.string as NSString
+        let ns = CFAttributedStringGetString(attrStr as CFAttributedString) as NSString
         var idx = start
         while idx < end {
             if idx >= imageRunRange.location, idx < imageRunRange.location + imageRunRange.length {
@@ -3412,7 +3416,8 @@ final class CoreTextPaginator: Sendable {
         let mergedRange = mergeRanges(ranges)
         let mergedText: String
         if let mergedRange, mergedRange.location < attrStr.length {
-            mergedText = (attrStr.string as NSString).substring(with: mergedRange)
+            mergedText = (CFAttributedStringGetString(attrStr as CFAttributedString) as NSString)
+                .substring(with: mergedRange)
         } else {
             mergedText = ""
         }
