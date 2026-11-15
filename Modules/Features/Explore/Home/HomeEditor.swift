@@ -341,7 +341,7 @@ private struct HomeSectionMorph<Mark: View, Surface: View, Gestures: ViewModifie
                 }
                 // The sideways rows draw past their bounds (`scrollClipDisabled`): the card cuts
                 // them at its edge; on the home the cut is past the screen's.
-                .clipShape(HomeSectionFrame(home: 1 - edited))
+                .modifier(HomeSectionCut(home: 1 - edited, rowWidth: width ?? 0))
                 .modifier(gestures)
                 .overlay {
                     if isEditing { surface.accessibilityHidden(presence < 1) }
@@ -394,17 +394,55 @@ extension View {
 /// row cut there with it. The section is drawn on the grey as on the home, so its own white
 /// cards stand apart from the frame; a white frame round them read as one white card.
 private struct HomeSectionFrame: Shape {
-    /// 1 on the home, which cuts nothing; 0 in 編輯首頁, the card itself.
-    var home: CGFloat = 0
+    /// Past the rect on every side: the home cuts nothing.
+    var outset: CGFloat = 0
+    /// The side the system's vertical bar stands on, and how far the cut goes out toward it.
+    var barEdge: HorizontalEdge? = nil
+    var barReach: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
-        // Sideways a screen's width past the rect, not a margin's: beside a folded iPhone Duo's
-        // status bar the screen's edge is some 84pt past the row's, and a cut 32pt out showed
-        // down the middle of that strip (FB-202).
-        var frame = rect.insetBy(dx: -rect.width * home, dy: -DSSpacing.xxl * home)
+        var frame = rect.insetBy(dx: -outset, dy: -outset)
+        switch barEdge {
+        case .leading:
+            frame.origin.x -= barReach
+            frame.size.width += barReach
+        case .trailing:
+            frame.size.width += barReach
+        case nil:
+            break
+        }
         // The trailing corners past the screen's edge, where the card ends.
         frame.size.width += DSRadius.xxl
         return RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous).path(in: frame)
+    }
+}
+
+/// Where a section's sideways row is cut: at the card in 編輯首頁 (`home` 0), past the screen's
+/// edge on the home (`home` 1). A margin past the row is past the screen everywhere but beside
+/// a folded iPhone Duo's status bar, where the screen's edge is some 84pt out and the cut showed
+/// down the middle of that strip (FB-202): toward that bar the cut is a row's width out.
+private struct HomeSectionCut: ViewModifier {
+    let home: CGFloat
+    let rowWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(iOS 27.1, *) {
+            content.modifier(HomeSectionBarCut(home: home, rowWidth: rowWidth))
+        } else {
+            content.clipShape(HomeSectionFrame(outset: DSSpacing.xxl * home))
+        }
+    }
+}
+
+@available(iOS 27.1, *)
+private struct HomeSectionBarCut: ViewModifier {
+    let home: CGFloat
+    let rowWidth: CGFloat
+    @Environment(\.toolbarVerticalEdge) private var barEdge
+
+    func body(content: Content) -> some View {
+        content.clipShape(HomeSectionFrame(outset: DSSpacing.xxl * home, barEdge: barEdge,
+                                           barReach: rowWidth * home))
     }
 }
 
