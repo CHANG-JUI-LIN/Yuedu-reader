@@ -159,6 +159,7 @@ struct ContentView: View {
         ) { request in
             BookSourceImportReviewHost(
                 sources: request.sources,
+                route: .shared,
                 onFinish: { count in
                     importDrainer.didPresentBookSourceReview(requestID: request.id)
                     // Report through the drainer's own alert rather than a second mechanism.

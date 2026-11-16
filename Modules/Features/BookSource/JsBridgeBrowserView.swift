@@ -964,6 +964,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             let host = UIHostingController(
                 rootView: BookSourceImportReviewHost(
                     sources: sources,
+                    route: .sourcePage,
                     onFinish: { [weak self] count in
                         box.controller?.dismiss(animated: true) {
                             self?.presentImportResult(

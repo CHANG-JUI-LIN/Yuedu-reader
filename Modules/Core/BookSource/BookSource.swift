@@ -948,6 +948,37 @@ extension BookSource {
         }
     }
 
+    /// The names of the fields in which this source differs from `other`, one level into
+    /// the rule groups (`ruleSearch.bookList`), sorted; `lastUpdateTime` is left out, as in
+    /// `hasSameContent`. Names only — a diagnostic line may carry them, never a source's
+    /// rules or scripts.
+    func differingKeyPaths(from other: BookSource) -> [String] {
+        func fields(_ source: BookSource) throws -> [String: Any] {
+            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(source))
+            return object as? [String: Any] ?? [:]
+        }
+        func differing(_ lhs: [String: Any], _ rhs: [String: Any], prefix: String, nests: Bool) -> [String] {
+            Set(lhs.keys).union(rhs.keys).flatMap { key -> [String] in
+                let (left, right) = (lhs[key], rhs[key])
+                if let left, let right {
+                    if (left as AnyObject).isEqual(right) { return [] }
+                    if nests, let left = left as? [String: Any], let right = right as? [String: Any] {
+                        return differing(left, right, prefix: "\(key).", nests: false)
+                    }
+                }
+                return [prefix + key]
+            }
+        }
+        do {
+            return differing(try fields(self), try fields(other), prefix: "", nests: true)
+                .filter { $0 != "lastUpdateTime" }
+                .sorted()
+        } catch {
+            AppLogger.cache("BookSource could not be encoded for a field comparison", error: error)
+            return ["<unencodable>"]
+        }
+    }
+
     func shouldUseLegadoRuntimeFetch(for ruleUrl: String? = nil) -> Bool {
         let url = ruleUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         // Options go to the runtime however they are spaced (`url , {…}` too): the native

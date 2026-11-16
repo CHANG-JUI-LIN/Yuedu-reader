@@ -698,6 +698,68 @@ struct BookSourceStoreTests {
         #expect(store.sources.first { $0.bookSourceUrl == edited.bookSourceUrl }?.lastUpdateTime != 1_000)
     }
 
+    @Test("re-importing an unchanged pack through the confirmation list writes nothing")
+    func reimportingUnchangedPackDoesNotRewrite() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookSourceStoreReimportWrite-\(UUID().uuidString)")
+        let store = BookSourceStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pack = (0..<20).map { index -> BookSource in
+            var source = makeSource(index: index)
+            source.searchUrl = "https://example.com/search?q={{key}}&i=\(index)"
+            source.ruleSearch.bookList = ".book"
+            source.lastUpdateTime = 1_000
+            return source
+        }
+        store.replaceSourcesFromSync(pack)
+        store.waitForQueuedWrites()
+        // Every write renames a new file over the library, so the file number names the write.
+        let url = directory.appendingPathComponent("book_sources.json")
+        func fileNumber() throws -> Int? {
+            try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? Int
+        }
+        let firstWrite = try #require(try fileNumber())
+        let revision = store.mutationRevision
+
+        // The pack as another copy of the file holds it: fresh ids, the author's clock.
+        let again = try JSONDecoder().decode([BookSource].self, from: Data(try encodeSources(pack).utf8))
+            .map { source -> BookSource in
+                var copy = source
+                copy.id = UUID()
+                copy.lastUpdateTime = 9_000
+                return copy
+            }
+        for _ in 0..<2 {
+            _ = try store.importSelected(again, options: .manualDefaults, route: .shared)
+            store.waitForQueuedWrites()
+        }
+        #expect(try fileNumber() == firstWrite, "nothing changed, so nothing is written")
+        #expect(store.mutationRevision == revision, "and nothing is republished")
+        #expect(store.sources.allSatisfy { $0.lastUpdateTime == 1_000 }, "and no clock moves, so the sync uploads nothing")
+
+        var edited = again
+        edited[3].ruleSearch.bookList = ".other"
+        _ = try store.importSelected(edited, options: .manualDefaults, route: .shared)
+        store.waitForQueuedWrites()
+        #expect(try fileNumber() != firstWrite)
+        #expect(store.sources.filter { $0.lastUpdateTime != 1_000 }.count == 1)
+    }
+
+    @Test("differingKeyPaths names the fields that differ, never their values")
+    func differingKeyPathsNamesFields() {
+        var source = makeSource(index: 1)
+        source.ruleSearch.bookList = ".book"
+        var edited = source
+        edited.ruleSearch.bookList = ".secret-rule"
+        edited.bookSourceComment = "secret comment"
+        edited.lastUpdateTime = 42
+
+        #expect(source.differingKeyPaths(from: source).isEmpty)
+        let paths = edited.differingKeyPaths(from: source)
+        #expect(paths == ["bookSourceComment", "ruleSearch.bookList"])
+        #expect(!paths.joined().contains("secret"))
+    }
+
     @Test("hasSameContent ignores key order and the sync clock, not the rules")
     func sameContentComparison() {
         var source = makeSource(index: 1)

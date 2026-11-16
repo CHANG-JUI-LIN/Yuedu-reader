@@ -46,6 +46,25 @@ struct BookSourceImportOptions: Equatable {
     }
 }
 
+// MARK: - BookSourceImportRoute
+
+/// Which import screen confirmed a write. It names the write in the disk-write tally
+/// (`import.share`, `import.deeplink`, …) and in the import breadcrumb, so a library rewrite
+/// seen in a field log says where it came from.
+enum BookSourceImportRoute: String, Sendable {
+    /// No confirmation list: `importFromJSON` / `importFromData`, which only tests call.
+    case direct
+    /// 來源配置管理's own importers: 本地導入, 網路導入, 粘貼源.
+    case manage
+    /// A `yuedu://import/…` or `legado://import/…` link, from another app or a source's
+    /// `java.openUrl`.
+    case deepLink = "deeplink"
+    /// A file or link handed over by the Share Extension or Open In.
+    case shared = "share"
+    /// An import link tapped on a page inside a source's own browser.
+    case sourcePage = "sourcepage"
+}
+
 // MARK: - Applying options
 
 extension BookSourceImportOptions {

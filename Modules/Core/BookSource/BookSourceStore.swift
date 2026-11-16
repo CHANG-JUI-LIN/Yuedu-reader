@@ -828,9 +828,10 @@ class BookSourceStore: @MainActor ObservableObject {
     @discardableResult
     func importSelected(
         _ sources: [BookSource],
-        options: BookSourceImportOptions
+        options: BookSourceImportOptions,
+        route: BookSourceImportRoute
     ) throws -> Int {
-        try importSources(sources, options: options)
+        try importSources(sources, options: options, route: route)
     }
 
     /// `lastUpdateTime` per `bookSourceUrl`, for building an import confirmation list's
@@ -853,7 +854,8 @@ class BookSourceStore: @MainActor ObservableObject {
     @discardableResult
     private func importSources(
         _ imported: [BookSource],
-        options: BookSourceImportOptions = .direct
+        options: BookSourceImportOptions = .direct,
+        route: BookSourceImportRoute = .direct
     ) throws -> Int {
         guard !imported.isEmpty else { throw ImportError.parseError }
         // iCloud/Firestore sync merges book sources last-write-wins, using `lastUpdateTime` as
@@ -879,6 +881,10 @@ class BookSourceStore: @MainActor ObservableObject {
         // time would shift every index behind the 置底 group per source — quadratic again.
         var additions: [BookSource] = []
         var additionIndexByURL: [String: Int] = [:]
+        // What the import changed in sources the library already had: how many, and which
+        // fields — their names only, read from the first few (`changedFieldSampleLimit`).
+        var changedCount = 0
+        var changedFields = Set<String>()
         for src in imported {
             let localIndex = src.bookSourceUrl.isEmpty ? nil : indexByURL[src.bookSourceUrl]
             // Apply the import options once, here, for both the overwrite and the insert
@@ -892,9 +898,15 @@ class BookSourceStore: @MainActor ObservableObject {
             )
             if let idx = localIndex {
                 candidate.id = merged[idx].id
-                candidate.lastUpdateTime = candidate.hasSameContent(as: merged[idx])
-                    ? merged[idx].lastUpdateTime
-                    : nowMillis
+                if candidate.hasSameContent(as: merged[idx]) {
+                    candidate.lastUpdateTime = merged[idx].lastUpdateTime
+                } else {
+                    candidate.lastUpdateTime = nowMillis
+                    if changedCount < Self.changedFieldSampleLimit {
+                        changedFields.formUnion(candidate.differingKeyPaths(from: merged[idx]))
+                    }
+                    changedCount += 1
+                }
                 merged[idx] = candidate
             } else if !candidate.bookSourceUrl.isEmpty,
                       let idx = additionIndexByURL[candidate.bookSourceUrl] {
@@ -911,6 +923,21 @@ class BookSourceStore: @MainActor ObservableObject {
                 additions.append(candidate)
             }
         }
+        // Nothing added and nothing changed: the library is what it was, so there is nothing
+        // to publish or write. The write is the whole library, and confirming a pack the
+        // library already holds used to cost one every time.
+        guard changedCount > 0 || !additions.isEmpty else { return imported.count }
+        // Which route wrote, and which fields of existing sources it changed — never their
+        // values. Build 3.0.2 (151) logged a library rewrite under `import` within 1.5 s of
+        // five returns to the foreground in a row, each a different size, each uploaded by
+        // the next sync (triage organizer_5d3dffd3…), and nothing in the log said which of
+        // the import screens had confirmed it or what differed from the stored copy.
+        let fields = changedFields.sorted()
+        let line = "⟐ import route=\(route.rawValue) incoming=\(imported.count) added=\(additions.count)"
+            + " changed=\(changedCount) fields=\(fields.prefix(Self.changedFieldLogLimit).joined(separator: ","))"
+            + (fields.count > Self.changedFieldLogLimit ? ",+\(fields.count - Self.changedFieldLogLimit)" : "")
+        AppLogger.cache(line, level: .notice)
+        CrashContext.breadcrumb(line)
         if !additions.isEmpty {
             // New imports append at the tail — but above the whole 置底 group,
             // so the pin markers keep matching the tail region.
@@ -919,9 +946,15 @@ class BookSourceStore: @MainActor ObservableObject {
             merged.insert(contentsOf: additions, at: insertionIndex)
         }
         replaceSources(merged)
-        save(reason: "import")
+        save(reason: "import.\(route.rawValue)")
         return imported.count
     }
+
+    /// How many changed sources an import reads field names from: enough to name what a
+    /// pack update touches without a second pass over a pack of thousands.
+    private nonisolated static let changedFieldSampleLimit = 20
+    /// How many field names one import's breadcrumb carries.
+    private nonisolated static let changedFieldLogLimit = 12
 
     /// Current wall-clock time in milliseconds — the unit `BookSource.lastUpdateTime` (and the
     /// iCloud/Firestore sync last-write-wins merge clock) is expressed in.

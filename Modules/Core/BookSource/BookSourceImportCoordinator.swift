@@ -34,6 +34,8 @@ final class BookSourceImportCoordinator: ObservableObject {
 
     private let store: BookSourceStore
     private let defaults: UserDefaults
+    /// Which screen this coordinator confirms for; the store names its write by it.
+    var route: BookSourceImportRoute
     /// The library's clocks as of the moment the pending list was built. Held rather than
     /// re-derived because a per-row edit asks for one key at a time, and rebuilding the map
     /// per lookup would walk the whole library on every keystroke-committed edit.
@@ -46,9 +48,14 @@ final class BookSourceImportCoordinator: ObservableObject {
     private static let keepEnableKey = "yd_import_keep_enable"
     private static let showCommentKey = "yd_import_show_comment"
 
-    init(store: BookSourceStore = .shared, defaults: UserDefaults = .standard) {
+    init(
+        store: BookSourceStore = .shared,
+        defaults: UserDefaults = .standard,
+        route: BookSourceImportRoute
+    ) {
         self.store = store
         self.defaults = defaults
+        self.route = route
         var restored = BookSourceImportOptions.manualDefaults
         restored.keepName = defaults.bool(forKey: Self.keepNameKey)
         restored.keepGroup = defaults.bool(forKey: Self.keepGroupKey)
@@ -97,7 +104,7 @@ final class BookSourceImportCoordinator: ObservableObject {
             self.pending = nil
             return 0
         }
-        let count = try store.importSelected(selected, options: options)
+        let count = try store.importSelected(selected, options: options, route: route)
         self.pending = nil
         return count
     }

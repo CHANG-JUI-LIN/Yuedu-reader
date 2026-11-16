@@ -74,7 +74,7 @@ final class BookSourceAddFlow: ObservableObject {
 
     init(store: BookSourceStore = .shared) {
         self.store = store
-        importCoordinator = BookSourceImportCoordinator(store: store)
+        importCoordinator = BookSourceImportCoordinator(store: store, route: .manage)
     }
 
     static let importContentTypes: [UTType] = [

@@ -308,7 +308,7 @@ struct BookSourceSelectedImportTests {
 
         // Only `updated` is handed over — the confirmation list drops unticked rows before
         // the store ever sees them.
-        _ = try store.importSelected([updated], options: options)
+        _ = try store.importSelected([updated], options: options, route: .manage)
 
         #expect(store.sources.count == 1)
         let merged = try #require(store.sources.first)

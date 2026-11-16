@@ -42,12 +42,27 @@ struct BookSourceImportReviewSheet: View {
 /// one-shot, unlike 書源管理, which keeps its coordinator across several importers.
 struct BookSourceImportReviewHost: View {
     let sources: [BookSource]
+    /// Which handoff this sheet reviews; it names the write the confirmation makes.
+    let route: BookSourceImportRoute
     /// Called with the number of sources written once the user confirms.
     let onFinish: (Int) -> Void
     let onCancel: () -> Void
 
-    @StateObject private var coordinator = BookSourceImportCoordinator()
+    @StateObject private var coordinator: BookSourceImportCoordinator
     @State private var failureMessage: String?
+
+    init(
+        sources: [BookSource],
+        route: BookSourceImportRoute,
+        onFinish: @escaping (Int) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.sources = sources
+        self.route = route
+        self.onFinish = onFinish
+        self.onCancel = onCancel
+        _coordinator = StateObject(wrappedValue: BookSourceImportCoordinator(route: route))
+    }
 
     var body: some View {
         BookSourceImportReviewSheet(
