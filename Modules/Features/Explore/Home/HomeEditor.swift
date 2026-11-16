@@ -81,10 +81,6 @@ struct HomeSectionEntry: Identifiable {
 extension EnvironmentValues {
     /// How far 編輯首頁's morph has come: 0 on the home, 1 in the editor, and every frame between.
     @Entry var homeEditProgress: Double = 0
-    /// Every section one row swiped sideways, as 編輯首頁 draws them (maintainer, 2026-10-27: no
-    /// exceptions — the editor never shows a section whole): 分類卡片, 固定封面網格 and 圖文資訊清單,
-    /// read down the page on the home, and 色帶書架's stack, which does not scroll there.
-    @Entry var homeDrawsSideways = false
     /// The section 編輯首頁's long press lifts, wherever it starts in its card; nil on the home.
     @Entry var homeSectionDrag: HomeSectionDrag? = nil
     /// The width the home lays its sections out in, which its sideways rows size their cards from
@@ -200,14 +196,14 @@ struct HomeSectionSlot<RowContent: View>: View {
             .environment(\.homeSectionDrag, isEditing ? HomeSectionDrag(id: section.id, title: title) : nil)
     }
 
-    /// The row, the same in its card, drawn sideways where the home reads it down the page
-    /// (`homeDrawsSideways`). A section the home gives no room, hidden or with nothing to draw,
-    /// has its name in its card, so it is not blank.
+    /// The row, the same in its card, drawn as the home draws it: down the page where the home
+    /// reads it down the page (maintainer, 2026-11-16: 「豎著展示的欄目…編輯介面為什麼是強制橫排」,
+    /// in place of 2026-10-27's one row swiped sideways for every section). A section the home
+    /// gives no room, hidden or with nothing to draw, has its name in its card, so it is not blank.
     @ViewBuilder
     private func content(_ title: String) -> some View {
         if entry.isOnHome, let group = entry.homeGroup {
             rowContent(group)
-                .environment(\.homeDrawsSideways, isEditing)
         } else {
             Text(title)
                 .font(DSFont.title2.weight(.bold))

@@ -23,6 +23,10 @@ struct HomeSectionGroup: Identifiable, Equatable {
     let entries: [String: [CollectionEntry]]
     /// The reader's languages, which order the section's books; nil leaves them as loaded.
     var languages: ReadingLanguagePreferences?
+    /// Every card drawn, one that failed or holds nothing as its name over blank covers: the
+    /// section's form, where its cards are picked to edit (maintainer, 2026-11-16) and a card the
+    /// home leaves out must still be there to give another source or to remove.
+    var keepsEveryCard = false
 
     var id: String { section.id.uuidString }
 
@@ -75,9 +79,10 @@ struct HomeSectionGroup: Identifiable, Equatable {
             return .loading
         }
         let cards = rows.flatMap { row -> [CollectionEntry] in
-            guard let loaded = entries[row.id] else { return [] }
             let languages = HomeScopeFilter.keepsOrder(row.loadingSection.binding) ? nil : languages
-            return CollectionSummary.cards(of: row, entries: loaded, languages: languages).map(CollectionEntry.collection)
+            let made = entries[row.id].map { CollectionSummary.cards(of: row, entries: $0, languages: languages) } ?? []
+            if made.isEmpty, keepsEveryCard { return [.collection(.loading(row))] }
+            return made.map(CollectionEntry.collection)
         }
         // 精選書單 as it was saved, its lists a card each in 偏好閱讀語言's order, as they were
         // while one card gave them all; once the reader puts the cards in an order, theirs.

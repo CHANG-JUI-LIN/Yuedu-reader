@@ -25,16 +25,21 @@ extension View {
 }
 
 private struct RemoteLibraryDestinations: ViewModifier {
+    @Environment(\.exploreZoom) private var zoom
+
     func body(content: Content) -> some View {
         content
             .navigationDestination(for: OPDSFeedRoute.self) { route in
-                switch route.presentation {
-                case .list: OPDSFeedView(route: route)
-                case .storefront: PublicLibraryFeedView(route: route)
+                Group {
+                    switch route.presentation {
+                    case .list: OPDSFeedView(route: route)
+                    case .storefront: PublicLibraryFeedView(route: route)
+                    }
                 }
+                .exploreZoomDestination(route, zoom: zoom)
             }
             .navigationDestination(for: WebDAVDirectoryRoute.self) { route in
-                WebDAVDirectoryView(route: route)
+                WebDAVDirectoryView(route: route).exploreZoomDestination(route, zoom: zoom)
             }
             .navigationDestination(for: WorkDetailRoute.self) { route in
                 WorkDetailView(route: route)

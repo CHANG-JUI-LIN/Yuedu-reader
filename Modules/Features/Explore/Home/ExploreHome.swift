@@ -48,6 +48,9 @@ private struct ExploreHomeRoot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var path = NavigationPath()
+    /// 拼貼卡片's zoom into the pages they open (`ExploreZoomTransitions`).
+    @State private var zoomTransitions = ExploreZoomTransitions()
+    @Namespace private var zoomNamespace
     @State private var exploreSources: [BookSource] = []
     @State private var browserPresentation: BrowserPresentation?
     /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
@@ -168,6 +171,7 @@ private struct ExploreHomeRoot: View {
                 // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
                 // its ＋ takes the bar's place (maintainer, 2026-10-17).
                 .hidesRootTabBar(showsEditorBars, hasBottomBar: true)
+                .background { ExploreZoomNavigationProbe(driver: zoomTransitions.pushDriver) }
                 .exploreRouteDestinations(openBrowser: openBrowser)
                 .homeEditDestinations()
                 .remoteLibraryDestinations()
@@ -201,6 +205,7 @@ private struct ExploreHomeRoot: View {
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
         .environment(\.explorePush) { $0.open(in: &path, store: store) }
+        .environment(\.exploreZoom, ExploreZoomContext(transitions: zoomTransitions, namespace: zoomNamespace))
         .environment(\.homeDefaults, defaultsContext)
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults. Not before the
@@ -545,6 +550,7 @@ struct HomeRowHost: View {
     let isEditable: Bool
     let push: (ExplorePush) -> Void
     let openSettings: () -> Void
+    @Environment(\.exploreZoom) private var zoom
     @State private var confirmsDelete = false
 
     var body: some View {
@@ -577,7 +583,14 @@ struct HomeRowHost: View {
                         guard let row = group.rows.first else { return }
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
                     },
-                    openCollection: { push(ExplorePlace.page(of: $0, aozoraIndex: aozoraIndex)) },
+                    openCollection: { collection in
+                        let page = ExplorePlace.page(of: collection, aozoraIndex: aozoraIndex)
+                        // 拼貼卡片 zoom into their pages (`ExploreZoomTransitions`).
+                        if group.section.layout.style == .collageCards {
+                            zoom?.transitions.prepare(page, from: collection.id)
+                        }
+                        push(page)
+                    },
                     openArticle: { push(.article(SubscriptionArticleRoute(articleID: $0.id))) },
                     actions: actions,
                     bookActions: bookActions)

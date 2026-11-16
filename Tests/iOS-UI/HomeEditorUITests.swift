@@ -879,34 +879,35 @@ final class HomeEditorUITests: XCTestCase {
         card.tap()
         XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
 
-        // A card per list.
-        let first = app.buttons["homeSection.listCard.0"].firstMatch
-        for _ in 0..<4 where !first.isHittable { app.swipeUp(velocity: .slow) }
-        XCTAssertTrue(first.isHittable, app.debugDescription)
-        for index in 0..<4 {
-            XCTAssertTrue(app.buttons["homeSection.listCard.\(index)"].firstMatch.exists, "card \(index): \(app.debugDescription)")
-        }
-        XCTAssertFalse(app.buttons["homeSection.listCard.4"].firstMatch.exists, app.debugDescription)
-        XCTAssertEqual(first.label, "中文書籍, Project Gutenberg")
+        // A card per list in the preview, which the form edits one at a time: the first, outlined.
+        let name = app.textFields["homeSection.listCard.name"].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(name.placeholderValue, "中文書籍")
+        let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.collection.gutenberg."))
+        XCTAssertTrue(cards.element(boundBy: 3).waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(cards.count, 4, app.debugDescription)
+        let first = cards.element(boundBy: 0)
+        XCTAssertEqual(first.label, "中文書籍")
+        XCTAssertTrue(first.isSelected, app.debugDescription)
         attach(app, "home-banner-cards-form")
 
-        // Its own name: a space in it is kept as it is typed.
-        first.tap()
-        let name = app.textFields["homeSection.listCard.name"].firstMatch
-        XCTAssertTrue(name.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(name.placeholderValue, "中文書籍")
+        // Its own name: a space in it is kept as it is typed. The section keeps its own.
         name.tap()
         name.typeText("My Classics")
         XCTAssertEqual(name.value as? String, "My Classics", app.debugDescription)
-        XCTAssertTrue(app.navigationBars["My Classics"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
-        attach(app, "home-banner-card-named")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(first.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(first.label, "My Classics, Project Gutenberg")
-        XCTAssertEqual(app.buttons["homeSection.listCard.1"].firstMatch.label, "小說與文學, Project Gutenberg")
         XCTAssertTrue(app.navigationBars[listsTitle].firstMatch.exists, "the section keeps its name: \(app.debugDescription)")
+        XCTAssertTrue(first.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(first.label, "My Classics")
+        attach(app, "home-banner-card-named")
 
-        // A list added opens its card's page.
+        // Another card picked in the preview is the one the form edits.
+        let second = cards.element(boundBy: 1)
+        XCTAssertEqual(second.label, "小說與文學")
+        second.tap()
+        XCTAssertTrue(second.isSelected, app.debugDescription)
+        XCTAssertEqual(name.placeholderValue, "小說與文學")
+
+        // 加入清單, the preview's last card: the list added is the card the form then edits.
         let add = app.buttons["homeSection.lists.add"].firstMatch
         // Along the cards' row, by the screen: the first card leaves it as the row moves.
         let cardsY = first.frame.midY / app.frame.height
@@ -920,12 +921,10 @@ final class HomeEditorUITests: XCTestCase {
         let popular = app.buttons["homePicker.item.熱門"].firstMatch
         XCTAssertTrue(popular.waitForExistence(timeout: 5), app.debugDescription)
         popular.tap()
-        XCTAssertTrue(name.waitForExistence(timeout: 10), "the new card's page: \(app.debugDescription)")
+        XCTAssertTrue(name.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(name.placeholderValue, "熱門")
         XCTAssertTrue(app.buttons["homeSection.listCard.source"].firstMatch.exists, app.debugDescription)
         attach(app, "home-banner-card-added")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.buttons["homeSection.listCard.4"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
 
         // The home's card reads the name.
         app.navigationBars.buttons.element(boundBy: 0).tap()

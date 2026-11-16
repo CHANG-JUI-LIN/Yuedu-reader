@@ -24,22 +24,32 @@ struct HomeChartColumns: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.homeSelectedCollections) private var selected
+    @Environment(\.homeAddListCard) private var addList
     @ScaledMetric(relativeTo: .headline) private var coverWidth = DSLayout.homeChartCoverWidth
 
     var body: some View {
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
-        let headed = collections.count > 1
+        let headed = collections.count > 1 || addList != nil
+        let count = collections.count + (addList == nil ? 0 : 1)
+        let columnWidth: (CGFloat) -> CGFloat = { length in
+            guard count > perScreen else {
+                return max(0, (length - DSSpacing.xl * CGFloat(count - 1)) / CGFloat(count))
+            }
+            let gaps = DSSpacing.xl * CGFloat(perScreen)
+            return max(0, (length - gaps - DSLayout.homePagePeek) / CGFloat(perScreen))
+        }
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: DSSpacing.xl) {
                 ForEach(collections) { collection in
                     column(collection, headed: headed)
-                        .homeSidewaysCardWidth { length in
-                            guard collections.count > perScreen else {
-                                return max(0, (length - DSSpacing.xl * CGFloat(collections.count - 1)) / CGFloat(collections.count))
-                            }
-                            let gaps = DSSpacing.xl * CGFloat(perScreen)
-                            return max(0, (length - gaps - DSLayout.homePagePeek) / CGFloat(perScreen))
-                        }
+                        .overlay { if selected.contains(collection.id) { HomeSelectionOutline() } }
+                        .homeSidewaysCardWidth(columnWidth)
+                }
+                if let addList {
+                    HomeAddListTile(action: addList)
+                        .frame(minHeight: DSLayout.homeCategoryCardHeight)
+                        .homeSidewaysCardWidth(columnWidth)
                 }
             }
             .scrollTargetLayout()

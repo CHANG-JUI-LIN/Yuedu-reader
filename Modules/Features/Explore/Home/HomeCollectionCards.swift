@@ -52,6 +52,7 @@ struct HomeCollectionCards: View {
     let open: (CollectionSummary) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.homeAddListCard) private var addList
 
     var body: some View {
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
@@ -61,7 +62,11 @@ struct HomeCollectionCards: View {
                     HomeCollectionButton(collection: collection, open: open) {
                         HomeCollectionCard(collection: collection)
                     }
-                    .homePageCardWidth(perScreen: perScreen, count: collections.count)
+                    .homePageCardWidth(perScreen: perScreen, count: collections.count + (addList == nil ? 0 : 1))
+                }
+                if let addList {
+                    HomeAddListTile(action: addList, aspectRatio: DSLayout.publicLibraryFeaturedAspect)
+                        .homePageCardWidth(perScreen: perScreen, count: collections.count + 1)
                 }
             }
             .scrollTargetLayout()
@@ -151,51 +156,105 @@ struct HomeCollectionButton<Card: View>: View {
     let open: (CollectionSummary) -> Void
     @ViewBuilder let label: () -> Card
 
+    @Environment(\.homeSelectedCollections) private var selected
+
     var body: some View {
+        let isSelected = selected.contains(collection.id)
         Button { open(collection) } label: { label() }
             .buttonStyle(ExploreTileButtonStyle())
+            .overlay { if isSelected { HomeSelectionOutline() } }
             .homeRowControl()
             .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             .accessibilityLabel(collection.title)
             .accessibilityValue(value ?? "")
             .accessibilityIdentifier(collection.homeIdentifier)
     }
 }
 
+// MARK: - A section's form
+
+// The form of a section of lists edits one card at a time (maintainer, 2026-11-16, from a
+// reference of a 配置數據來源 sheet: the cards across the top, the picked one outlined, and its
+// name, 資料來源 and parameters under them). Its preview is that row of cards: a tap picks one,
+// and a last card, 加入清單, adds one through the same 選擇內容來源. On the home neither is set.
+
+extension EnvironmentValues {
+    /// The cards the section's form has picked, by `CollectionSummary.id`: outlined.
+    @Entry var homeSelectedCollections: Set<String> = []
+    /// The form's 加入清單, drawn after the cards; nil on the home.
+    @Entry var homeAddListCard: HomeAddListCard? = nil
+}
+
+/// 加入清單 in a section's form. Equal to any other, so the environment holding it invalidates
+/// nothing when the form draws again.
+struct HomeAddListCard: Equatable {
+    let perform: @MainActor () -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
+/// The picked card's outline, just outside its edge.
+struct HomeSelectionOutline: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
+            .strokeBorder(DSColor.textPrimary, lineWidth: DSLayout.homeSelectionOutlineWidth)
+            .padding(-DSSpacing.xs)
+            .accessibilityHidden(true)
+    }
+}
+
+/// 加入清單 as a card of its layout: a plus over its name on the controls' grey, the card's shape.
+/// `aspectRatio` is the cards' own, width over height; nil fills the height it is given.
+struct HomeAddListTile: View {
+    let action: HomeAddListCard
+    var aspectRatio: CGFloat?
+
+    var body: some View {
+        Button { action.perform() } label: {
+            VStack(spacing: DSSpacing.sm) {
+                Image(systemName: "plus")
+                    .font(DSFont.title2.weight(.semibold))
+                    .accessibilityHidden(true)
+                Text(localized("加入清單"))
+                    .font(DSFont.headline)
+            }
+            .foregroundStyle(DSColor.textSecondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(DSSpacing.lg)
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .background(DSColor.neutralControlFill, in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+        }
+        .buttonStyle(ExploreTileButtonStyle())
+        .homeRowControl()
+        .accessibilityIdentifier("homeSection.lists.add")
+    }
+}
+
 // MARK: - 分類卡片
 
-/// The lists down the page, a card each; two side by side on a wider screen. 編輯首頁 swipes
-/// them sideways, a card a page (`homeDrawsSideways`).
+/// The lists down the page, a card each; two side by side on a wider screen.
 struct HomeCategoryCards: View {
     let collections: [CollectionSummary]
     let open: (CollectionSummary) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.homeDrawsSideways) private var drawsSideways
+    @Environment(\.homeAddListCard) private var addList
 
     var body: some View {
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
-        if drawsSideways {
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                    ForEach(collections) { collection in
-                        card(collection)
-                            .homePageCardWidth(perScreen: perScreen, count: collections.count)
-                    }
-                }
-                .scrollTargetLayout()
+        let columns = Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md, alignment: .top), count: perScreen)
+        LazyVGrid(columns: columns, alignment: .leading, spacing: DSSpacing.md) {
+            ForEach(collections) { collection in
+                card(collection)
             }
-            .modifier(HomeSidewaysScroll())
-        } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md, alignment: .top), count: perScreen)
-            LazyVGrid(columns: columns, alignment: .leading, spacing: DSSpacing.md) {
-                ForEach(collections) { collection in
-                    card(collection)
-                }
+            if let addList {
+                HomeAddListTile(action: addList)
+                    .frame(minHeight: DSLayout.homeCategoryCardHeight)
             }
-            .padding(.horizontal, DSSpacing.lg)
         }
+        .padding(.horizontal, DSSpacing.lg)
     }
 
     private func card(_ collection: CollectionSummary) -> some View {
@@ -270,6 +329,7 @@ struct HomeCollageCards: View {
     let open: (CollectionSummary) -> Void
 
     @ScaledMetric(relativeTo: .headline) private var scaledWidth = DSLayout.homeCollageCardWidth
+    @Environment(\.homeAddListCard) private var addList
 
     var body: some View {
         let width = min(scaledWidth, DSLayout.homeCollageCardMaxWidth)
@@ -280,6 +340,12 @@ struct HomeCollageCards: View {
                     HomeCollectionButton(collection: collection, value: HomeCollageCard.caption(collection), open: open) {
                         HomeCollageCard(collection: collection, width: width)
                     }
+                    // Its page zooms out of it (`ExploreZoomTransitions`).
+                    .exploreZoomSource(id: collection.id)
+                }
+                if let addList {
+                    HomeAddListTile(action: addList, aspectRatio: DSLayout.homeCollageCardAspect)
+                        .frame(width: width)
                 }
             }
             .scrollTargetLayout()
@@ -368,9 +434,16 @@ struct HomeBannerCards: View {
     let open: (CollectionSummary) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.homeAddListCard) private var addList
 
     var body: some View {
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        let count = collections.count + (addList == nil ? 0 : 1)
+        let cardWidth: (CGFloat) -> CGFloat = { length in
+            let peek = count > perScreen ? DSSpacing.lg + DSLayout.homePagePeek : 0
+            let gaps = DSSpacing.lg * CGFloat(perScreen - 1)
+            return max(0, (length - gaps - peek) / CGFloat(perScreen))
+        }
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                 ForEach(collections) { collection in
@@ -378,11 +451,11 @@ struct HomeBannerCards: View {
                                          open: open) {
                         HomeBannerCard(collection: collection)
                     }
-                    .homeSidewaysCardWidth { length in
-                        let peek = collections.count > perScreen ? DSSpacing.lg + DSLayout.homePagePeek : 0
-                        let gaps = DSSpacing.lg * CGFloat(perScreen - 1)
-                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
-                    }
+                    .homeSidewaysCardWidth(cardWidth)
+                }
+                if let addList {
+                    HomeAddListTile(action: addList, aspectRatio: DSLayout.homeBannerAspect)
+                        .homeSidewaysCardWidth(cardWidth)
                 }
             }
             .scrollTargetLayout()

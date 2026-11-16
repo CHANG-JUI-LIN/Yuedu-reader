@@ -6,47 +6,86 @@ import SwiftUI
 // between rows. No covers, as 大圖卡片 has none: a list is named for a kind of book, and the
 // symbol is the one its 分類卡 draws large (`HomeCategoryFace`). A tap opens the list.
 
-/// A section's lists as rows; two columns of them on a wider screen. 編輯首頁 swipes them sideways,
-/// a row a page (`homeDrawsSideways`).
+/// A section's lists as rows; two columns of them on a wider screen. Last, as the store's 類型
+/// ends, 所有類型 (maintainer, 2026-11-16: 「所有分類的入口留下一個在這」) while a module gives lists
+/// with a store, on a page that can push it; in the section's form, 加入清單 in its place.
 struct HomeGenreList: View {
     let collections: [CollectionSummary]
     let open: (CollectionSummary) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.homeDrawsSideways) private var drawsSideways
+    @Environment(\.explorePush) private var push
+    @Environment(\.homeAddListCard) private var addList
+    @ObservedObject private var modules = RuleModuleLibrary.shared
+
+    /// A row of the list: one of the section's lists, or 所有類型.
+    private enum Item: Identifiable {
+        case list(CollectionSummary)
+        case allGenres
+        /// 加入清單, in the section's form.
+        case add(HomeAddListCard)
+
+        var id: String {
+            switch self {
+            case .list(let collection): collection.id
+            case .allGenres: "\u{1F}allGenres"
+            case .add: "\u{1F}add"
+            }
+        }
+    }
+
+    private var items: [Item] {
+        let lists = collections.map(Item.list)
+        if let addList { return lists + [.add(addList)] }
+        guard push != nil, !ModuleStores.listings(in: modules).isEmpty else { return lists }
+        return lists + [.allGenres]
+    }
 
     var body: some View {
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
-        if drawsSideways {
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                    ForEach(collections) { collection in
-                        row(collection)
-                            .homePageCardWidth(perScreen: perScreen, count: collections.count)
-                    }
-                }
-                .scrollTargetLayout()
-            }
-            .modifier(HomeSidewaysScroll())
-        } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: DSSpacing.xl, alignment: .top), count: perScreen)
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
-                ForEach(Array(collections.enumerated()), id: \.element.id) { index, collection in
-                    VStack(spacing: 0) {
-                        // Between rows, as the store rules them: none over a column's first.
-                        if index >= perScreen { Divider() }
-                        row(collection)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: DSSpacing.xl, alignment: .top), count: perScreen)
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                VStack(spacing: 0) {
+                    // Between rows, as the store rules them: none over a column's first.
+                    if index >= perScreen { Divider() }
+                    switch item {
+                    case .list(let collection): row(collection)
+                    case .allGenres: allGenresRow
+                    case .add(let action): addRow(action)
                     }
                 }
             }
-            .padding(.horizontal, DSSpacing.lg)
         }
+        .padding(.horizontal, DSSpacing.lg)
     }
 
     private func row(_ collection: CollectionSummary) -> some View {
         HomeCollectionButton(collection: collection, open: open) {
             HomeGenreRow(title: collection.title)
         }
+    }
+
+    private func addRow(_ action: HomeAddListCard) -> some View {
+        Button { action.perform() } label: {
+            HomeGenreRow(title: localized("加入清單"), symbolName: "plus")
+        }
+        .buttonStyle(ExploreTileButtonStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(localized("加入清單"))
+        .accessibilityIdentifier("homeSection.lists.add")
+    }
+
+    private var allGenresRow: some View {
+        Button { push?(.explore(.genres)) } label: {
+            HomeGenreRow(title: localized("所有類型"), symbolName: "line.3.horizontal")
+        }
+        .buttonStyle(ExploreTileButtonStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(localized("所有類型"))
+        .accessibilityIdentifier("home.genreList.allGenres")
     }
 }
 
@@ -55,6 +94,8 @@ struct HomeGenreList: View {
 /// large text size. In a loading row, the skeleton's grey where the symbol will be.
 struct HomeGenreRow: View {
     let title: String
+    /// Its own symbol, where the name is not a kind of book (所有類型).
+    var symbolName: String? = nil
 
     @Environment(\.redactionReasons) private var redactionReasons
     @ScaledMetric(relativeTo: .body) private var symbolWidth = DSLayout.homeGenreSymbolWidth
@@ -86,7 +127,7 @@ struct HomeGenreRow: View {
                 .fill(DSColor.neutralControlFill)
                 .aspectRatio(1, contentMode: .fit)
         } else {
-            Image(systemName: HomeCategoryFace(name: title).symbol)
+            Image(systemName: symbolName ?? HomeCategoryFace(name: title).symbol)
                 .font(DSFont.title3)
                 .foregroundStyle(DSColor.textPrimary)
         }

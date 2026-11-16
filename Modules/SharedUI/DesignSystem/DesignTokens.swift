@@ -821,9 +821,8 @@ enum DSLayout {
     static let homeCategoryArtGlyphShare: CGFloat = 0.62
     static let homeCategoryArtCenter = UnitPoint(x: 0.71, y: 0.48)
     static let homeCategoryArtRotation: Double = -10
-    /// A section of lists' form (maintainer, 2026-10-27: 「添加多個的預覽介面也要是橫向
-    /// scrollview，最後來個加號」): each card this wide, side by side, then ＋.
-    static let homeListCardTileWidth: CGFloat = 168
+    /// A section's form outlines the card it edits this thick (`HomeSelectionOutline`).
+    static let homeSelectionOutlineWidth: CGFloat = 2
     /// 編輯首頁's header (maintainer, 2026-10-27, after an Emby client's editor): the 首頁配置's
     /// round photo, with its camera badge this big at its bottom trailing edge.
     static let homeEditorPhotoSize: CGFloat = 72
@@ -1288,6 +1287,10 @@ enum DSAnimation {
     static let cardCarouselFadeOut = easeOut(duration: 0.15)
     /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
+    /// iOS 17's zoom out of a 拼貼卡片 (`ExploreZoomPushAnimator`), a critically damped spring
+    /// near the length of UIKit's own push; with Reduce Motion, the page fades in this long.
+    static let zoomPushDuration: TimeInterval = 0.45
+    static let zoomFadeDuration: TimeInterval = 0.25
     /// 編輯首頁 coming and going: every section on screen morphing into its card and back. A
     /// strong ease-in-out, for things that move on screen rather than enter it; the built-in
     /// one is too weak to read as one deliberate move across the whole page.

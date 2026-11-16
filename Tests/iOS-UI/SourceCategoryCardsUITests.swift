@@ -151,13 +151,16 @@ final class SourceCategoryCardsUITests: XCTestCase {
         XCTAssertTrue(card(app, "玄幻").waitForExistence(timeout: 20), app.debugDescription)
 
         try openSettings(app)
+        // The form edits the preview's picked card: its 資料來源 reads the source and the list.
+        let cardSource = app.buttons["homeSection.listCard.source"].firstMatch
+        XCTAssertTrue(cardSource.waitForExistence(timeout: 10), app.debugDescription)
+        let sourceValue = cardSource.value as? String ?? ""
+        XCTAssertTrue(sourceValue.contains("玄幻") && sourceValue.contains(Self.sourceName),
+                      "the card's 資料來源 reads its list and where it is from: \(sourceValue)")
+        // 加入清單, the preview's last card.
         let add = app.buttons["homeSection.lists.add"].firstMatch
-        for _ in 0..<4 where !(add.exists && add.isHittable) { app.swipeUp() }
-        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
-        let first = app.buttons["homeSection.listCard.0"].firstMatch
-        XCTAssertTrue(first.exists, app.debugDescription)
-        XCTAssertTrue(first.label.contains("玄幻") && first.label.contains(Self.sourceName),
-                      "a card reads its list and where it is from: \(first.label)")
+        XCTAssertTrue(add.waitForExistence(timeout: 20), app.debugDescription)
+        for _ in 0..<4 where !add.isHittable { app.swipeDown() }
         add.tap()
 
         let sources = app.buttons["homePicker.bookSources"].firstMatch
@@ -172,12 +175,13 @@ final class SourceCategoryCardsUITests: XCTestCase {
         attach(app, "source-category-all-lists")
         all.tap()
 
-        // The cards side by side, then 加入清單 (2026-10-27): every card is there with the first.
-        XCTAssertTrue(first.waitForExistence(timeout: 5), app.debugDescription)
-        let last = app.buttons["homeSection.listCard.3"].firstMatch
-        XCTAssertTrue(last.waitForExistence(timeout: 5), "全部清單 adds the other three categories once: \(app.debugDescription)")
-        XCTAssertTrue(last.label.contains("歷史"), last.label)
-        XCTAssertFalse(app.buttons["homeSection.listCard.4"].exists, "玄幻 is not added twice")
+        // Every card in the preview, then 加入清單: the other three categories, added once.
+        for title in ["玄幻", "都市", "仙俠", "歷史"] {
+            XCTAssertTrue(app.buttons["home.collection.sourceCategory.\(title)"].firstMatch.waitForExistence(timeout: 20),
+                          "\(title): \(app.debugDescription)")
+        }
+        let previewCards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.collection.sourceCategory."))
+        XCTAssertEqual(previewCards.count, 4, "玄幻 is not added twice: \(app.debugDescription)")
         attach(app, "source-category-form")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         for title in ["都市", "仙俠", "歷史"] {

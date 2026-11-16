@@ -40,13 +40,12 @@ struct HomeSectionCards: View {
     /// 呈現方式's gallery: the rows a layout read downwards shows (`HomeLayoutPreview`).
     var previewRows: Int?
     /// The colour of the band the row draws, the first cover's, which the first cover reports
-    /// here: 色帶's stack, or its row of large covers in 編輯首頁.
+    /// here: 色帶's stack.
     var bandCover: Binding<CoverTint.RGB?>?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.publicLibraryCoverFrames) private var coverFrames
-    @Environment(\.homeDrawsSideways) private var drawsSideways
     @ScaledMetric(relativeTo: .subheadline) private var scaledRowCoverWidth = DSLayout.homeCardCoverWidth
     @ScaledMetric(relativeTo: .subheadline) private var compactCoverWidth = DSLayout.homeCompactCoverWidth
     @ScaledMetric(relativeTo: .headline) private var readingCoverWidth = DSLayout.homeReadingCardCoverWidth
@@ -89,25 +88,20 @@ struct HomeSectionCards: View {
     var body: some View {
         Group {
             if let bandCover {
-                // 編輯首頁 draws 色帶's covers in a row too, on its band (`homeDrawsSideways`).
-                if style == .colorBand, !drawsSideways { fan(cover: bandCover) } else { band(cover: bandCover) }
+                fan(cover: bandCover)
             } else {
                 switch style {
                 case .readingCard: readingCards
                 case .compactReadingCard: compactReadingCards
                 case .row: rail(coverWidth: rowCoverWidth)
                 case .multiRow: multiRow
-                // 編輯首頁 draws every section sideways (`homeDrawsSideways`): the grid's covers in
-                // one row, the list's rows a page each.
-                case .coverGrid: if drawsSideways { rail(coverWidth: compactCoverWidth) } else { grid }
-                case .list: if drawsSideways { sidewaysList } else { list }
+                case .coverGrid: grid
+                case .list: list
                 case .featured: featured
                 case .largeRow: rail(coverWidth: largeCoverWidth)
                 case .colorBand:
-                    Group {
-                        if drawsSideways { band(cover: $ownBandCover) } else { fan(cover: $ownBandCover) }
-                    }
-                    .modifier(HomeBandGround(cover: ownBandCover, cutsCovers: !drawsSideways))
+                    fan(cover: $ownBandCover)
+                        .modifier(HomeBandGround(cover: ownBandCover))
                 case .heroGrid: heroGrid
                 case .heroCards: heroCards
                 // A layout of lists draws its cards (`HomeSectionLists`); a section of books drawn
@@ -176,24 +170,6 @@ struct HomeSectionCards: View {
                 // By position: a source can list one item twice.
                 ForEach(cards.indices, id: \.self) { index in
                     button(index, in: cards) { HomeBookCard(content: cards[index], coverWidth: coverWidth) }
-                }
-            }
-            .scrollTargetLayout()
-        }
-        .modifier(HomeSidewaysScroll())
-    }
-
-    // MARK: 色帶, in 編輯首頁
-
-    /// Covers alone in a row, larger than a row's; the first one's colour is the band's.
-    private func band(cover: Binding<CoverTint.RGB?>) -> some View {
-        let size = CGSize(width: DSLayout.homeBandCoverWidth,
-                          height: DSLayout.homeBandCoverWidth / DSLayout.discoverCoverAspectRatio)
-        return ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                ForEach(cards.indices, id: \.self) { index in
-                    button(index, in: cards) { HomeCoverCard(content: cards[index], size: size) }
-                        .environment(\.coverImageObserver, index == 0 ? Self.observer(reportingTo: cover) : nil)
                 }
             }
             .scrollTargetLayout()
@@ -434,24 +410,6 @@ struct HomeSectionCards: View {
         }
         .padding(.horizontal, DSSpacing.lg)
     }
-
-    /// 編輯首頁's: the rows side by side, a page each, the next one showing past the edge.
-    private var sidewaysList: some View {
-        let perScreen = horizontalSizeClass == .regular ? 2 : 1
-        return ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                ForEach(cards.indices, id: \.self) { index in
-                    button(index, in: cards) {
-                        HomeListRow(content: cards[index], coverWidth: listCoverWidth,
-                                    stacksVertically: dynamicTypeSize.isAccessibilitySize)
-                    }
-                    .homePageCardWidth(perScreen: perScreen, count: cards.count)
-                }
-            }
-            .scrollTargetLayout()
-        }
-        .modifier(HomeSidewaysScroll())
-    }
 }
 
 extension View {
@@ -523,12 +481,10 @@ struct HomeCoverCard: View {
 /// hue made light (`line(for:)`), reads at 4.5:1 on it (7:1 with 增加對比), so the header's white
 /// does too, as 精簡閱讀卡片's ground is. Decoration: VoiceOver reads nothing of it. Inactive, it
 /// draws nothing, and the row keeps its identity as the band comes and goes. 色帶's (maintainer,
-/// 2026-10-27, as Apple Books' Audiobooks We Love) covers run off its foot (`cutsCovers`).
+/// 2026-10-27, as Apple Books' Audiobooks We Love) covers run off its foot: no space under them.
 struct HomeBandGround: ViewModifier {
     let cover: CoverTint.RGB?
     var isActive = true
-    /// The covers stand on the band's foot, cut by it: no space under them.
-    var cutsCovers = false
 
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -545,7 +501,6 @@ struct HomeBandGround: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.top, isActive ? DSSpacing.xl : 0)
-            .padding(.bottom, isActive && !cutsCovers ? DSSpacing.xl : 0)
             .frame(maxWidth: isActive ? .infinity : nil, alignment: .leading)
             // Inside the safe area beside iPadOS 26's sidebar (FB-136); out under a folded
             // iPhone Duo's status bar side (FB-202).
@@ -971,21 +926,6 @@ struct HomeChartRow: View {
 
 #Preview("每種呈現方式") {
     let cards = (0..<8).map(HomeCardContent.placeholder)
-    ScrollView {
-        VStack(alignment: .leading, spacing: DSSpacing.xxl) {
-            ForEach(HomeLayoutStyle.allCases) { style in
-                VStack(alignment: .leading, spacing: DSSpacing.md) {
-                    Text(localized(style.titleKey)).font(DSFont.title2.weight(.bold)).padding(.horizontal, DSSpacing.lg)
-                    HomeSectionCards(layout: HomeSectionLayout(style: style), cards: cards,
-                                     rowID: style.rawValue, hasShowAll: true, open: { _, _ in })
-                }
-            }
-        }
-    }
-}
-
-#Preview("每種呈現方式，在編輯首頁") {
-    let cards = (0..<8).map(HomeCardContent.placeholder)
     let lists = PublicLibraryCollection.all.map(CollectionSummary.bundledGutenberg)
     ScrollView {
         VStack(alignment: .leading, spacing: DSSpacing.xxl) {
@@ -1002,7 +942,6 @@ struct HomeChartRow: View {
             }
         }
     }
-    .environment(\.homeDrawsSideways, true)
 }
 
 #if DEBUG

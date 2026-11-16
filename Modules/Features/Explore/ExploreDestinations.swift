@@ -16,16 +16,19 @@ private struct ExploreRouteDestinations: ViewModifier {
     let openBrowser: (BrowserEntry) -> Void
     @EnvironmentObject private var store: BookStore
     @ObservedObject private var sourceStore = BookSourceStore.shared
+    @Environment(\.exploreZoom) private var zoom
 
     func body(content: Content) -> some View {
         content
-            .navigationDestination(for: ExploreNavigationRoute.self, destination: destination)
+            .navigationDestination(for: ExploreNavigationRoute.self) { route in
+                destination(route).exploreZoomDestination(route, zoom: zoom)
+            }
             // 訂閱的最新文章's articles (5g): the RSS tab's own article page, which marks it read.
             .navigationDestination(for: SubscriptionArticleRoute.self) { route in
                 RSSArticleReaderView(articleID: route.articleID)
             }
             .navigationDestination(for: HomeListRoute.self) { route in
-                HomeListPage(route: route)
+                HomeListPage(route: route).exploreZoomDestination(route, zoom: zoom)
             }
             // A list's series (趨勢's): its page before the work's own.
             .navigationDestination(for: ListedSeriesRoute.self) { route in
@@ -306,9 +309,11 @@ enum ExplorePlace {
     /// A section of lists' 查看全部: the page of the one source its cards are all from, as 分類卡片's
     /// header opened its 來源配置's (2026-10-26). Cards from several sources have none, nor
     /// 精選書單's, whose lists no page lists alone.
+    /// A module's lists have none (maintainer, 2026-11-16: 「首頁的預設欄位我不要點擊標題就進模塊，
+    /// 多此一舉」): each card opens its own list, and the module's page is configuration.
     @MainActor
     static func listsPage(_ rows: [HomeModel.Row], connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
-        guard let row = rows.first, row.section.binding != .gutenbergLists,
+        guard let row = rows.first, row.section.binding != .gutenbergLists, row.source.type != .module,
               rows.allSatisfy({ $0.source == row.source }) else { return nil }
         return page(of: row.source, name: row.providerName, connections: connections)
     }

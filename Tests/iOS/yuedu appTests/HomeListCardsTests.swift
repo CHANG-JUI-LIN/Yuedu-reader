@@ -273,7 +273,7 @@ struct HomeListCardsTests {
     // MARK: Loading
 
     @Test("a row per card, a card of 最新 a row per library; the cards come together, in order, the empty and the failed left out")
-    func rowsAndCards() async {
+    func rowsAndCards() async throws {
         let module = module()
         let library = ListProvider("o", type: .opds) { $0 == .latest }
         let home = HomeModel(providers: { [module, library] }, waitForSources: {})
@@ -310,6 +310,14 @@ struct HomeListCardsTests {
         #expect(Set(module.loads.map(\.binding)) == [hot, empty, .latest, broken, new])
         #expect(module.loads.allSatisfy { $0.id == section.id && $0.layout == .collageCards })
         #expect(group?.title == localized("熱門精選"), "collages are named as the store names them, whatever their sources")
+
+        // The section's form draws every card, to be picked: the empty and the failed ones by
+        // their names over blank covers, each its own row's.
+        var kept = try #require(group)
+        kept.keepsEveryCard = true
+        let every = collections(kept.state) ?? []
+        #expect(every.map(\.id) == home.rows.map(\.id))
+        #expect(every[1].books.allSatisfy { $0.title.isEmpty }, "the empty list's card is blank")
     }
 
     @Test("the section fails only when every card failed")
@@ -334,9 +342,10 @@ struct HomeListCardsTests {
         await home.sync(with: HomePage(sections: [section]))
         for row in home.rows { home.load(row.id) }
         await until(home) { $0.allSatisfy(isSettled) }
-        // The home does not print a module's name (maintainer, 2026-11-14); its header still opens the module.
+        // The home does not print a module's name (maintainer, 2026-11-14), nor does its header
+        // open the module (2026-11-16): each card opens its own list.
         #expect(home.groups(in: nil).first?.title == localized("熱門精選"))
-        #expect(ExplorePlace.listsPage(home.rows) == .explore(.module(id: "m")))
+        #expect(ExplorePlace.listsPage(home.rows) == nil)
 
         section.layout = .bannerCards
         await home.sync(with: HomePage(sections: [section]))

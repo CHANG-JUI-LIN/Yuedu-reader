@@ -159,7 +159,6 @@ struct HomeRowView: View {
     var bookActions: HomeBookActions?
 
     @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.homeDrawsSideways) private var drawsSideways
     /// 色帶書架's colour, its first cover's, once that cover has drawn.
     @State private var bandCover: CoverTint.RGB?
 
@@ -173,8 +172,8 @@ struct HomeRowView: View {
                     header.homeRowControl()
                     stateContent
                 }
-                // 色帶書架's covers stand on the band's foot, but for 編輯首頁's row of them.
-                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand, cutsCovers: !drawsSideways))
+                // 色帶書架's covers stand on the band's foot.
+                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand))
             }
         }
         .task { load() }

@@ -226,20 +226,24 @@ private struct PublicLibraryCarouselHost: ViewModifier {
 
 private struct PublicLibraryDestinations: ViewModifier {
     @EnvironmentObject private var store: BookStore
+    @Environment(\.exploreZoom) private var zoom
 
     func body(content: Content) -> some View {
         content
             .navigationDestination(for: PublicLibraryRoute.self) { route in
-                switch route {
-                case .collection(let id):
-                    if let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) {
-                        PublicLibraryCollectionView(collection: collection)
+                Group {
+                    switch route {
+                    case .collection(let id):
+                        if let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) {
+                            PublicLibraryCollectionView(collection: collection)
+                        }
+                    case .aozoraWorks(let title, let works, let index):
+                        AozoraWorksView(index: index, works: works, title: title)
+                    case .aozoraCatalog(let mode, let index):
+                        AozoraCatalogView(index: index, mode: mode)
                     }
-                case .aozoraWorks(let title, let works, let index):
-                    AozoraWorksView(index: index, works: works, title: title)
-                case .aozoraCatalog(let mode, let index):
-                    AozoraCatalogView(index: index, mode: mode)
                 }
+                .exploreZoomDestination(route, zoom: zoom)
             }
             .navigationDestination(for: PublicLibraryReaderRoute.self) { route in
                 BookReaderView(bookId: route.bookID).environmentObject(store)

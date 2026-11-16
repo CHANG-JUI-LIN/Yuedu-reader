@@ -6,8 +6,7 @@ import SwiftUI
 // one name: a rule, the list's name with a chevron to all of it, and a row of small covers swiped
 // sideways. Covers alone, as the store draws them; VoiceOver reads each book all the same.
 
-/// A section's lists, a shelf each. 編輯首頁 swipes the shelves themselves sideways, a shelf a
-/// page (`homeDrawsSideways`), its covers cut by the page.
+/// A section's lists, a shelf each.
 struct HomeGroupedShelves: View {
     /// The lists, a shelf each: what a shelf's header opens.
     let collections: [CollectionSummary]
@@ -17,50 +16,47 @@ struct HomeGroupedShelves: View {
     let openList: (CollectionSummary) -> Void
     let open: (HomeCardContent, [HomeCardContent]) -> Void
 
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.homeDrawsSideways) private var drawsSideways
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.homeSelectedCollections) private var selected
+    @Environment(\.homeAddListCard) private var addList
 
     private var cover: CGSize {
         CGSize(width: DSLayout.homeGroupedCoverWidth, height: DSLayout.homeGroupedCoverWidth / DSLayout.discoverCoverAspectRatio)
     }
 
     var body: some View {
-        if drawsSideways {
-            let perScreen = horizontalSizeClass == .regular ? 2 : 1
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                    ForEach(collections) { collection in
-                        VStack(alignment: .leading, spacing: 0) {
-                            header(collection)
-                            // No scroll inside the page 編輯首頁 swipes: the covers the page has room for.
-                            HStack(spacing: DSSpacing.lg) { covers(of: collection) }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .clipped()
-                        }
-                        .homePageCardWidth(perScreen: perScreen, count: collections.count)
-                    }
-                }
-                .scrollTargetLayout()
-            }
-            .modifier(HomeSidewaysScroll())
-        } else {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(collections) { collection in
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(collections) { collection in
+                VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Divider()
-                            header(collection)
-                        }
-                        .padding(.horizontal, DSSpacing.lg)
-                        ScrollView(.horizontal) {
-                            LazyHStack(alignment: .top, spacing: DSSpacing.lg) { covers(of: collection) }
-                        }
-                        .modifier(HomeSidewaysScroll())
+                        Divider()
+                        header(collection)
                     }
-                    // Under each shelf but the last, whose room is the section's own.
-                    .padding(.bottom, collection.id == collections.last?.id ? 0 : DSSpacing.xxl)
+                    .padding(.horizontal, DSSpacing.lg)
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: DSSpacing.lg) { covers(of: collection) }
+                    }
+                    .modifier(HomeSidewaysScroll())
                 }
+                .overlay { if selected.contains(collection.id) { HomeSelectionOutline() } }
+                // Under each shelf but the last, whose room is the section's own.
+                .padding(.bottom, collection.id == collections.last?.id ? 0 : DSSpacing.xxl)
+            }
+            if let addList {
+                VStack(alignment: .leading, spacing: 0) {
+                    Divider()
+                    Button { addList.perform() } label: {
+                        Label(localized("加入清單"), systemImage: "plus")
+                            .font(DSFont.headline)
+                            .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .homeRowControl()
+                    .accessibilityIdentifier("homeSection.lists.add")
+                }
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.top, DSSpacing.xxl)
             }
         }
     }
