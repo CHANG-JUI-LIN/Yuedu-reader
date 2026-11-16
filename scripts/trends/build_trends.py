@@ -22,7 +22,7 @@ import threading
 import time
 import unicodedata
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote, urlencode
 from urllib.request import Request, urlopen
 
 USER_AGENT = 'Yuedu-trends/1 (+https://yuedureader.com/support)'
@@ -30,6 +30,21 @@ ATTRIBUTION = '資料：維基百科、維基數據（CC BY-SA 4.0）、Bangumi'
 LICENSE = 'https://creativecommons.org/licenses/by-sa/4.0/'
 SCHEMA_VERSION = 1
 LIST_LENGTH = 50
+# Wikipedias that keep non-free files, a novel's cover among them, asked for a work its own wiki
+# and Bangumi have no cover for (`Job.other_wiki_covers`): measured on the host 2026-11-16, they
+# give 日本 132 of its 325 coverless works and 華語 110 of 264.
+COVER_WIKIS = ('en.wikipedia.org', 'zh.wikipedia.org')
+# Wikipedias whose own page image comes before Bangumi's cover (`Job.covers`): English Wikipedia's
+# is the English edition its list's readers know, Bangumi's mostly a Chinese or Japanese one (Ender's
+# Game, Hyperion; 55 English works turned to a translation once every name was searched,
+# 2026-11-16; maintainer: English covers first). 華語 keeps Bangumi's first.
+OWN_COVER_FIRST = ('en.wikipedia.org',)
+# Another wiki's file that is not the novel's own cover, by the name Wikipedia gives a non-free file:
+# a manga's or a webtoon's volume (Magic_Repo_Man_manga_volume_1_cover.jpg for リボ払い, The_Beginning
+# _After_the_End_webtoon_volume_1_cover.jpg; maintainer, 2026-11-16: no cover rather than a comic's)
+# or a film's poster (God's_Puzzle_film_Theatrical_release_poster_(2008).jpg for 神之謎). 3 of the 157
+# taken on the host, 2026-11-16.
+NOT_A_NOVEL_COVER = re.compile(r'(?i)(?:^|[_\W])(?:manga|webtoon|film|poster)(?:$|[_\W])')
 # A series' entry carries its other books' covers for 作品詳情's fan, two a side (app, 2026-10-26).
 SERIES_COVERS = 4
 # A series' entry lists its books for the app's series page, which a card opens first
@@ -538,22 +553,60 @@ def same_author(ours, theirs):
     return any(mine in other or other in mine for mine in ours for other in theirs)
 
 
+# A first volume's mark after a series' name, as Bangumi keeps a series' books one subject each
+# with no subject for the whole (鬼吹灯Ⅰ, 鬼吹燈Ⅱ, searched 2026-11-16), read after NFKC (Ⅰ is I,
+# （１） is (1)). A second volume's mark is not one: II, 2 and 下 stay names of their own.
+_FIRST_VOLUME = re.compile(r'\s*(?:[(\[]?(?:(?<!\d)1|(?<![A-Za-z])I|一|上)[)\]]?|第[1一][巻卷册冊]|上[巻卷册冊]'
+                           r'|(?i:vol)\.?\s*1)\s*$')
+
+
+def first_volume_base(name):
+    """`鬼吹灯Ⅰ` → `鬼吹灯`: a first volume's name without its mark; None for any other name."""
+    folded = unicodedata.normalize('NFKC', name or '').strip()
+    base = _FIRST_VOLUME.sub('', folded)
+    return base if base and base != folded else None
+
+
+def bangumi_titled(subject, titles):
+    """Whether a Bangumi subject's name or Chinese name is one of `titles`, as written."""
+    wanted = {normalize_title(title) for title in titles if title}
+    return not wanted.isdisjoint({normalize_title(subject.get('name')), normalize_title(subject.get('name_cn'))})
+
+
 def bangumi_match(subjects, titles, authors):
     """The novel among a Bangumi search's `subjects` that is this work: its name or Chinese
-    name equal to one of `titles`, and, where both sides name an author, the same author."""
-    wanted = {normalize_title(title) for title in titles if title}
+    name equal to one of `titles`, else its first volume's (`first_volume_base`), and, where
+    both sides name an author, the same author."""
+    wanted = {normalize_title(title) for title in titles if title} - {''}
     by_author = {normalize_title(author) for author in authors if author} - {''}
-    for subject in subjects:
-        if subject.get('platform') != '小说':
-            continue
-        names = {normalize_title(subject.get('name')), normalize_title(subject.get('name_cn'))}
-        if wanted.isdisjoint(names):
-            continue
+    novels = [subject for subject in subjects if subject.get('platform') == '小说']
+
+    def by_them(subject):
         theirs = {normalize_title(author) for author in bangumi_authors(subject)} - {''}
-        if by_author and theirs and not same_author(by_author, theirs):
-            continue
-        return subject
+        return not (by_author and theirs and not same_author(by_author, theirs))
+    for subject in novels:
+        if bangumi_titled(subject, titles) and by_them(subject):
+            return subject
+    for subject in novels:
+        bases = {normalize_title(first_volume_base(subject.get(key))) for key in ('name', 'name_cn')
+                 if first_volume_base(subject.get(key))}
+        if not wanted.isdisjoint(bases) and by_them(subject):
+            return subject
     return None
+
+
+# The languages Bangumi writes a person's name in: Chinese in either script, Japanese, and the
+# Latin-script name of a translated author (Gaston Leroux, agatha christie, searched 2026-11-16).
+# Only these: a work's author compared with every Wikidata label of theirs would let a short
+# label in some script stand inside another person's name (`same_author` takes containment).
+BANGUMI_NAME_LANGUAGES = ('zh', 'zh-hans', 'zh-hant', 'zh-cn', 'zh-tw', 'zh-hk', 'ja', 'en', 'mul')
+
+
+def matching_authors(detail):
+    """A work's authors as Bangumi may write them (`author_names`): each region's names and the
+    people's labels in `BANGUMI_NAME_LANGUAGES`."""
+    return list(dict.fromkeys([author for values in detail.get('authors', {}).values() for author in values]
+                              + detail.get('known', [])))
 
 
 def list_document(region, name, works, generated):
@@ -864,20 +917,33 @@ def page_images(client, wiki, titles):
     taller than it is wide; a wider image is a photo, a still or a logo, and an SVG a logo or a
     diagram (measured on the host 2026-10-22: 英語 117 of 120 page images stand, 華語 35 of 46,
     the rest a café, a TV still, an open old book). The address is kept without Wikipedia's
-    tracking query."""
+    tracking query.
+
+    Each title asked follows its own normalization and redirect to its page, so two titles asked
+    together that reach one page both get its image: The Long Game (novel) redirects to Heated
+    Rivalry (novel), and keyed by page the image went to whichever came last (Heated Rivalry lost
+    its cover, host 2026-11-16). A redirect to a section (`tofragment`) is part of another work's
+    article — that sequel's — so that article's image is not its cover."""
     found = {}
     for start in range(0, len(titles), 50):
+        batch = titles[start:start + 50]
         answer = mediawiki(client, wiki, action='query', prop='pageimages', piprop='thumbnail|name', pithumbsize='400',
-                           pilimit='50', pilicense='any', redirects='1', titles='|'.join(titles[start:start + 50]))['query']
-        asked = {}
-        for key in ('normalized', 'redirects'):
-            for item in answer.get(key, []):
-                asked[item['to']] = asked.get(item['from'], item['from'])
+                           pilimit='50', pilicense='any', redirects='1', titles='|'.join(batch))['query']
+        hops = {item['from']: item for key in ('normalized', 'redirects') for item in answer.get(key, [])}
+        images = {}
         for page in answer.get('pages', []):
             thumbnail = page.get('thumbnail') or {}
             if thumbnail.get('source') and thumbnail.get('height', 0) > thumbnail.get('width', 0) \
                     and not page.get('pageimage', '').lower().endswith('.svg'):
-                found[asked.get(page['title'], page['title'])] = thumbnail['source'].split('?')[0]
+                images[page['title']] = thumbnail['source'].split('?')[0]
+        for title in batch:
+            page, section, seen = title, False, {title}
+            while page in hops and hops[page]['to'] not in seen:
+                section = section or bool(hops[page].get('tofragment'))
+                page = hops[page]['to']
+                seen.add(page)
+            if page in images and not section:
+                found[title] = images[page]
     return found
 
 
@@ -1017,6 +1083,12 @@ class Store:
             # A store from before covers (2026-10-22): the works matched on Bangumi are asked again, for it.
             self.db.executescript('alter table finished add column cover text; '
                                   'delete from finished where subject is not null;')
+        if not self.meta('finished:every-name'):
+            # A store from before a work was asked by every pool's name, its other authors' names
+            # and its first volume's (2026-11-16): the works Bangumi was not found to have are
+            # asked again.
+            self.db.execute('delete from finished where subject is null')
+            self.set_meta('finished:every-name', '2026-11-16')
 
     def meta(self, key):
         row = self.db.execute('select value from meta where key = ?', (key,)).fetchone()
@@ -1068,6 +1140,14 @@ class Store:
         self.db.execute('delete from views where day < ?', (format_day(before),))
         self.db.commit()
 
+    def names(self, qid):
+        """Every name a work goes by in the pools: each wiki's article, its zh-cn form first."""
+        names = []
+        for title, variants in self.db.execute('select title, variants from pool where qid = ? order by project', (qid,)):
+            simplified = json.loads(variants or '{}').get('zh-cn')
+            names += [strip_disambiguation(name) for name in (simplified, title) if name]
+        return list(dict.fromkeys(names))
+
     def finished(self, qid):
         return self.db.execute('select subject, ended, checked from finished where qid = ?', (qid,)).fetchone()
 
@@ -1108,6 +1188,7 @@ class Job:
     asked_classics: dict = field(default_factory=dict)
     leads: dict = field(default_factory=dict)
     images: dict = field(default_factory=dict)
+    sitelinks: dict = field(default_factory=dict)
 
     @property
     def now(self):
@@ -1126,8 +1207,8 @@ class Job:
     def covers(self, pool, articles):
         """`{qid: cover}` for `articles` (`{qid: article title or None}`): the work's own book
         cover on Bangumi where it was matched there and has one (華語, 日本), else its article's
-        page image where the pool's are covers. A page image is asked once a run: 華語's two
-        scripts share it."""
+        page image where the pool's are covers; on an `OWN_COVER_FIRST` wiki (英語) the page image
+        first, then Bangumi's. A page image is asked once a run: 華語's two scripts share it."""
         wiki = pool.wiki
         asked = [title for title in dict.fromkeys(articles.values())
                  if title and pool.article_covers and (wiki, title) not in self.images]
@@ -1135,9 +1216,39 @@ class Job:
         self.images.update({(wiki, title): found.get(title) for title in asked})
         covers = {}
         for qid, title in articles.items():
-            cover = self.store.bangumi_cover(qid) or self.images.get((wiki, title))
+            own, bangumi = self.images.get((wiki, title)), self.store.bangumi_cover(qid)
+            cover = (own or bangumi) if wiki in OWN_COVER_FIRST else (bangumi or own)
             if cover:
                 covers[qid] = cover
+        covers.update(self.other_wiki_covers(wiki, [qid for qid in articles if qid not in covers]))
+        return covers
+
+    def other_wiki_covers(self, own, qids):
+        """`{qid: cover}` for works with none of their own wiki's or Bangumi's: their article's
+        page image on another of `COVER_WIKIS`, the same work by its Wikidata item. Only a file
+        that Wikipedia keeps itself: those are its non-free files, which on a novel's article are
+        the cover by policy; Commons gives the author's photo, an illustration or a monument
+        (Darren Shan (2016), MarsTransitionV, measured 2026-11-16). A cover can be a translation's
+        (Silence_novel.jpg for 沈黙; maintainer, 2026-11-16: better than none)."""
+        unknown = [qid for qid in dict.fromkeys(qids) if qid not in self.sitelinks]
+        sites = '|'.join(wiki.replace('.wikipedia.org', 'wiki') for wiki in COVER_WIKIS)
+        found = entities(self.client, unknown, props='sitelinks', site=sites) if unknown else {}
+        for qid in unknown:
+            self.sitelinks[qid] = {site: link['title'] for site, link in found.get(qid, {}).get('sitelinks', {}).items()}
+        covers = {}
+        for wiki in COVER_WIKIS:
+            if wiki == own:
+                continue
+            key = wiki.replace('.wikipedia.org', 'wiki')
+            titles = {qid: self.sitelinks[qid][key] for qid in qids if qid not in covers and key in self.sitelinks[qid]}
+            asked = [title for title in dict.fromkeys(titles.values()) if (wiki, title) not in self.images]
+            found_images = page_images(self.client, wiki, asked) if asked else {}
+            self.images.update({(wiki, title): found_images.get(title) for title in asked})
+            for qid, title in titles.items():
+                image = self.images.get((wiki, title))
+                if image and '/wikipedia/commons/' not in image \
+                        and not NOT_A_NOVEL_COVER.search(unquote(image.rsplit('/', 1)[-1])):
+                    covers[qid] = image
         return covers
 
     def refresh_pool(self, name, pool):
@@ -1201,13 +1312,19 @@ class Job:
             if known and (known[1] or (known[2][:10] == self.today.isoformat() if every is None
                                        else datetime.fromisoformat(known[2]) > datetime.now(timezone.utc) - every)):
                 continue
-            names = titles_for(title, work)
+            # One answer stands for the work in every pool (`finished` is by qid), so it is asked by
+            # every name the pools know it by: 果然我的青春戀愛喜劇搞錯了 asked alone (zh's youth
+            # pool) missed やはり俺の青春ラブコメはまちがっている。, and ja's pools then kept that
+            # miss for a week (39 of 日本's 325 coverless works, measured 2026-11-16).
+            names = list(dict.fromkeys(titles_for(title, work) + self.store.names(qid)))
             subject = None
-            for keyword in dict.fromkeys(names):
+            for keyword in names:
                 subject = bangumi_match(bangumi_search(self.client, keyword), names, details.get(qid, {}).get('authors', []))
                 if subject:
                     break
-            self.store.set_finished(qid, subject['id'] if subject else None, bool(subject and bangumi_ended(subject)), self.now,
+            # A first volume (鬼吹灯Ⅰ) gives the work its cover but cannot tell the whole has ended.
+            ended = bool(subject and bangumi_titled(subject, names) and bangumi_ended(subject))
+            self.store.set_finished(qid, subject['id'] if subject else None, ended, self.now,
                                     bangumi_cover(subject) if subject else None)
 
     def bangumi_series(self, qids):
@@ -1403,6 +1520,13 @@ def author_names(job, found, regions, wiki, articles):
     for detail in details.values():
         detail['authors'] = {name: list(dict.fromkeys(converted[name][author] for author in values))
                              for name, values in detail['authors'].items()}
+    # For Bangumi alone (`matching_authors`): a region's own names miss the ones Bangumi wrote in
+    # another script or language (劉慈欣 for 刘慈欣, 阿加莎·克里斯蒂 for Agatha Christie).
+    for qid, authors in author_ids.items():
+        details[qid]['known'] = list(dict.fromkeys(
+            value['value'] for author in authors
+            for language, value in people.get(author, {}).get('labels', {}).items()
+            if language in BANGUMI_NAME_LANGUAGES and value.get('value')))
     return details
 
 
@@ -1447,7 +1571,7 @@ def build_classics(job, name, region):
         # Asked of Bangumi too, for their covers: ja.wikipedia keeps none, and Bangumi has 39 of
         # 日本's 50 classics and 9 more of 華語's (measured on the host, 2026-10-22).
         job.refresh_finished({qid: {'qid': qid} for qid in order if qid in found},
-                             {qid: {'authors': [a for values in detail['authors'].values() for a in values]}
+                             {qid: {'authors': matching_authors(detail)}
                               for qid, detail in details.items()},
                              lambda qid, _: classic_names(articles.get(qid), variants, labelled.get(qid)))
     covers = job.covers(POOLS[region.pool], articles)
@@ -1536,7 +1660,7 @@ def build_genre(job, language, genre, names):
         def titles_for(title, work):
             base = strip_disambiguation(title)
             return [strip_disambiguation(work['variants'].get('zh-cn', base)), base]
-        job.refresh_finished(shown_works, {qid: {'authors': [a for values in detail['authors'].values() for a in values]}
+        job.refresh_finished(shown_works, {qid: {'authors': matching_authors(detail)}
                                            for qid, detail in details.items()}, titles_for, every=GENRE_RECHECK)
         finished = {}
         for title, work in shown_works.items():
@@ -1703,7 +1827,7 @@ def run(job, output, regions):
                 def titles_for(title, work):
                     base = strip_disambiguation(title)
                     return [strip_disambiguation(work['variants'].get('zh-cn', base)), base]
-                job.refresh_finished(works, {qid: {'authors': [a for values in detail['authors'].values() for a in values]}
+                job.refresh_finished(works, {qid: {'authors': matching_authors(detail)}
                                              for qid, detail in details.items()}, titles_for)
                 finished = {work['qid']: bool((job.store.finished(work['qid']) or (None, 0))[1]) for work in works.values()}
             if completes and 'narou' in pool.finished_by:

@@ -19,6 +19,13 @@ def subjects(name):
     return json.loads((FIXTURES / f'bangumi-{name}.json').read_text(encoding='utf-8'))['data']
 
 
+def novel(subject, name, author, name_cn='', platform='小说', cover=None, ended=False):
+    """A Bangumi search's subject, as much of one as matching reads."""
+    infobox = ([{'key': '作者', 'value': author}] if author else []) + ([{'key': '结束', 'value': '2010'}] if ended else [])
+    return {'id': subject, 'name': name, 'name_cn': name_cn, 'platform': platform, 'infobox': infobox,
+            'images': {'common': cover or ''}}
+
+
 class PureTests(unittest.TestCase):
     def test_a_story_is_kept_and_its_adaptation_is_not(self):
         self.assertTrue(builder.keeps_work(['Q1667921', 'Q277759']))   # 凡人修仙传: novel series
@@ -78,6 +85,73 @@ class BangumiTests(unittest.TestCase):
     def test_another_author_is_another_work(self):
         self.assertIsNone(builder.bangumi_match(subjects('fanren'), ['凡人修仙传'], ['南派三叔']))
         self.assertIsNone(builder.bangumi_match(subjects('fanren'), ['诡秘之主'], []))
+        # Bangumi 436165 and 593159, searched 2026-11-16: same titles, other books.
+        self.assertIsNone(builder.bangumi_match([novel(436165, '破戒', '幺点')], ['破戒'], ['島崎藤村', 'Tōson Shimazaki']))
+        self.assertIsNone(builder.bangumi_match([novel(593159, '吾輩は猫である', 'ちょきんぎょ')], ['吾輩は猫である'],
+                                                ['夏目漱石', 'Natsume Sōseki']))
+
+    def test_a_series_kept_only_as_its_volumes_is_its_first(self):
+        # 鬼吹灯 on Bangumi, searched 2026-11-16: no subject for the whole, a novel each volume.
+        found = [novel(215256, '鬼吹灯 漫画版', None, platform='漫画'), novel(580251, '鬼吹灯之牧野诡事', '天下霸唱'),
+                 novel(48056, '鬼吹燈Ⅱ', '天下霸唱', name_cn='鬼吹灯Ⅱ'), novel(23445, '鬼吹灯Ⅰ', None)]
+        self.assertEqual(builder.bangumi_match(found, ['鬼吹灯', '鬼吹燈'], ['天下霸唱'])['id'], 23445)
+        self.assertFalse(builder.bangumi_titled(found[3], ['鬼吹灯']), 'its own name is the volume')
+        self.assertIsNone(builder.bangumi_match(found[:3], ['鬼吹灯'], ['天下霸唱']), 'a spin-off and a second volume are not it')
+
+    def test_a_first_volumes_mark_and_nothing_else_comes_off(self):
+        for name, base in [('鬼吹灯Ⅰ', '鬼吹灯'), ('剣客商売 (1)', '剣客商売'), ('剣客商売（１）', '剣客商売'),
+                           ('紅樓夢 上', '紅樓夢'), ('三体 第一卷', '三体'), ('Dune Vol. 1', 'Dune')]:
+            self.assertEqual(builder.first_volume_base(name), base, name)
+        for name in ['鬼吹燈Ⅱ', '鬼吹灯之牧野诡事', 'Room 101', 'Shogun II', 'Pi', '1984', '告白']:
+            self.assertIsNone(builder.first_volume_base(name), name)
+
+    def test_an_author_bangumi_writes_in_another_script_or_language_is_the_same(self):
+        # Bangumi 531581 and 9585, searched 2026-11-16.
+        leroux = novel(531581, 'Le Mystère de la chambre jaune', 'Gaston Leroux', name_cn='黄色房间的秘密')
+        self.assertIsNone(builder.bangumi_match([leroux], ['黄色房间的秘密'], ['加斯東·勒魯', '加斯东·勒鲁']))
+        detail = {'authors': {'華語（繁）': ['加斯東·勒魯'], '華語（簡）': ['加斯东·勒鲁']}, 'known': ['Gaston Leroux', '加斯東·勒魯']}
+        self.assertEqual(builder.matching_authors(detail), ['加斯東·勒魯', '加斯东·勒鲁', 'Gaston Leroux'])
+        self.assertEqual(builder.bangumi_match([leroux], ['黄色房间的秘密'], builder.matching_authors(detail))['id'], 531581)
+
+    def test_the_known_names_are_the_peoples_labels_in_bangumis_languages(self):
+        class PeopleClient:
+            def json(self, url, params=None, body=None, headers=None):
+                return {'entities': {'Q-liu': {'labels': {
+                    'ja': {'value': '劉慈欣'}, 'zh-hans': {'value': '刘慈欣'}, 'en': {'value': 'Liu Cixin'},
+                    'ar': {'value': 'ليو'}, 'ko': {'value': '류츠신'}}}}}
+        job = builder.Job(PeopleClient(), builder.Store(':memory:'), date(2026, 11, 16))
+        found = {'Q-three': {'claims': {'P50': [{'mainsnak': {'datavalue': {'value': {'id': 'Q-liu'}}}}]}}}
+        details = builder.author_names(job, found, {'ja': builder.REGIONS['ja']}, 'ja.wikipedia.org', {})
+        self.assertEqual(details['Q-three']['authors'], {'ja': ['劉慈欣']})
+        self.assertEqual(details['Q-three']['known'], ['劉慈欣', '刘慈欣', 'Liu Cixin'])
+
+    def test_a_work_is_asked_by_every_pools_name_and_a_first_volume_tells_no_ending(self):
+        class BangumiClient:
+            def __init__(self):
+                self.keywords = []
+
+            def json(self, url, params=None, body=None, headers=None):
+                self.keywords.append(body['keyword'])
+                if body['keyword'] == 'やはり俺の青春ラブコメはまちがっている。':
+                    return {'data': [novel(19441, 'やはり俺の青春ラブコメはまちがっている。', '渡航', cover='oregairu.jpg', ended=True)]}
+                if body['keyword'] == '鬼吹灯':
+                    return {'data': [novel(23445, '鬼吹灯Ⅰ', None, cover='guichuideng.jpg', ended=True)]}
+                return {'data': []}
+        client = BangumiClient()
+        store = builder.Store(':memory:')
+        store.replace_pool('zh.wikipedia#youth', {'果然我的青春戀愛喜劇搞錯了。': {
+            'qid': 'Q217982', 'variants': {'zh-cn': '果然我的青春恋爱喜剧搞错了。'}}}, 'now')
+        store.replace_pool('ja.wikipedia#youth', {'やはり俺の青春ラブコメはまちがっている。': {'qid': 'Q217982', 'variants': {}}}, 'now')
+        job = builder.Job(client, store, date(2026, 11, 16))
+        job.refresh_finished({'果然我的青春戀愛喜劇搞錯了。': {'qid': 'Q217982', 'variants': {}},
+                              '鬼吹灯': {'qid': 'Q5557059', 'variants': {}}},
+                             {'Q217982': {'authors': ['渡航']}}, lambda title, work: [title])
+        self.assertEqual(client.keywords, ['果然我的青春戀愛喜劇搞錯了。', 'やはり俺の青春ラブコメはまちがっている。', '鬼吹灯'],
+                         "its own pool's name first, then the other pools' until one is found")
+        self.assertEqual(store.finished('Q217982')[:2], (19441, 1))
+        self.assertEqual(store.bangumi_cover('Q217982'), 'oregairu.jpg')
+        self.assertEqual(store.finished('Q5557059')[:2], (23445, 0), "the first volume's ending is not the series'")
+        self.assertEqual(store.bangumi_cover('Q5557059'), 'guichuideng.jpg')
 
 
 class NarouClient:
@@ -643,22 +717,41 @@ class StoreMigrationTests(unittest.TestCase):
 class ImagesClient:
     """Wikipedia's pageimages answer, as it gives one: titles normalized and redirected, a
     logo kept as SVG, every thumbnail with its tracking query."""
-    def __init__(self):
+    def __init__(self, sitelinks=None):
         self.asked = []
+        self.items_asked = []
+        # `{qid: {site: title}}`: Wikidata's article links, for `Job.other_wiki_covers`.
+        self.sitelinks = sitelinks or {}
 
     def json(self, url, params=None, body=None, headers=None):
+        if params.get('action') == 'wbgetentities':
+            self.items_asked.append((params['ids'].split('|'), params.get('sitefilter')))
+            return {'entities': {qid: {'sitelinks': {site: {'title': title} for site, title in self.sitelinks.get(qid, {}).items()}}
+                                 for qid in params['ids'].split('|')}}
         self.asked.append(params['titles'].split('|'))
-        def thumbnail(name, width=262, height=400):
+        def thumbnail(name, width=262, height=400, place='en'):
             return {'pageimage': name, 'thumbnail': {
-                'source': f'https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/{name}/400px-{name}?utm_source=x',
+                'source': f'https://upload.wikimedia.org/wikipedia/{place}/thumb/a/ab/{name}/400px-{name}?utm_source=x',
                 'width': width, 'height': height}}
         pages = {'Mistborn: The Final Empire': thumbnail('Mistborn.jpg'),
                  'Good Omens': thumbnail('Logo.svg'),
                  'Gulliver\'s Travels': thumbnail('Gullivers_travels.jpg', 400, 308),
-                 'Gone Missing': {}}
+                 'Gone Missing': {},
+                 'Silence (Endō novel)': thumbnail('Silence_novel.jpg'),
+                 'Darren Shan': thumbnail('Darren_Shan_(2016).jpg', place='commons'),
+                 'Heated Rivalry (novel)': thumbnail('Heated_Rivalry_by_Rachel_Reid_(2019).png'),
+                 'Magic Repo Man': thumbnail('Magic_Repo_Man_manga_volume_1_cover.jpg'),
+                 "God's Puzzle": thumbnail("God's_Puzzle_film_Theatrical_release_poster_(2008).jpg"),
+                 'Ascendance of a Bookworm': thumbnail('Ascendance_of_a_Bookworm_light_novel_volume_1_cover.jpg')}
+        redirects = [{'from': 'Mistborn', 'to': 'Mistborn: The Final Empire'},
+                     {'from': 'Heated Rivalry (book)', 'to': 'Heated Rivalry (novel)'},
+                     {'from': 'The Long Game (novel)', 'to': 'Heated Rivalry (novel)', 'tofragment': 'Sequels'}]
+        asked = set(params['titles'].split('|'))
+        asked |= {'Mistborn: The Final Empire'} if 'mistborn' in params['titles'] else set()
+        asked |= {item['to'] for item in redirects if item['from'] in asked}
         return {'query': {'normalized': [{'from': 'mistborn', 'to': 'Mistborn'}],
-                          'redirects': [{'from': 'Mistborn', 'to': 'Mistborn: The Final Empire'}],
-                          'pages': [{'title': title, **page} for title, page in pages.items()]}}
+                          'redirects': redirects,
+                          'pages': [{'title': title, **page} for title, page in pages.items() if title in asked]}}
 
 
 class CoverTests(unittest.TestCase):
@@ -666,6 +759,15 @@ class CoverTests(unittest.TestCase):
         found = builder.page_images(ImagesClient(), 'en.wikipedia.org', ['mistborn', 'Good Omens', "Gulliver's Travels", 'Gone Missing'])
         self.assertEqual(found, {'mistborn': 'https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/Mistborn.jpg/400px-Mistborn.jpg'},
                          'an SVG is a logo and a wide image a photo, not a cover')
+
+    def test_a_page_reached_by_two_titles_asked_gives_each_its_image_but_a_section_redirect_none(self):
+        # The Long Game (novel) redirects to Heated Rivalry (novel)#Sequels: asked in one request,
+        # the image went to The Long Game alone and Heated Rivalry lost its cover (host, 2026-11-16).
+        found = builder.page_images(ImagesClient(), 'en.wikipedia.org',
+                                    ['The Long Game (novel)', 'Heated Rivalry (novel)', 'Heated Rivalry (book)'])
+        cover = 'https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/Heated_Rivalry_by_Rachel_Reid_(2019).png/400px-Heated_Rivalry_by_Rachel_Reid_(2019).png'
+        self.assertEqual(found, {'Heated Rivalry (novel)': cover, 'Heated Rivalry (book)': cover},
+                         "a section of another book's article shows that book's cover, not its own")
 
     def test_fifty_titles_a_request(self):
         client = ImagesClient()
@@ -679,11 +781,22 @@ class CoverTests(unittest.TestCase):
         store.set_finished('Q-coverless', 1, False, 'now', None)
         job = builder.Job(client, store, date(2026, 10, 22))
         articles = {'Q-tasty': 'mistborn', 'Q-coverless': 'mistborn', 'Q-omens': 'Good Omens', 'Q-unlinked': None}
-        covers = job.covers(builder.POOLS['en'], articles)
+        covers = job.covers(builder.POOLS['zh'], articles)
         self.assertEqual(covers, {'Q-tasty': 'https://lain.bgm.tv/r/400/pic/cover/l/a7/52/260829_9oBCC.jpg',
                                   'Q-coverless': 'https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/Mistborn.jpg/400px-Mistborn.jpg'})
-        self.assertEqual(job.covers(builder.POOLS['en'], articles), covers)
+        self.assertEqual(job.covers(builder.POOLS['zh'], articles), covers)
         self.assertEqual(client.asked, [['mistborn', 'Good Omens']], "華語's two scripts ask once")
+
+    def test_english_takes_its_own_articles_cover_before_bangumis_translation(self):
+        client = ImagesClient()
+        store = builder.Store(':memory:')
+        store.set_finished('Q-tasty', 260829, True, 'now', 'https://lain.bgm.tv/r/400/pic/cover/l/a7/52/260829_9oBCC.jpg')
+        store.set_finished('Q-omens', 2, False, 'now', 'https://lain.bgm.tv/r/400/pic/cover/l/omens.jpg')
+        job = builder.Job(client, store, date(2026, 10, 22))
+        covers = job.covers(builder.POOLS['en'], {'Q-tasty': 'mistborn', 'Q-omens': 'Good Omens'})
+        self.assertEqual(covers, {'Q-tasty': 'https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/Mistborn.jpg/400px-Mistborn.jpg',
+                                  'Q-omens': 'https://lain.bgm.tv/r/400/pic/cover/l/omens.jpg'},
+                         "Bangumi's cover where the article's image is no cover (a logo)")
 
     def test_japanese_page_images_are_not_asked_and_bangumis_cover_still_comes(self):
         client = ImagesClient()
@@ -693,6 +806,38 @@ class CoverTests(unittest.TestCase):
         self.assertEqual(job.covers(builder.POOLS['ja'], {'Q-slime': '転生したらスライムだった件', 'Q-other': 'mistborn'}),
                          {'Q-slime': 'https://lain.bgm.tv/r/400/pic/cover/l/slime.jpg'})
         self.assertEqual(client.asked, [], 'ja.wikipedia keeps no cover')
+
+    def test_a_work_without_a_cover_takes_its_english_articles_own_file_not_a_commons_photo(self):
+        client = ImagesClient({'Q-silence': {'enwiki': 'Silence (Endō novel)'},
+                               'Q-shan': {'enwiki': 'Darren Shan'},
+                               'Q-slime': {'enwiki': 'Mistborn'}})
+        store = builder.Store(':memory:')
+        store.set_finished('Q-slime', 1, True, 'now', 'https://lain.bgm.tv/r/400/pic/cover/l/slime.jpg')
+        job = builder.Job(client, store, date(2026, 11, 16))
+        articles = {'Q-silence': '沈黙', 'Q-shan': 'ダレン・シャン', 'Q-slime': '転生したらスライムだった件', 'Q-none': 'なし'}
+        covers = job.covers(builder.POOLS['ja'], articles)
+        self.assertEqual(covers, {
+            'Q-silence': 'https://upload.wikimedia.org/wikipedia/en/thumb/a/ab/Silence_novel.jpg/400px-Silence_novel.jpg',
+            'Q-slime': 'https://lain.bgm.tv/r/400/pic/cover/l/slime.jpg'},
+            "Wikipedia's own file is the cover; a Commons image is the author's photo")
+        self.assertEqual(client.items_asked, [(['Q-none', 'Q-shan', 'Q-silence'], 'enwiki|zhwiki')],
+                         "only the works without a cover, and only the links asked for")
+        job.covers(builder.POOLS['ja'], articles)
+        self.assertEqual(len(client.items_asked), 1, 'each work asked once a run')
+        self.assertEqual(client.asked, [['Silence (Endō novel)', 'Darren Shan']], 'each article asked once a run')
+
+    def test_another_wikis_manga_volume_or_film_poster_is_no_novels_cover(self):
+        client = ImagesClient({'Q-repo': {'enwiki': 'Magic Repo Man'}, 'Q-puzzle': {'enwiki': "God's Puzzle"},
+                               'Q-bookworm': {'enwiki': 'Ascendance of a Bookworm'}})
+        job = builder.Job(client, builder.Store(':memory:'), date(2026, 11, 16))
+        covers = job.covers(builder.POOLS['ja'], {'Q-repo': 'リボ払い', 'Q-puzzle': '神様のパズル', 'Q-bookworm': '本好きの下剋上'})
+        self.assertEqual(list(covers), ['Q-bookworm'], "a light novel's volume is its cover; a manga's or a film's is not")
+
+    def test_an_english_work_is_not_asked_of_english_wikipedia_twice(self):
+        client = ImagesClient({'Q-omens': {'enwiki': 'Good Omens'}})
+        job = builder.Job(client, builder.Store(':memory:'), date(2026, 11, 16))
+        self.assertEqual(job.covers(builder.POOLS['en'], {'Q-omens': 'Good Omens'}), {})
+        self.assertEqual(client.asked, [['Good Omens']], 'its own wiki is not another')
 
     def test_a_bangumi_subject_without_a_cover_has_none(self):
         self.assertEqual(builder.bangumi_cover({'images': {'common': 'https://lain.bgm.tv/r/400/pic/cover/l/x.jpg'}}),
@@ -732,7 +877,21 @@ class CoverTests(unittest.TestCase):
             old.close()
             store = builder.Store(path)
             self.assertIsNone(store.finished('Q-matched'), 'asked again, for its cover')
-            self.assertEqual(store.finished('Q-unmatched'), (None, 0, '2026-10-22'))
+            self.assertIsNone(store.finished('Q-unmatched'), 'asked again, by every name')
+
+    def test_a_store_from_before_every_name_asks_its_unmatched_works_again_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'trends.sqlite'
+            store = builder.Store(path)
+            self.assertEqual(store.meta('finished:every-name'), '2026-11-16')
+            store.db.execute("delete from meta where key = 'finished:every-name'")
+            store.set_finished('Q-matched', 260829, True, '2026-11-15', 'cover.jpg')
+            store.set_finished('Q-unmatched', None, False, '2026-11-15')
+            store = builder.Store(path)
+            self.assertEqual(store.finished('Q-matched'), (260829, 1, '2026-11-15'))
+            self.assertIsNone(store.finished('Q-unmatched'))
+            store.set_finished('Q-unmatched', None, False, '2026-11-16')
+            self.assertEqual(builder.Store(path).finished('Q-unmatched'), (None, 0, '2026-11-16'), 'once')
 
 
 class ParallelViewsTests(unittest.TestCase):
