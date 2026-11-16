@@ -72,7 +72,7 @@ final class NavigationBackSwipeProbeController: UIViewController {
 /// Unimplemented delegate selectors must not be forwarded to UIKit's original
 /// delegate: its hidden-bar event veto runs before our public touch/begin gates.
 /// UIKit's recognizer and targets still own native progress and cancellation.
-/// Before iOS 17.5 it reserves the edge with a pan of its own that pops the page instead
+/// On iOS 17.0 it reserves the edge with a pan of its own that pops the page instead
 /// (`popsWithoutInteractiveTransition`).
 @MainActor
 final class NavigationBackSwipeReservationController: NSObject, UIGestureRecognizerDelegate {
@@ -107,11 +107,13 @@ final class NavigationBackSwipeReservationController: NSObject, UIGestureRecogni
     /// iOS 17.0 simulator, 21A328, 2026-11-16). A pop that is not interactive between the same
     /// two pages does not freeze.
     ///
-    /// iOS 17.5 does not freeze on the same test; its tracking was not traced. 17.1 to 17.4 could
-    /// not be run, so they take this branch too. Delete it, `ownedPan` and `popWithoutInteractiveTransition(_:)`
-    /// when the deployment target is iOS 17.5 or later.
+    /// Only iOS 17.0 and its point releases take this branch (maintainer, 2026-11-16). iOS 17.5
+    /// does not freeze on the same test; its tracking was not traced. 17.1 to 17.4 could not be
+    /// run and keep the system's interactive pop: a report of this freeze from one of them means
+    /// the gate moves up. Delete the branch, `ownedPan` and `popWithoutInteractiveTransition(_:)`
+    /// when the deployment target is iOS 17.1 or later.
     static let popsWithoutInteractiveTransition: Bool = {
-        if #available(iOS 17.5, *) { return false }
+        if #available(iOS 17.1, *) { return false }
         return true
     }()
 

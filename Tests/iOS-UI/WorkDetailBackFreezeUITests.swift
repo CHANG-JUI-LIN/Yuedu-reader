@@ -9,7 +9,7 @@ import XCTest
 /// it leaves UIKit's animator tracking on for the life of the process, and every transition after
 /// it is built paused (`NavigationBackSwipeReservationController.popsWithoutInteractiveTransition`).
 /// The test swipes across that boundary and then asks for an ordinary pop. It fails on the iOS 17.0
-/// simulator without that branch and passes on iOS 17.5 and later either way. The boundary the
+/// simulator without that branch, which only iOS 17.0 takes, and passes on iOS 17.5 and later. The boundary the
 /// other way, 作品詳情 pushed over the reader from its book card, has no swipe back on iOS 17.
 ///
 /// The book is a text file the test writes, imported at launch, as `WorkDetailUITests` does it,
