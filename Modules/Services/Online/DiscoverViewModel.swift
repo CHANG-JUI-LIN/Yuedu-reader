@@ -814,13 +814,7 @@ final class DiscoverViewModel: ObservableObject {
                 intro: SearchResultIPSDiagnostics.sanitizeIntroForSearchRow(
                     OnlineBookDetailPresentationPolicy.sanitizeIntro(book.intro)
                 ),
-                contentKind: OnlineBookContentInference.infer(
-                    sourceType: sourceType,
-                    runtimeVariables: book.runtimeVariables,
-                    urls: [book.bookUrl, book.tocUrl],
-                    metadataText: [book.kind, book.intro, book.lastChapter, book.sourceName]
-                        + modeMarkers
-                )
+                contentKind: book.inferredContentKind(sourceType: sourceType, sourceModeMarkers: modeMarkers)
             )
         }
     }

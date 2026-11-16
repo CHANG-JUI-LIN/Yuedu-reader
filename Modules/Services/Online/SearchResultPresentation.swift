@@ -59,13 +59,7 @@ enum SearchResultIPSDiagnostics {
         sourceType: Int?,
         modeMarkers: [String]
     ) -> OnlineBookContentKind {
-        OnlineBookContentInference.infer(
-            sourceType: sourceType,
-            runtimeVariables: book.runtimeVariables,
-            urls: [book.bookUrl, book.tocUrl],
-            metadataText: [book.kind, book.intro, book.lastChapter, book.sourceName]
-                + modeMarkers
-        )
+        book.inferredContentKind(sourceType: sourceType, sourceModeMarkers: modeMarkers)
     }
 
     @inline(never)

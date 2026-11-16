@@ -780,13 +780,24 @@ enum OnlineBookContentInference {
 }
 
 extension OnlineBook {
+    /// Reads the source's mode markers — a defaults read and a parse of its whole variable
+    /// JSON. For one book. A list of one source's books reads them once and passes them to
+    /// `inferredContentKind(sourceType:sourceModeMarkers:)`.
     func inferredContentKind(source: BookSource?) -> OnlineBookContentKind {
-        OnlineBookContentInference.infer(
+        inferredContentKind(
             sourceType: source?.bookSourceType,
+            sourceModeMarkers: OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+        )
+    }
+
+    /// - Parameter sourceModeMarkers: `OnlineBookContentInference.sourceRuntimeModeMarkers`
+    ///   of the book's source, read by the caller: once for all of a page's books.
+    func inferredContentKind(sourceType: Int?, sourceModeMarkers: [String]) -> OnlineBookContentKind {
+        OnlineBookContentInference.infer(
+            sourceType: sourceType,
             runtimeVariables: runtimeVariables,
             urls: [bookUrl, tocUrl],
-            metadataText: [kind, intro, lastChapter, sourceName]
-                + OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+            metadataText: [kind, intro, lastChapter, sourceName] + sourceModeMarkers
         )
     }
 }

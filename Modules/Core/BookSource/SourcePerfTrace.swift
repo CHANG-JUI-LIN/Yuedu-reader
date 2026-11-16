@@ -43,6 +43,8 @@ import Foundation
 ///   module.entries  (a module list's items made into entries, off the main actor; wall clock:
 ///     lists landing together wait on ICU's transliterator lock in `WorkMatchKey`, so it reads
 ///     more than the work)
+///   home.row.entries  (a book-source row's books made into entries, on the main actor, with
+///     `cpu=`: the source's mode markers are read once for the row)
 ///   home.row  (a row's load, wall clock across its await: it includes time spent waiting for a
 ///     busy main thread, so it is not main-thread work even when its line says `main`)
 ///

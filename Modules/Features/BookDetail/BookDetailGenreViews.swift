@@ -116,7 +116,7 @@ struct SourceTagWorksPage: View {
             // Through the source's own search, as 搜索 asks it (`BookSourceSession` under it).
             switch try await BookSourceFetcher.shared.searchOutcome(query: page.tag, in: source) {
             case .results(let books):
-                state = .loaded(books.prefix(AuthorShelf.limit).map { CollectionEntry.onlineBook($0, source: source) })
+                state = .loaded(CollectionEntry.onlineBooks(books.prefix(AuthorShelf.limit), source: source))
             case .empty:
                 state = .loaded([])
             case .failed(let failure):

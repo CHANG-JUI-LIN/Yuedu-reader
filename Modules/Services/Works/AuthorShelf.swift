@@ -232,9 +232,16 @@ final class AuthorPageModel: ObservableObject {
     static func byAuthor(_ books: [OnlineBook], author: String, sources: [UUID: BookSource],
                          seen: inout Set<String>) -> [CollectionEntry] {
         var added: [CollectionEntry] = []
+        // Each source's mode markers, read once a call: the books are every source's, and
+        // `onlineBook(_:source:)` reads its source's whole variable JSON for each one.
+        var modeMarkers: [UUID: [String]] = [:]
         for book in books {
             guard WorkMatchKey.authorsSame([author], [book.author]), let source = sources[book.sourceId] else { continue }
-            let entry = CollectionEntry.onlineBook(book, source: source)
+            let markers = modeMarkers[source.id] ?? CollectionEntry.storedModeMarkers(source)
+            modeMarkers[source.id] = markers
+            let entry = CollectionEntry.onlineBook(
+                book, source: source,
+                contentKind: book.inferredContentKind(sourceType: source.bookSourceType, sourceModeMarkers: markers))
             guard case .item(let record, _, _) = entry else { continue }
             let title = WorkMatchKey.title(record.title)
             guard !title.isEmpty, seen.insert("\(record.contentKind.rawValue)\u{1F}\(title)").inserted else { continue }
@@ -255,8 +262,9 @@ final class AuthorPageModel: ObservableObject {
             // Through the source's own search, as 搜索 asks it (`BookSourceSession` under it).
             switch try await BookSourceFetcher.shared.searchOutcome(query: request.name, in: source) {
             case .results(let books):
-                return AuthorWorks.sameAuthor(books, author: request.name, excludingTitle: "", bookURL: "", limit: AuthorShelf.limit)
-                    .map { CollectionEntry.onlineBook($0, source: source) }
+                return CollectionEntry.onlineBooks(
+                    AuthorWorks.sameAuthor(books, author: request.name, excludingTitle: "", bookURL: "", limit: AuthorShelf.limit),
+                    source: source)
             case .empty:
                 return []
             case .failed(let failure):

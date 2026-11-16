@@ -247,9 +247,10 @@ final class AuthorWorksModel: ObservableObject {
                     break
                 }
                 guard !Task.isCancelled else { return }
-                show(AuthorWorks.sameAuthor(found.books, author: author, excludingTitle: title, bookURL: bookURL,
-                                            limit: AuthorWorks.limit)
-                    .map { CollectionEntry.onlineBook($0, source: found.source) })
+                show(CollectionEntry.onlineBooks(
+                    AuthorWorks.sameAuthor(found.books, author: author, excludingTitle: title, bookURL: bookURL,
+                                           limit: AuthorWorks.limit),
+                    source: found.source))
             } catch {
                 guard !Task.isCancelled else { return }
                 // The row was never promised: a source whose search fails shows none, as one that

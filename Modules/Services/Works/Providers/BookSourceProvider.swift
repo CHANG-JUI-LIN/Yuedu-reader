@@ -10,20 +10,26 @@ import Foundation
 final class BookSourceProvider: HomeSectionProviding {
     let source: BookSource
     private let firstPages: DiscoverFirstPages
+    /// The source's mode markers as stored now; a test's counts the reads.
+    private let modeMarkers: CollectionEntry.SourceModeMarkers
 
-    init(source: BookSource, firstPages: DiscoverFirstPages) {
+    init(source: BookSource, firstPages: DiscoverFirstPages,
+         modeMarkers: @escaping CollectionEntry.SourceModeMarkers = CollectionEntry.storedModeMarkers) {
         self.source = source
         self.firstPages = firstPages
+        self.modeMarkers = modeMarkers
     }
 
     /// A provider with a first-page fetcher and a queue of its own, for tests.
     convenience init(
         source: BookSource,
         pageLoader: SectionPageLoader,
-        primeCookies: @escaping DiscoverFirstPages.PrimeCookies
+        primeCookies: @escaping DiscoverFirstPages.PrimeCookies,
+        modeMarkers: @escaping CollectionEntry.SourceModeMarkers = CollectionEntry.storedModeMarkers
     ) {
         self.init(source: source, firstPages: DiscoverFirstPages(pageLoader: pageLoader, primeCookies: primeCookies,
-                                                                 lanes: DiscoverRequestLanes()))
+                                                                 lanes: DiscoverRequestLanes()),
+                  modeMarkers: modeMarkers)
     }
 
     var instance: SourceInstanceKey { SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl) }
@@ -43,7 +49,7 @@ final class BookSourceProvider: HomeSectionProviding {
         guard let category = category(for: section), category.cardItem != nil else { return [] }
         do {
             let books = try await firstPages.firstPage(of: category, in: source).value
-            return books.prefix(HomeRow.limit).map { entry($0) }
+            return entries(books)
         } catch {
             throw try SourceFailure.classify(error)
         }
@@ -54,7 +60,7 @@ final class BookSourceProvider: HomeSectionProviding {
     func savedPage(_ section: HomeSection) async -> [CollectionEntry]? {
         guard let category = category(for: section), category.cardItem != nil,
               let books = await firstPages.savedPage(of: category, in: source), !books.isEmpty else { return nil }
-        return books.prefix(HomeRow.limit).map { entry($0) }
+        return entries(books)
     }
 
     /// The category a section shows from this source: its own, or the one picked for 「最新」.
@@ -69,12 +75,37 @@ final class BookSourceProvider: HomeSectionProviding {
         }
     }
 
-    private func entry(_ book: OnlineBook) -> CollectionEntry {
-        .onlineBook(book, source: source)
+    /// A row's books as its entries (`home.row.entries`), made after the page answered: the
+    /// source's script may have changed its mode while it loaded.
+    func entries(_ books: [OnlineBook]) -> [CollectionEntry] {
+        let shown = books.prefix(HomeRow.limit)
+        return SourcePerfTrace.span("home.row.entries", "\(shown.count) books source=\(source.bookSourceName)",
+                                    thresholdMs: 4, measuresCPU: true) {
+            CollectionEntry.onlineBooks(shown, source: source, modeMarkers: modeMarkers)
+        }
     }
 }
 
 extension CollectionEntry {
+    /// Reads a source's mode markers (`OnlineBookContentInference.sourceRuntimeModeMarkers`).
+    typealias SourceModeMarkers = @Sendable (BookSource) -> [String]
+
+    static let storedModeMarkers: SourceModeMarkers = { OnlineBookContentInference.sourceRuntimeModeMarkers(for: $0) }
+
+    /// One source's books as entries, the source's mode markers read once for all of them.
+    ///
+    /// `onlineBook(_:source:)` reads them for its one book: the source's whole variable JSON out
+    /// of its defaults and through `JSONSerialization`. A row of 20 did that 20 times on the
+    /// main actor (3.0.2 (151) MetricKit hang 1.66 s, Crashlytics b47a5837421c76188d8367875e3194a6).
+    static func onlineBooks(_ books: some Sequence<OnlineBook>, source: BookSource,
+                            modeMarkers: SourceModeMarkers = storedModeMarkers) -> [CollectionEntry] {
+        let markers = modeMarkers(source)
+        return books.map { book in
+            .onlineBook(book, source: source,
+                        contentKind: book.inferredContentKind(sourceType: source.bookSourceType, sourceModeMarkers: markers))
+        }
+    }
+
     /// A book-source book as 作品詳情 opens it: a row of Explore's home (`BookSourceProvider`) and
     /// a result of 搜索 (`WorkDetailRoute(searchResult:)`, unified library 5f-4c) make the same item.
     ///
