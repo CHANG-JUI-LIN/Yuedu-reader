@@ -101,7 +101,8 @@ struct SourceCategoryCardsTests {
             Issue.record("expected the category's list"); return
         }
         #expect(opening.section.binding == .sourceCategories([category("玄幻")]))
-        #expect(cards.first?.books.first?.cover == .remote(URL(string: "https://cards.test/cover/%E7%94%B2.jpg")!, headers: [:]))
+        // A source with no header rule still sends Legado's User-Agent (58ab9cb2).
+        #expect(cards.first?.books.first?.cover == .remote(URL(string: "https://cards.test/cover/%E7%94%B2.jpg")!, headers: BookSource.withLegadoUserAgent([:])))
         #expect(await requests.log.sorted() == ["/玄幻", "/都市"].sorted())
     }
 

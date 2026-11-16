@@ -682,7 +682,8 @@ struct BookSourceProviderTests {
         }
         #expect(frozen.book.name == "甲")
         #expect(record.key.instance == SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl))
-        #expect(summary.cover == .remote(URL(string: "https://src.test/c/%E7%94%B2.jpg")!, headers: [:]))
+        // A source with no header rule still sends Legado's User-Agent (58ab9cb2).
+        #expect(summary.cover == .remote(URL(string: "https://src.test/c/%E7%94%B2.jpg")!, headers: BookSource.withLegadoUserAgent([:])))
         #expect(summary.blurb?.contains("<p>") == false)
     }
 
