@@ -52,6 +52,7 @@ private struct BookReaderContent: View {
     @Environment(\.appDependencies) private var dependencies
     @Environment(\.readerNavigator) private var readerNavigator
     @Environment(\.readerUsesParentNavigationStack) private var usesParentNavigationStack
+    @Environment(\.readerClosesOnLeadingEdgeSwipe) private var closesOnLeadingEdgeSwipe
     @Environment(\.rootTabBarVisibility) private var rootTabBarVisibility
     // iOS 17 repeatedly invalidates DismissAction during a detail-to-reader
     // push, feeding navigation layout back into this entire reader hierarchy.
@@ -91,8 +92,10 @@ private struct BookReaderContent: View {
                 VideoPlayerView(content: .shelf(bookId), onClose: closeReader)
             } else if shouldUseFixedPageReader {
                 FixedPageReaderView(bookId: bookId)
+                    .modifier(CoverEdgeSwipeClose(isOn: closesCoverOnEdgeSwipe, close: closeReader))
             } else {
                 ReaderView(bookId: bookId, openingTOCTarget: openingTOCTarget)
+                    .modifier(CoverEdgeSwipeClose(isOn: closesCoverOnEdgeSwipe, close: closeReader))
             }
         }
         // Whatever kind of reader it is. Before the environment below, so a reader that
@@ -193,6 +196,12 @@ private struct BookReaderContent: View {
     /// once the cover has slid away.
     private var isInTabNavigation: Bool {
         readerNavigator != nil || usesParentNavigationStack
+    }
+
+    /// Asked for by the presenter of a cover (`readerClosesOnLeadingEdgeSwipe`); a reader in a
+    /// tab's stack leaves on the same swipe with the system's back gesture instead.
+    private var closesCoverOnEdgeSwipe: Bool {
+        closesOnLeadingEdgeSwipe && !isInTabNavigation
     }
 
     private var shouldUseFixedPageReader: Bool {
@@ -370,4 +379,18 @@ struct BookOpenFailureView: View {
     .tint(text)
     .background(ReaderTheme.night.previewBackgroundColor)
     .preferredColorScheme(.light)
+}
+
+/// The edge swipe, only for a reader whose cover asked for it; otherwise the page is as it was.
+private struct CoverEdgeSwipeClose: ViewModifier {
+    let isOn: Bool
+    let close: () -> Void
+
+    func body(content: Content) -> some View {
+        if isOn {
+            content.closesCoverOnLeadingEdgeSwipe(perform: close)
+        } else {
+            content
+        }
+    }
 }

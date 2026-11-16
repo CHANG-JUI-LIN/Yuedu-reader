@@ -59,6 +59,27 @@ struct NavigationBackSwipeReservationTests {
         #expect(!NavigationBackSwipePolicy.contains(initialX: 0, containerWidth: 0))
     }
 
+    @Test("a cover's edge swipe closes when it goes far or fast enough, not when pulled back (FB-206)")
+    func coverCloseThreshold() {
+        // Far enough, slowly.
+        #expect(NavigationBackSwipePolicy.completesClose(
+            translation: CGPoint(x: 80, y: 10), velocity: .zero, containerWidth: 1024))
+        // Short, but flicked.
+        #expect(NavigationBackSwipePolicy.completesClose(
+            translation: CGPoint(x: 20, y: 0), velocity: CGPoint(x: 500, y: 0), containerWidth: 1024))
+        // Short and slow.
+        #expect(!NavigationBackSwipePolicy.completesClose(
+            translation: CGPoint(x: 79, y: 0), velocity: CGPoint(x: 499, y: 0), containerWidth: 1024))
+        // Pulled back toward the edge as it lifts.
+        #expect(!NavigationBackSwipePolicy.completesClose(
+            translation: CGPoint(x: 200, y: 0), velocity: CGPoint(x: -50, y: 0), containerWidth: 1024))
+        // Mostly vertical.
+        #expect(!NavigationBackSwipePolicy.completesClose(
+            translation: CGPoint(x: 100, y: 150), velocity: CGPoint(x: 900, y: 0), containerWidth: 1024))
+        #expect(!NavigationBackSwipePolicy.completesClose(
+            translation: CGPoint(x: 100, y: 0), velocity: .zero, containerWidth: 0))
+    }
+
     @Test("hidden chrome gets native back without a navigation delegate or new recognizer")
     func enablesNativeBackAndRestoresOwnership() throws {
         let root = UIViewController(), reader = UIViewController()

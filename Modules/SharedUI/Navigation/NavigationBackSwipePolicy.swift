@@ -15,4 +15,16 @@ enum NavigationBackSwipePolicy {
         if translation == .zero { return true }
         return translation.x > 0 && abs(translation.x) >= abs(translation.y)
     }
+
+    /// How far, or how fast, an edge swipe that does not move the page with it must go before
+    /// it closes (`closesCoverOnLeadingEdgeSwipe`). A swipe pulled back before it ends — moving
+    /// toward the edge as it lifts — closes nothing, as an interactive pop pulled back cancels.
+    static let closeDistance: CGFloat = 80
+    static let closeVelocity: CGFloat = 500
+
+    static func completesClose(translation: CGPoint, velocity: CGPoint, containerWidth: CGFloat) -> Bool {
+        guard containerWidth > 0, translation.x > 0, velocity.x >= 0,
+              abs(translation.x) >= abs(translation.y) else { return false }
+        return translation.x >= closeDistance || velocity.x >= closeVelocity
+    }
 }
