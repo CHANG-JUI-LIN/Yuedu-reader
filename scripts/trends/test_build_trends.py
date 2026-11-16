@@ -927,6 +927,35 @@ class GenreTests(unittest.TestCase):
 
     def test_a_genres_lists_are_files_of_their_own(self):
         self.assertEqual(builder.genre_list_name('romance', 'month'), 'genre-romance-month')
+        self.assertEqual(builder.genre_list_name('romance', 'historical-month'), 'genre-romance-historical-month')
+
+    def test_a_subgenre_is_its_genres_stories_under_its_categories_a_series_by_its_head(self):
+        job = builder.Job(PoolClient(), builder.Store(':memory:'), date(2026, 11, 16))
+        works = {'甲': {'qid': 'Q1'}, '乙': {'qid': 'Q2'}, '丁': {'qid': 'Q4'}}
+        groups = {'丁': ('Q9', ['丁', '乙'])}   # 乙 is a later book of 丁's series
+        heads = builder.subgenre_heads(job, builder.genre_pool('zh', 'romance'), ('Category:后宫型小说',), works, groups)
+        self.assertEqual(heads, {'甲', '丁'}, '丙 is not the genre’s; 乙 is listed under its series')
+
+    def test_every_subgenre_is_a_genres_on_a_wiki_with_a_file_safe_id(self):
+        for genre, languages in builder.SUBGENRES.items():
+            self.assertIn(genre, builder.GENRES)
+            for language, subgenres in languages.items():
+                self.assertIn(language, builder.POOLS)
+                for sub, source in subgenres.items():
+                    self.assertRegex(sub, r'^[a-z0-9-]+$')
+                    self.assertTrue(isinstance(source, tuple) and all(c.startswith('Category:') for c in source)
+                                    or isinstance(source, str) and source.startswith('bangumi:'), f'{genre}/{sub}')
+                    if isinstance(source, str):
+                        self.assertIn(language, ('zh', 'ja'), 'Bangumi fills in zh and ja only')
+
+    def test_a_bangumi_subgenre_on_ja_is_named_as_written_with_its_authors_and_cover(self):
+        job = builder.Job(FailingClient(), builder.Store(':memory:'), date(2026, 11, 16))
+        subject = {'id': 7, 'name': '安達としまむら', 'name_cn': '安达与岛村', 'summary': ' 二人 ',
+                   'images': {'common': 'https://lain.bgm.tv/c/7.jpg'}, 'infobox': [{'key': '作者', 'value': '入間人間'}]}
+        entries = builder.bangumi_entries(job, [subject], builder.REGIONS['ja'], 'ja.wikipedia.org')
+        self.assertEqual(entries, [{'title': '安達としまむら', 'author': ['入間人間'], 'intro': '二人',
+                                    'url': 'https://bgm.tv/subject/7', 'aliases': ['安达与岛村'],
+                                    'cover': 'https://lain.bgm.tv/c/7.jpg'}])
 
     def test_one_book_is_finished_and_a_series_is_not_told_by_its_class(self):
         self.assertTrue(builder.single_book(['Q8261']))                 # novel

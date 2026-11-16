@@ -38,7 +38,8 @@ private struct ModuleStoreContent: View {
     }
 
     private var page: HomePage? {
-        entry.map { ModuleStores.page(of: $0, moduleID: route.moduleID) }
+        guard let module = modules.module(id: route.moduleID)?.module, let entry else { return nil }
+        return ModuleStores.page(of: entry, in: module, language: aggregation.readingLanguages.language)
     }
 
     private var groups: [HomeSectionGroup] {

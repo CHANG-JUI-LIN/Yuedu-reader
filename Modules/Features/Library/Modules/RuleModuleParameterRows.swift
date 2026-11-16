@@ -8,20 +8,25 @@ import UIKit
 /// `Stepper`, typed text is kept once the reader is done with it, and an `input` with
 /// `placeholders` offers them in a menu. A choice that follows 中繼資料語言偏好推薦 offers that
 /// first, and picking it again clears the reader's own. Only the parameters their `belongTo`
-/// shows are drawn: the caller passes those.
+/// shows are drawn: the caller passes those. A choice lists only the options their own
+/// `belongTo` offers among `current`, and shows the value sent, its default once the one picked
+/// is no longer offered.
 struct RuleModuleParameterRows: View {
     let params: [RuleModule.Param]
     let values: [String: String]
+    /// Every parameter's value as sent (`RuleModule.Param.currentValues`), the hidden ones too.
+    let current: [String: String]
     /// A value by the parameter's name; nil goes back to the module's default.
     let set: (String, String?) -> Void
     /// The accessibility identifier's prefix (`homeSection.parameter`).
     let identifier: String
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
 
-    init(params: [RuleModule.Param], values: [String: String], identifier: String,
+    init(params: [RuleModule.Param], values: [String: String], current: [String: String], identifier: String,
          set: @escaping (String, String?) -> Void) {
         self.params = params
         self.values = values
+        self.current = current
         self.identifier = identifier
         self.set = set
     }
@@ -32,7 +37,7 @@ struct RuleModuleParameterRows: View {
     var body: some View {
         ForEach(params, id: \.name) { param in
             let title = param.title ?? param.name
-            let value = param.currentValue(in: values, language: aggregation.readingLanguages.language)
+            let value = current[param.name] ?? param.currentValue(in: values, language: aggregation.readingLanguages.language)
             switch param.kind {
             case .enumeration:
                 let follows = param.followsLanguage == true
@@ -43,7 +48,7 @@ struct RuleModuleParameterRows: View {
                     if follows {
                         Text(localized("跟隨中繼資料語言偏好推薦")).tag(Self.followsLanguageTag)
                     }
-                    ForEach(param.enumOptions ?? [], id: \.value) { option in
+                    ForEach(param.offeredOptions(among: current), id: \.value) { option in
                         Text(option.title).tag(option.value)
                     }
                 }
@@ -132,7 +137,7 @@ struct RuleModuleGlobalSettingsSection: View {
             Section {
                 // A parameter's `value` is the reader's own only where `values` has it too, so
                 // each row shows the reader's value, else the file's default.
-                RuleModuleParameterRows(params: visible, values: values, identifier: "module.setting") { name, value in
+                RuleModuleParameterRows(params: visible, values: values, current: current, identifier: "module.setting") { name, value in
                     library.setGlobalValue(value, name: name, id: module.id)
                 }
             } header: {
@@ -216,14 +221,22 @@ final class RuleModuleIconCache {
 }
 
 #Preview("A module's settings") {
+    // 輕小說 is offered only while 語言 is 日本語: with 中文 picked, 類型 lists 全部 and 武俠.
+    let params = [
+        RuleModule.Param(name: "lang", title: "語言", type: "enumeration", value: "zh",
+                         enumOptions: [.init(title: "中文", value: "zh"), .init(title: "日本語", value: "ja")]),
+        RuleModule.Param(name: "kind", title: "類型", type: "enumeration", value: "",
+                         enumOptions: [.init(title: "全部", value: ""), .init(title: "武俠", value: "wuxia"),
+                                       .init(title: "輕小說", value: "lightnovel",
+                                             belongTo: .init(paramName: "lang", value: ["ja"]))]),
+        RuleModule.Param(name: "tag", title: "標籤", type: "input",
+                         placeholders: [.init(title: "科幻", value: "sf"), .init(title: "推理", value: "mystery")]),
+    ]
     NavigationStack {
         Form {
-            RuleModuleParameterRows(params: [
-                RuleModule.Param(name: "lang", title: "語言", type: "enumeration", value: "zh",
-                                 enumOptions: [.init(title: "中文", value: "zh"), .init(title: "日本語", value: "ja")]),
-                RuleModule.Param(name: "tag", title: "標籤", type: "input",
-                                 placeholders: [.init(title: "科幻", value: "sf"), .init(title: "推理", value: "mystery")]),
-            ], values: [:], identifier: "preview") { _, _ in }
+            RuleModuleParameterRows(params: params, values: [:],
+                                    current: RuleModule.Param.currentValues(of: params, in: [:], language: nil),
+                                    identifier: "preview") { _, _ in }
         }
         .navigationTitle("模組")
         .toolbarTitleDisplayMode(.inline)

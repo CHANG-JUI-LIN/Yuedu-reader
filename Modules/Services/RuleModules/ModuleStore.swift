@@ -24,9 +24,13 @@ struct ModuleStoreRoute: Hashable, Sendable {
 }
 
 enum ModuleStores {
-    /// Every list with a store, module by module in the library's order, each list in its file's.
+    /// Every list with a store, module by module, each list in its file's order: the official
+    /// store's first, novels before comics before Open Library's nonfiction (`storeOrder`), then
+    /// the reader's in the library's order.
     static func listings(in modules: [RuleModule]) -> [ModuleStoreListing] {
-        modules.flatMap { module in
+        let rank = { (module: RuleModule) in OfficialRuleModules.storeOrder.firstIndex(of: module.id) ?? Int.max }
+        let ordered = modules.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+        return ordered.flatMap { module in
             module.modules.compactMap { entry -> ModuleStoreListing? in
                 guard let id = entry.id, !(entry.store ?? []).isEmpty,
                       let title = entry.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return nil }
@@ -50,14 +54,30 @@ enum ModuleStores {
     }
 
     /// The store's sections, each named by the option it sets (本月熱門), in the app's language as
-    /// the module is. The same ids every time, so a sync keeps what each row loaded.
-    static func page(of entry: RuleModule.Entry, moduleID: String) -> HomePage {
+    /// the module is. The same ids every time, so a sync keeps what each row loaded. A section of
+    /// shelves is 更多「愛情」, a shelf each list it names whose `belongTo` the store's own values,
+    /// in `language` (地區 follows 中繼資料語言偏好推薦), take; none, and the section is left out.
+    static func page(of entry: RuleModule.Entry, in module: RuleModule, language: String) -> HomePage {
         guard let entryID = entry.id else { return HomePage(sections: []) }
-        let sections = (entry.store ?? []).enumerated().map { index, store -> HomeSection in
+        let values = RuleModule.Param.currentValues(of: entry.params, in: [:], language: language)
+        let sections = (entry.store ?? []).enumerated().compactMap { index, store -> HomeSection? in
+            let id = sectionID(moduleID: module.id, entryID: entryID, index: index)
+            if let shelves = store.shelves {
+                let cards = shelves.compactMap { shelf -> HomeListCard? in
+                    if let belongTo = shelf.belongTo, !belongTo.value.contains(values[belongTo.paramName] ?? "") { return nil }
+                    let listID = shelf.list ?? entryID
+                    guard let list = module.modules.first(where: { $0.id == listID }) else { return nil }
+                    let parameters = shelf.params ?? [:]
+                    return HomeListCard(binding: .module(moduleID: module.id, entryID: listID), parameters: parameters,
+                                        title: shelf.list == nil ? title(of: parameters, in: list) : (list.title ?? listID))
+                }
+                guard !cards.isEmpty else { return nil }
+                return HomeSection(id: id, layout: .groupedShelves,
+                                   title: String(format: localized("書店：更多%@"), entry.title ?? ""), binding: .lists(cards))
+            }
             let values = store.params ?? [:]
-            return HomeSection(id: sectionID(moduleID: moduleID, entryID: entryID, index: index),
-                               layout: HomeSectionLayout(rawValue: store.layout), title: title(of: values, in: entry),
-                               binding: .module(moduleID: moduleID, entryID: entryID), parameters: values)
+            return HomeSection(id: id, layout: HomeSectionLayout(rawValue: store.layout), title: title(of: values, in: entry),
+                               binding: .module(moduleID: module.id, entryID: entryID), parameters: values)
         }
         return HomePage(sections: sections)
     }

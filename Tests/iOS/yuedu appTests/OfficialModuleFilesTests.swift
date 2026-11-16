@@ -269,7 +269,7 @@ struct OfficialModuleFilesTests {
     func localizations() throws {
         let bangumi = try official("bangumi")
         #expect(bangumi.localized(for: "en").title == "Bangumi")
-        #expect(bangumi.localized(for: "en").modules.map(\.title) == ["Top Manga", "Top Novels"])
+        #expect(bangumi.localized(for: "en").modules.map(\.title) == ["Top Manga", "Top Novels", "Comics & Graphic Novels"])
         #expect(bangumi.localized(for: "zh-Hans").modules.first?.title == "漫画排行")
         #expect(bangumi.localized(for: "zh-Hant").modules.first?.title == "漫畫排行", "as written: zh-Hans is another script")
         #expect(bangumi.localized(for: "en-GB").modules.first?.title == "Top Manga")
@@ -279,7 +279,7 @@ struct OfficialModuleFilesTests {
         #expect(anilist.localized(for: "ja").modules.first?.title == "人気のマンガ")
 
         // Every official file speaks the app's five languages.
-        for module in [bangumi, anilist, try official("openbd"), try official("trends")] {
+        for module in [bangumi, anilist, try official("openbd"), try official("trends"), try official("openlibrary")] {
             #expect(Set((module.localizations ?? [:]).keys) == ["zh-Hans", "en", "ja", "ko"], "\(module.id)")
             for (language, text) in module.localizations ?? [:] {
                 #expect(text.description?.isEmpty == false, "\(module.id) \(language)")
@@ -646,7 +646,7 @@ struct OfficialModuleFilesTests {
     @Test("趨勢: each list is the gateway's file for a region, which follows 中繼資料語言偏好推薦 until the reader picks one")
     func trendsRegion() async throws {
         let module = try official("trends")
-        #expect(module.modules.compactMap(\.id) == ["today", "month", "year", "completed", "classics"]
+        #expect(module.modules.compactMap(\.id) == ["today", "month", "year", "completed", "classics", "fiction"]
             + HomePageDefaults.genreIDs.map { "genre-\($0)" })
         #expect(module.hosts == ["gateway.yuedureader.com", "upload.wikimedia.org", "thumb.wikimedia.org", "lain.bgm.tv"])
         let cases: [(language: String, parameters: [String: String], region: String)] = [
@@ -667,18 +667,18 @@ struct OfficialModuleFilesTests {
         #expect(ko.enumOptions?.map(\.title) == ["중국어(번체)", "중국어(간체)", "일본", "영어"])
     }
 
-    @Test("趨勢: each genre is the gateway's file for its region and window, with a store of its windows (2026-11-15), its first a week's: the lists are built once a week")
+    @Test("趨勢: each genre is the gateway's file for its region, subgenre and window, with a store of its windows (2026-11-15), its first a week's, and its subgenres' shelves")
     func trendsGenres() async throws {
         let module = try official("trends")
         for id in HomePageDefaults.genreIDs {
             let entry = try #require(module.modules.first { $0.id == "genre-\(id)" })
-            #expect(entry.store?.map(\.layout) == ["heroCards", "multiRow", "heroGrid", "largeRow"])
+            #expect(entry.store?.map(\.layout) == ["heroCards", "multiRow", "heroGrid", "largeRow", "groupedShelves"])
             #expect(entry.store?.compactMap { $0.params?["window"] } == ["week", "month", "year", "completed"])
             #expect(entry.description?.isEmpty == false)
             for language in ["en", "ja", "ko", "zh-Hans"] {
                 let localized = try #require(module.localized(for: language).modules.first { $0.id == "genre-\(id)" })
                 #expect(localized.title != entry.title || language == "zh-Hans", "\(id) \(language)")
-                #expect(ModuleStores.page(of: localized, moduleID: module.id).sections.map(\.title).allSatisfy { !$0.isEmpty })
+                #expect(ModuleStores.page(of: localized, in: module, language: language).sections.map(\.title).allSatisfy { !$0.isEmpty })
             }
         }
         let f = makeFixture()
@@ -690,9 +690,55 @@ struct OfficialModuleFilesTests {
         #expect(ModuleStub.urls == ["https://\(address)"])
         #expect(items(page.entries).count == 2)
         // The store's sections are named by their window, in the app's language.
-        let romance = try #require(module.localized(for: "en").modules.first { $0.id == "genre-romance" })
-        #expect(ModuleStores.page(of: romance, moduleID: "trends").sections.map(\.title)
-            == ["Popular This Week", "Popular This Month", "Popular This Year", "Completed Picks"])
+        let english = module.localized(for: "en")
+        let romance = try #require(english.modules.first { $0.id == "genre-romance" })
+        let store = ModuleStores.page(of: romance, in: english, language: "en")
+        #expect(store.sections.map(\.title)
+            == ["Popular This Week", "Popular This Month", "Popular This Year", "Completed Picks",
+                String(format: localized("書店：更多%@"), "Romance")])
+
+        // More in Romance (2026-11-16): a shelf a subgenre the region's wiki has, named in the app's
+        // language, the gateway's file for the subgenre.
+        func shelves(_ page: HomePage) -> [HomeListCard] {
+            guard case .lists(let cards) = page.sections.last?.binding else { return [] }
+            return cards
+        }
+        #expect(shelves(store).map(\.title) == ["Contemporary Romance", "Historical Romance", "Paranormal Romance",
+                                               "Romantic Fantasy", "Romantic Comedy", "Young Adult Romance",
+                                               "Science Fiction Romance"])
+        #expect(shelves(store).allSatisfy { $0.binding == .module(moduleID: "trends", entryID: "genre-romance") })
+        let japanese = module.localized(for: "ja")
+        let ja = ModuleStores.page(of: try #require(japanese.modules.first { $0.id == "genre-romance" }), in: japanese, language: "ja")
+        #expect(shelves(ja).map { $0.parameters["subgenre"] } == ["-romcom", "-harem", "-yuri"], "日本 has its own wiki's")
+        let zh = ModuleStores.page(of: try #require(module.modules.first { $0.id == "genre-romance" }), in: module, language: "zh-Hant")
+        #expect(shelves(zh).map(\.title) == ["後宮", "瓊瑤", "百合"])
+        let historical = "gateway.yuedureader.com/trends/v1/en/genre-romance-historical-month.json"
+        ModuleStub.install([historical: .json(try reply("Trends/trends-en-year.json"))])
+        let english2 = ModuleProvider(module: module, client: f.client, language: { "en" })
+        _ = try await english2.page(ofList: "genre-romance", parameters: ["subgenre": "-historical"], after: nil)
+        #expect(ModuleStub.urls.last == "https://\(historical)")
+        // 篩選 offers a region only the subgenres its shelves are drawn for: each is a file the
+        // gateway has; a region left behind sends 全部.
+        for id in HomePageDefaults.genreIDs {
+            let entry = try #require(module.modules.first { $0.id == "genre-\(id)" })
+            let subgenre = try #require(entry.params.first { $0.name == "subgenre" })
+            let shelves = try #require(entry.store?.last?.shelves)
+            for region in ["zh-Hant", "zh-Hans", "ja", "en"] {
+                let values = RuleModule.Param.currentValues(of: entry.params, in: ["region": region], language: nil)
+                let drawn = shelves.filter { $0.belongTo?.value.contains(region) ?? true }.compactMap { $0.params?["subgenre"] }
+                #expect(subgenre.offeredOptions(among: values).map(\.value) == [""] + drawn, "\(id) \(region)")
+            }
+        }
+        let romanceEntry = try #require(module.modules.first { $0.id == "genre-romance" })
+        #expect(romanceEntry.values(["region": "zh-Hant", "subgenre": "-romantic-sf"], position: 1, language: nil)["subgenre"] == "")
+
+        // 小說與文學: the region's own lists, then a shelf a genre, named by the genre.
+        let fiction = try #require(english.modules.first { $0.id == "fiction" })
+        let fictionStore = ModuleStores.page(of: fiction, in: english, language: "en")
+        #expect(Array(fictionStore.sections.map(\.title).prefix(5)) == ["Popular Today", "Popular This Month", "Popular This Year",
+                                                           "Completed Picks", "Classics"])
+        #expect(shelves(fictionStore).map(\.binding) == HomePageDefaults.genreIDs.map { .module(moduleID: "trends", entryID: "genre-\($0)") })
+        #expect(shelves(fictionStore).map(\.title).contains("Historical Fiction"))
     }
 
     @Test("趨勢: a work is its title, its authors, its intro, its cover and its article; a folded series names the series")
@@ -747,6 +793,31 @@ struct OfficialModuleFilesTests {
         let entry = try #require(module.modules.first { $0.id == "year" })
         let listed = try await f.client.page(of: entry, in: module, values: ["region": "en"]).items
         #expect(listed.map(\.series) == ["Mistborn", ""], "only a folded series has one")
+    }
+
+    @Test("所有類型 (2026-11-16): 趨勢's fiction first, Bangumi's comics, then Open Library's categories, each with its topics' shelves")
+    func storeCategories() async throws {
+        let modules = try ["openlibrary", "bangumi", "trends"].map { try official($0) }
+        let listings = ModuleStores.listings(in: modules)
+        #expect(listings.map(\.moduleID).first == "trends")
+        #expect(Array(listings.map(\.entryID).prefix(10)) == ["fiction"] + HomePageDefaults.genreIDs.map { "genre-\($0)" } + ["comics"])
+        #expect(listings.count >= 29, "Apple Books' twenty-odd and more")
+        let openLibrary = try official("openlibrary").localized(for: "en")
+        for entry in openLibrary.modules {
+            let page = ModuleStores.page(of: entry, in: openLibrary, language: "en")
+            #expect(page.sections.last?.layout == .groupedShelves, "\(entry.id ?? "")")
+            #expect(page.sections.allSatisfy { !$0.title.isEmpty }, "\(entry.id ?? "")")
+        }
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["openlibrary.org/search.json": .json(try reply("OpenLibrary/openlibrary-search.json"))])
+        let provider = ModuleProvider(module: try official("openlibrary"), client: f.client)
+        let found = items(try await provider.page(ofList: "cooking", parameters: ["sort": "new"], after: nil).entries)
+        #expect(!found.isEmpty)
+        let url = try #require(ModuleStub.urls.first.flatMap { URLComponents(string: $0) })
+        let query = try #require(url.queryItems?.first { $0.name == "q" }?.value)
+        #expect(query.hasPrefix("subject:") && query.contains("-subject:\"fiction\""), "nonfiction: no novels in it")
+        #expect(url.queryItems?.first { $0.name == "sort" }?.value == "new")
     }
 
     @Test("Open Library is an official module, listed after openBD")

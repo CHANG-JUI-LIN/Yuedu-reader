@@ -104,7 +104,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `type` | ✓ | 見下表。 |
 | `description` |  | 說明。 |
 | `value` |  | 預設值。數字會讀成文字。`page`／`offset` 參數的 `value` 是**第一頁的位置**（整數，3.0）；不寫時 `page` 從 1、`offset` 從 0 開始。 |
-| `enumOptions` | `enumeration` ✓ | 選項陣列：`{ "title": "顯示名稱", "value": "送出的值" }`。選項可以加 `language`（語言標籤，3.0），見下方「跟隨語言」。 |
+| `enumOptions` | `enumeration` ✓ | 選項陣列：`{ "title": "顯示名稱", "value": "送出的值" }`。選項可以加 `language`（語言標籤，3.0），見下方「跟隨語言」；也可以加 `belongTo`（3.0.2），寫法同下一列，只在另一個參數是某些值時才列出這個選項，例如某個子類型只有英語地區有。讀者選了它、之後另一個參數換掉，就改送預設值。預設的選項和 `followsLanguage` 參數的選項不能加。 |
 | `followsLanguage` |  | 只用在 `enumeration`：`true` 時，讀者沒選過就用讀者「中繼資料語言偏好推薦」那個語言的選項。3.0。 |
 | `belongTo` |  | 只在另一個參數是某些值時才顯示：`{ "paramName": "sort", "value": ["genre"] }`。`paramName` 必須是同一份清單（或同在 `globalParams`）的另一個參數，不能指回自己或繞成一圈。藏起來時送它的預設值，不送讀者之前填的。3.0.2。 |
 | `placeholders` |  | 只用在 `input`：建議值陣列 `{ "title": "顯示名稱", "value": "填入的值" }`，欄位旁的選單點了就填入。3.0.2。 |
@@ -180,13 +180,29 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 |------|------|------|
 | `layout` | ✓ | 排法，放書的排法之一：`heroCards`（主打卡片）、`multiRow`（多行橫向輪播）、`row`、`largeRow`（大型封面書架）、`heroGrid`（一大四小）、`rankedRow`、`colorBand`、`coverGrid`、`list`、`featured`。 |
 | `params` |  | 這個欄目的參數值，用參數的 `name` 當鍵；選項參數只能填它有的選項。沒寫的照參數自己的 `value`。 |
+| `shelves` |  | 一排書架（`layout` 要寫 `groupedShelves`，這個欄目不能有 `params`），像書店的「更多愛情」：每個書架是一份清單，點開那份清單。最多 40 個。 |
+
+書架的欄位：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `list` |  | 同一個模組另一份清單的 `id`；名稱用那份清單的名稱。沒寫就是這個清單本身。 |
+| `params` |  | 那份清單的參數值，同欄目的 `params`。沒寫 `list` 時，名稱是它設定的第一個選項的名稱（例如 `subgenre` 設成 `-historical` 就叫「歷史愛情」）。 |
+| `belongTo` |  | 只在這個清單的某個選項參數是某些值時才列：`{ "paramName": "region", "value": ["en"] }`，例如某個子類型只有英文維基有。值照讀者目前的設定（跟隨語言的參數照語言）。 |
+
+欄目的名稱是「更多」加這個清單的名稱；一個書架都沒列出來的話，整個欄目不顯示。
 
 最多 12 個欄目。
 
 ```json
 "store": [
   {"layout": "heroCards", "params": {"window": "today"}},
-  {"layout": "multiRow", "params": {"window": "month"}}
+  {"layout": "multiRow", "params": {"window": "month"}},
+  {"layout": "groupedShelves", "shelves": [
+    {"params": {"subgenre": "-historical"}},
+    {"params": {"subgenre": "-yuri"}, "belongTo": {"paramName": "region", "value": ["zh-Hant", "zh-Hans", "ja"]}},
+    {"list": "genre-mystery"}
+  ]}
 ]
 ```
 
@@ -536,7 +552,7 @@ App 照這個順序找紀錄：
 
 格式 3.0.1 才有的（要 `"requiredVersion": "3.0.1"` 以上）：`reviews`、`searchesAuthors`，以及 `list` 的 `id`、`volumes`。
 
-格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`、清單的 `store`、參數的 `belongTo`、`placeholders`，以及 `javascript`、`request` 的 `script`、`comments`。
+格式 3.0.2 才有的（要 `"requiredVersion": "3.0.2"` 以上）：`icon`、`globalParams`、頂層的 `detail`、`related`、`genre`、清單的 `store`（含 `shelves`）、參數和選項的 `belongTo`、`placeholders`，以及 `javascript`、`request` 的 `script`、`comments`。
 舊版 App 會拒絕用了 `globalParams` 的模組（它看不懂那些 `{{…}}`），其他幾個會被忽略。
 
 ---

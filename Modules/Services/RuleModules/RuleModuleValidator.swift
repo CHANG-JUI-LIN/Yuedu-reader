@@ -142,6 +142,7 @@ enum RuleModuleValidator {
             try validate(entry, path: path, hosts: hosts, isSearch: false, globals: globalNames, format3: &format3,
                          format301: &format301, format302: &format302)
         }
+        try validateShelfLists(module)
         if let search = module.search {
             try validate(search, path: "search", hosts: hosts, isSearch: true, globals: globalNames, format3: &format3,
                          format301: &format301, format302: &format302)
@@ -496,15 +497,59 @@ enum RuleModuleValidator {
         }
         for (index, section) in store.enumerated() {
             let layout = HomeSectionLayout(rawValue: section.layout)
+            if let shelves = section.shelves {
+                // Shelves are lists: the layout that draws them, and no values of the section's own.
+                guard layout == .groupedShelves, section.params == nil else {
+                    throw .unknownValue(field: "\(field)[\(index)].layout", value: section.layout)
+                }
+                guard !shelves.isEmpty, shelves.count <= maxStoreShelves else {
+                    throw .unknownValue(field: "\(field)[\(index)].shelves", value: String(shelves.count))
+                }
+                for (shelfIndex, shelf) in shelves.enumerated() {
+                    let shelfField = "\(field)[\(index)].shelves[\(shelfIndex)]"
+                    // Another list's values are checked once every list is known (`validateShelfLists`).
+                    if shelf.list == nil { try validateStoreParams(shelf.params, of: entry, field: "\(shelfField).params") }
+                    if let belongTo = shelf.belongTo {
+                        guard let param = entry.params.first(where: { $0.name == belongTo.paramName }), param.kind == .enumeration,
+                              !belongTo.value.isEmpty,
+                              belongTo.value.allSatisfy({ value in (param.enumOptions ?? []).contains { $0.value == value } }) else {
+                            throw .unknownValue(field: "\(shelfField).belongTo", value: belongTo.paramName)
+                        }
+                    }
+                }
+                continue
+            }
             guard layout.isKnown, !layout.style.drawsLists, ![.tiles, .readingCard, .compactReadingCard].contains(layout) else {
                 throw .unknownValue(field: "\(field)[\(index)].layout", value: section.layout)
             }
-            for (name, value) in (section.params ?? [:]).sorted(by: { $0.key < $1.key }) {
-                guard let param = entry.params.first(where: { $0.name == name }) else {
-                    throw .unknownValue(field: "\(field)[\(index)].params", value: name)
-                }
-                if param.kind == .enumeration, !(param.enumOptions ?? []).contains(where: { $0.value == value }) {
-                    throw .unknownValue(field: "\(field)[\(index)].params.\(name)", value: value)
+            try validateStoreParams(section.params, of: entry, field: "\(field)[\(index)].params")
+        }
+    }
+
+    /// Values a store section or shelf sets: each a parameter of the list, an option it has.
+    private static func validateStoreParams(_ params: [String: String]?, of entry: RuleModule.Entry,
+                                            field: String) throws(RuleModuleRejection) {
+        for (name, value) in (params ?? [:]).sorted(by: { $0.key < $1.key }) {
+            guard let param = entry.params.first(where: { $0.name == name }) else {
+                throw .unknownValue(field: field, value: name)
+            }
+            if param.kind == .enumeration, !(param.enumOptions ?? []).contains(where: { $0.value == value }) {
+                throw .unknownValue(field: "\(field).\(name)", value: value)
+            }
+        }
+    }
+
+    /// A shelf of another list (`StoreShelf.list`): one of the module's lists, with its values.
+    private static func validateShelfLists(_ module: RuleModule) throws(RuleModuleRejection) {
+        let entries = Dictionary(module.modules.compactMap { entry in entry.id.map { ($0, entry) } },
+                                 uniquingKeysWith: { first, _ in first })
+        for (index, entry) in module.modules.enumerated() {
+            for (sectionIndex, section) in (entry.store ?? []).enumerated() {
+                for (shelfIndex, shelf) in (section.shelves ?? []).enumerated() {
+                    guard let id = shelf.list else { continue }
+                    let field = "modules[\(index)].store[\(sectionIndex)].shelves[\(shelfIndex)]"
+                    guard let other = entries[id] else { throw .unknownValue(field: "\(field).list", value: id) }
+                    try validateStoreParams(shelf.params, of: other, field: "\(field).params")
                 }
             }
         }
@@ -512,6 +557,8 @@ enum RuleModuleValidator {
 
     /// The most sections a list's store has.
     static let maxStoreSections = 12
+    /// The most shelves a store's section has, every region's together.
+    static let maxStoreShelves = 40
 
     /// A record's own page: only a search's or a lookup's records are asked for one (a home
     /// list's rows never are), and it gives a description or tags.
@@ -692,26 +739,43 @@ enum RuleModuleValidator {
         }
     }
 
-    /// One set of parameters (a list's, or `globalParams`): each `belongTo` names another of them
-    /// and no chain of them leads back to where it started; `placeholders` only on an `input`.
+    /// One set of parameters (a list's, or `globalParams`): each `belongTo`, a parameter's or an
+    /// option's, names another of them and no chain of them leads back to where it started; the
+    /// option a parameter defaults to is always offered, so an option `belongTo` is never on
+    /// it, nor on a parameter that follows 中繼資料語言偏好推薦; `placeholders` only on an `input`.
     private static func validateScope(_ params: [RuleModule.Param], path: String,
                                       format302: inout String?) throws(RuleModuleRejection) {
         let byName = Dictionary(params.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        /// The parameters whose values decide whether this one, or one of its options, is shown.
+        func targets(of param: RuleModule.Param) -> [String] {
+            ([param.belongTo] + (param.enumOptions ?? []).map(\.belongTo)).compactMap { $0?.paramName }
+        }
+        func check(_ belongTo: RuleModule.BelongTo, of param: RuleModule.Param, field: String) throws(RuleModuleRejection) {
+            if format302 == nil { format302 = field }
+            guard belongTo.paramName != param.name, byName[belongTo.paramName] != nil, !belongTo.value.isEmpty else {
+                throw .unknownValue(field: field, value: belongTo.paramName)
+            }
+            var visited: Set<String> = [param.name]
+            var pending = [belongTo.paramName]
+            while let name = pending.popLast() {
+                guard name != param.name else { throw .unknownValue(field: field, value: belongTo.paramName) }
+                guard visited.insert(name).inserted, let target = byName[name] else { continue }
+                pending += targets(of: target)
+            }
+        }
         for (index, param) in params.enumerated() {
             let field = "\(path)[\(index)]"
             if let belongTo = param.belongTo {
-                if format302 == nil { format302 = "\(field).belongTo" }
-                guard belongTo.paramName != param.name, byName[belongTo.paramName] != nil, !belongTo.value.isEmpty else {
-                    throw .unknownValue(field: "\(field).belongTo", value: belongTo.paramName)
+                try check(belongTo, of: param, field: "\(field).belongTo")
+            }
+            let fallback = param.currentValue(in: [:], language: nil)
+            for (offset, option) in (param.enumOptions ?? []).enumerated() {
+                guard let belongTo = option.belongTo else { continue }
+                let optionField = "\(field).enumOptions[\(offset)].belongTo"
+                guard param.followsLanguage != true, option.value != fallback else {
+                    throw .unknownValue(field: optionField, value: option.value)
                 }
-                var visited: Set<String> = [param.name]
-                var next = byName[belongTo.paramName]
-                while let target = next {
-                    guard visited.insert(target.name).inserted else {
-                        throw .unknownValue(field: "\(field).belongTo", value: belongTo.paramName)
-                    }
-                    next = target.belongTo.flatMap { byName[$0.paramName] }
-                }
+                try check(belongTo, of: param, field: optionField)
             }
             if let placeholders = param.placeholders {
                 if format302 == nil { format302 = "\(field).placeholders" }

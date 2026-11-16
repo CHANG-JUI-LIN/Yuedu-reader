@@ -357,10 +357,24 @@ struct RuleModule: Codable, Hashable, Sendable {
     /// One section of a list's store (`Entry.store`): the list drawn in `layout`, with `params`
     /// over the parameters' own values. Named by the option it sets, as its cards are.
     struct StoreSection: Codable, Hashable, Sendable {
-        /// A layout of books (`HomeSectionLayout`): `heroCards`, `multiRow`, `largeRow`…
+        /// A layout of books (`HomeSectionLayout`): `heroCards`, `multiRow`, `largeRow`…; with
+        /// `shelves`, `groupedShelves`.
         var layout: String
         /// Parameter values by name.
         var params: [String: String]?
+        /// The section's shelves, a list each (maintainer, 2026-11-16, after Apple Books' More in
+        /// Romance: a genre's subgenres). Its layout is then `groupedShelves`.
+        var shelves: [StoreShelf]?
+    }
+
+    /// One shelf of a store's `groupedShelves` section: the store's list, or another list of the
+    /// module (`list`), with `params` over its parameters' own values; named by the option it
+    /// sets, or the other list's name. Drawn only while the store's own parameter `belongTo`
+    /// names has one of its values (a subgenre one region's wiki has).
+    struct StoreShelf: Codable, Hashable, Sendable {
+        var list: String?
+        var params: [String: String]?
+        var belongTo: BelongTo?
     }
 
     /// A `search` or `lookup` record's own page (Open Library: a work's description is at
@@ -467,6 +481,10 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// The language a `followsLanguage` parameter matches it by, a tag (`zh-Hant`, `ja`);
         /// its `value` when absent (format 3.0).
         var language: String?
+        /// Offered, and sent, only while another parameter of the same set has one of these
+        /// values (format 3.0.2): 趨勢's 子類型 that only one region's lists have. Picked and then
+        /// left behind by that parameter, the parameter sends its default instead.
+        var belongTo: BelongTo?
     }
 
     struct Request: Codable, Hashable, Sendable {

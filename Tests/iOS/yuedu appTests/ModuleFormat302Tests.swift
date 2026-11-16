@@ -122,6 +122,55 @@ struct ModuleFormat302Tests {
         #expect(rejection(onSearch) != nil)
     }
 
+    @Test("a store's shelves are the list with values its parameters take, or another list of the module's, each for some of its values")
+    func storeShelves() throws {
+        func withShelves(_ shelves: [[String: Any]], layout: String = "groupedShelves") -> (inout [String: Any]) -> Void {
+            { object in
+                var modules = object["modules"] as! [[String: Any]]
+                modules[0]["request"] = ["url": "https://example.com/list?sort={{sort}}&genre={{genre}}&p={{page}}"]
+                modules[0]["store"] = [["layout": "heroCards"], ["layout": layout, "shelves": shelves]]
+                modules.append(["id": "old", "title": "舊書", "params": [["name": "page", "type": "page"]],
+                                "request": ["url": "https://example.com/old?p={{page}}"],
+                                "list": ["items": "$.books[*]", "title": "$.title"]])
+                object["modules"] = modules
+                entryParams(&object) {
+                    $0[1]["belongTo"] = nil
+                    $0[1]["placeholders"] = nil
+                }
+            }
+        }
+        let good: [[String: Any]] = [
+            ["params": ["sort": "genre"], "belongTo": ["paramName": "sort", "value": ["genre"]]],
+            ["params": ["sort": "new"]],
+            ["list": "old"],
+        ]
+        #expect(rejection(module(withShelves(good))) == nil)
+        let module = try RuleModuleValidator.validate(module(withShelves(good)), appVersion: "3.0.2")
+        #expect(module.modules[0].store?.last?.shelves?.map(\.list) == [nil, nil, "old"])
+        // Not drawn as shelves; none; an option the list lacks; another list that is not there or
+        // lacks the value; belongTo by a parameter that is no choice, or a value it lacks.
+        let bad: [(shelves: [[String: Any]], layout: String)] = [
+            (good, "row"), ([], "groupedShelves"), ([["params": ["sort": "old"]]], "groupedShelves"),
+            ([["list": "gone"]], "groupedShelves"), ([["list": "old", "params": ["sort": "new"]]], "groupedShelves"),
+            ([["belongTo": ["paramName": "genre", "value": ["sf"]]]], "groupedShelves"),
+            ([["belongTo": ["paramName": "sort", "value": ["old"]]]], "groupedShelves"),
+        ]
+        for (shelves, layout) in bad {
+            #expect(rejection(self.module(withShelves(shelves, layout: layout))) != nil, "\(shelves) \(layout)")
+        }
+
+        // The page: 更多「新書」, a shelf each the store's values take, named by its option or its list.
+        let page = ModuleStores.page(of: module.modules[0], in: module, language: "zh-Hant")
+        let shelves = try #require(page.sections.last)
+        #expect(shelves.layout == .groupedShelves)
+        #expect(shelves.title == String(format: localized("書店：更多%@"), "新書"))
+        guard case .lists(let cards) = shelves.binding else { Issue.record("shelves are lists"); return }
+        // `sort` is `new` (its first option), so the shelf shown only for `genre` is left out.
+        #expect(cards.map(\.title) == ["最新", "舊書"])
+        #expect(cards.map(\.binding) == [.module(moduleID: "f302.test", entryID: "new"), .module(moduleID: "f302.test", entryID: "old")])
+        #expect(cards.map(\.parameters) == [["sort": "new"], [:]])
+    }
+
     @Test("a request may only use a global the module declares")
     func undeclaredGlobal() {
         #expect(rejection(module()) == .undeclaredTemplate(field: "modules[0].request.url", name: "lang"))
@@ -210,6 +259,62 @@ struct ModuleFormat302Tests {
         #expect(values == ["a": "1", "b": "x", "c": "default"])
         let open = RuleModule.Param.currentValues(of: params, in: ["a": "2", "b": "y", "c": "own"], language: nil)
         #expect(open == ["a": "2", "b": "y", "c": "own"])
+    }
+
+    /// The fixture with a `region` before `sort`, and `sort`'s 熱門 offered only in `en`.
+    private func regionalOption(_ object: inout [String: Any], requires: Bool = true) {
+        withGlobals(&object)
+        entryParams(&object) { params in
+            params.insert(["name": "region", "type": "enumeration", "value": "zh",
+                           "enumOptions": [["title": "華語", "value": "zh"], ["title": "英語", "value": "en"]]], at: 0)
+            var options = params[1]["enumOptions"] as! [[String: Any]]
+            options.append(["title": "熱門", "value": "hot", "belongTo": ["paramName": "region", "value": ["en"]]])
+            params[1]["enumOptions"] = options
+        }
+        var modules = object["modules"] as! [[String: Any]]
+        modules[0]["request"] = ["url": "https://example.com/list?r={{region}}&sort={{sort}}&genre={{genre}}&lang={{lang}}&p={{page}}"]
+        object["modules"] = modules
+    }
+
+    @Test("an option's belongTo names another parameter, never the default option nor a cycle, under 3.0.2")
+    func optionBelongToValidation() throws {
+        let entry = try RuleModuleValidator.validate(module { regionalOption(&$0) }).modules[0]
+        #expect(entry.params[1].enumOptions?.last?.belongTo == RuleModule.BelongTo(paramName: "region", value: ["en"]))
+        // On the option the parameter defaults to (`sort` has no value: its first, 最新).
+        #expect(rejection(module { regionalOption(&$0); entryParams(&$0) { params in
+            var options = params[1]["enumOptions"] as! [[String: Any]]
+            options[0]["belongTo"] = ["paramName": "region", "value": ["en"]]
+            params[1]["enumOptions"] = options
+        } }) == .unknownValue(field: "modules[0].params[1].enumOptions[0].belongTo", value: "new"))
+        // Naming a parameter the list does not have.
+        #expect(rejection(module { regionalOption(&$0); entryParams(&$0) { params in
+            var options = params[1]["enumOptions"] as! [[String: Any]]
+            options[2]["belongTo"] = ["paramName": "nowhere", "value": ["en"]]
+            params[1]["enumOptions"] = options
+        } }) == .unknownValue(field: "modules[0].params[1].enumOptions[2].belongTo", value: "nowhere"))
+        // `genre` is shown by `sort`; one of `sort`'s options shown by `genre` leads back.
+        #expect(rejection(module { regionalOption(&$0); entryParams(&$0) { params in
+            var options = params[1]["enumOptions"] as! [[String: Any]]
+            options[2]["belongTo"] = ["paramName": "genre", "value": ["sf"]]
+            params[1]["enumOptions"] = options
+        } }) == .unknownValue(field: "modules[0].params[1].enumOptions[2].belongTo", value: "genre"))
+        // On a parameter that follows 中繼資料語言偏好推薦, whose default is the reader's language.
+        #expect(rejection(module { regionalOption(&$0); entryParams(&$0) { params in
+            params[1]["followsLanguage"] = true
+        } }) == .unknownValue(field: "modules[0].params[1].enumOptions[2].belongTo", value: "hot"))
+    }
+
+    @Test("an option its belongTo does not offer now is not listed, and sends the default")
+    func optionBelongToValues() throws {
+        let entry = try RuleModuleValidator.validate(module { regionalOption(&$0) }).modules[0]
+        let sort = entry.params[1]
+        let zh = RuleModule.Param.currentValues(of: entry.params, in: ["region": "zh", "sort": "hot"], language: nil)
+        #expect(zh["sort"] == "new")
+        #expect(sort.offeredOptions(among: zh).map(\.value) == ["new", "genre"])
+        let en = RuleModule.Param.currentValues(of: entry.params, in: ["region": "en", "sort": "hot"], language: nil)
+        #expect(en["sort"] == "hot")
+        #expect(sort.offeredOptions(among: en).map(\.value) == ["new", "genre", "hot"])
+        #expect(entry.values(["region": "zh", "sort": "hot"], position: 1, language: nil)["sort"] == "new")
     }
 
     @Test("the reader's global values are written into the module; one no option has is not")

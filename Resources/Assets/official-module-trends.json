@@ -4,7 +4,7 @@
   "description": "依維基百科瀏覽量排出的熱門小說、完結作品和經典名著，每天更新；地區預設跟隨「中繼資料語言偏好推薦」。",
   "author": "Yuedu",
   "site": "https://yuedureader.com/",
-  "version": "1.2",
+  "version": "1.3",
   "requiredVersion": "3.0.2",
   "hosts": [
     "gateway.yuedureader.com",
@@ -273,6 +273,145 @@
       "description": "歷久不衰的經典名著。"
     },
     {
+      "id": "fiction",
+      "title": "小說與文學",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "list",
+          "title": "清單",
+          "type": "enumeration",
+          "value": "month",
+          "enumOptions": [
+            {
+              "title": "今日熱門",
+              "value": "today"
+            },
+            {
+              "title": "本月熱門",
+              "value": "month"
+            },
+            {
+              "title": "今年熱門",
+              "value": "year"
+            },
+            {
+              "title": "完結推薦",
+              "value": "completed"
+            },
+            {
+              "title": "經典名著",
+              "value": "classics"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/{{list}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers",
+        "volumes": "$.volumes[*]"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "list": "today"
+          }
+        },
+        {
+          "layout": "multiRow",
+          "params": {
+            "list": "month"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "list": "year"
+          }
+        },
+        {
+          "layout": "largeRow",
+          "params": {
+            "list": "completed"
+          }
+        },
+        {
+          "layout": "colorBand",
+          "params": {
+            "list": "classics"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "list": "genre-romance"
+            },
+            {
+              "list": "genre-mystery"
+            },
+            {
+              "list": "genre-scifi"
+            },
+            {
+              "list": "genre-fantasy"
+            },
+            {
+              "list": "genre-wuxia"
+            },
+            {
+              "list": "genre-horror"
+            },
+            {
+              "list": "genre-history"
+            },
+            {
+              "list": "genre-youth"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "genre-romance",
       "title": "愛情",
       "cacheDuration": 86400,
@@ -303,6 +442,124 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "現代愛情",
+              "value": "-contemporary",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "歷史愛情",
+              "value": "-historical",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "超自然愛情",
+              "value": "-paranormal",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "奇幻愛情",
+              "value": "-romantic-fantasy",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "浪漫喜劇",
+              "value": "-romcom",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "青春愛情",
+              "value": "-young-adult",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "科幻愛情",
+              "value": "-romantic-sf",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "後宮",
+              "value": "-harem",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "瓊瑤",
+              "value": "-qiongyao",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "百合",
+              "value": "-yuri",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -328,7 +585,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-romance-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-romance{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -370,6 +627,127 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-contemporary"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-historical"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-paranormal"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-romantic-fantasy"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-romcom"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-young-adult"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-romantic-sf"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-harem"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-qiongyao"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-yuri"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -404,6 +782,164 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "偵探",
+              "value": "-detective",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "心理驚悚",
+              "value": "-psychological",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "政治驚悚",
+              "value": "-political",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "科技驚悚",
+              "value": "-techno",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "歷史推理",
+              "value": "-historical",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "法庭推理",
+              "value": "-legal",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "連環殺手",
+              "value": "-serial-killers",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "福爾摩斯",
+              "value": "-sherlock",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "阿嘉莎·克莉絲蒂",
+              "value": "-christie",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "日本推理",
+              "value": "-japanese",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "公案",
+              "value": "-gongan",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "驚悚",
+              "value": "-thriller",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "高分推理",
+              "value": "-top",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "推理短篇",
+              "value": "-short-stories",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -429,7 +965,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-mystery-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-mystery{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -471,6 +1007,171 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-detective"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-psychological"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-political"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-techno"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-historical"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-legal"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-serial-killers"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-sherlock"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-christie"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-japanese"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-gongan"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-thriller"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-top"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-short-stories"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -505,6 +1206,176 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "太空",
+              "value": "-space",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "反烏托邦",
+              "value": "-dystopia",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "太空歌劇",
+              "value": "-space-opera",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "平行世界",
+              "value": "-parallel",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "軍事科幻",
+              "value": "-military",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "人工智慧與機器人",
+              "value": "-ai",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "蒸汽龐克",
+              "value": "-steampunk",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "異世界",
+              "value": "-isekai",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "衛斯理",
+              "value": "-wisely",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "科學奇幻",
+              "value": "-science-fantasy",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "科幻短篇",
+              "value": "-short-stories",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "外星人",
+              "value": "-aliens",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "高分科幻",
+              "value": "-top",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "賽博龐克",
+              "value": "-cyberpunk",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "科幻恐怖",
+              "value": "-sf-horror",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -530,7 +1401,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-scifi-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-scifi{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -572,6 +1443,184 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-space"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-dystopia"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-space-opera"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-parallel"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-military"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-ai"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-steampunk"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-isekai"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-wisely"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-science-fantasy"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-short-stories"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-aliens"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-top"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-cyberpunk"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-sf-horror"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -606,6 +1655,151 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "史詩奇幻",
+              "value": "-high",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "黑暗奇幻",
+              "value": "-dark",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "都市奇幻",
+              "value": "-contemporary",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "歷史奇幻",
+              "value": "-historical",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "魔法",
+              "value": "-magic",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "精靈",
+              "value": "-fairies",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "奇幻愛情",
+              "value": "-romantic-fantasy",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "異世界",
+              "value": "-isekai"
+            },
+            {
+              "title": "兒童奇幻",
+              "value": "-children",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "古典奇幻",
+              "value": "-classic",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "神魔",
+              "value": "-shenmo",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "科學奇幻",
+              "value": "-science-fantasy",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "玄幻",
+              "value": "-xuanhuan",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -631,7 +1825,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-fantasy-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-fantasy{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -673,6 +1867,166 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-high"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-dark"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-contemporary"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-historical"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-magic"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-fairies"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-romantic-fantasy"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-isekai"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-children"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-classic"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-shenmo"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-science-fantasy"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-xuanhuan"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -707,6 +2061,85 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "金庸",
+              "value": "-jinyong",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "梁羽生",
+              "value": "-liangyusheng",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "古龍",
+              "value": "-gulong",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "黃易",
+              "value": "-huangyi",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "仙俠",
+              "value": "-xianxia",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "江戶時代",
+              "value": "-edo",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -732,7 +2165,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-wuxia-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-wuxia{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -774,6 +2207,84 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-jinyong"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-liangyusheng"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-gulong"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-huangyi"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-xianxia"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-edo"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -808,6 +2319,145 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "吸血鬼",
+              "value": "-vampires",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "鬼故事",
+              "value": "-ghosts",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "惡魔",
+              "value": "-demons",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "殭屍",
+              "value": "-zombies",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "狼人",
+              "value": "-werewolves",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "心理恐怖",
+              "value": "-psychological",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "克蘇魯",
+              "value": "-lovecraftian",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "青少年恐怖",
+              "value": "-young-adult",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "恐怖短篇",
+              "value": "-short-stories",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "美國驚悚",
+              "value": "-american",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "黑塔",
+              "value": "-dark-tower",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "高分恐怖",
+              "value": "-top",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -833,7 +2483,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-horror-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-horror{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -875,12 +2525,156 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-vampires"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-ghosts"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-demons"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-zombies"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-werewolves"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-psychological"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-lovecraftian"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-young-adult"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-short-stories"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-american"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-dark-tower"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-top"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
       "id": "genre-history",
-      "title": "歷史",
+      "title": "歷史小說",
       "cacheDuration": 86400,
       "params": [
         {
@@ -905,6 +2699,110 @@
             {
               "title": "英語",
               "value": "en"
+            }
+          ]
+        },
+        {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "中世紀",
+              "value": "-middle-ages",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "架空歷史",
+              "value": "-alternate",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "古代",
+              "value": "-antiquity",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "近代早期",
+              "value": "-early-modern",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "家族史詩",
+              "value": "-family-saga",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "傳記小說",
+              "value": "-biographical",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "戰爭",
+              "value": "-war",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "高分歷史小說",
+              "value": "-top",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "冷戰",
+              "value": "-cold-war",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
             }
           ]
         },
@@ -934,7 +2832,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-history-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-history{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -976,6 +2874,112 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-middle-ages"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-alternate"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-antiquity"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-early-modern"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-family-saga"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-biographical"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-war"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-top"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-cold-war"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1010,6 +3014,177 @@
           ]
         },
         {
+          "name": "subgenre",
+          "title": "子類型",
+          "type": "enumeration",
+          "value": "",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": ""
+            },
+            {
+              "title": "青少年奇幻",
+              "value": "-fantasy",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "青少年科幻",
+              "value": "-scifi",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "青少年愛情",
+              "value": "-romance",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "青少年恐怖",
+              "value": "-horror",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "青少年推理",
+              "value": "-mystery",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "多元性別",
+              "value": "-lgbtq",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "少年間諜",
+              "value": "-spy",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "title": "高中",
+              "value": "-high-school",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "大學",
+              "value": "-university",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "國中",
+              "value": "-junior-high",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "校園",
+              "value": "-campus",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "title": "青春",
+              "value": "-coming-of-age",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "小學",
+              "value": "-elementary",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "教師",
+              "value": "-teachers",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            },
+            {
+              "title": "魔法學校",
+              "value": "-magic-school",
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "window",
           "title": "清單",
           "type": "enumeration",
@@ -1035,7 +3210,7 @@
         }
       ],
       "request": {
-        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-youth-{{window}}.json",
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/genre-youth{{subgenre}}-{{window}}.json",
         "headers": {
           "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
         }
@@ -1077,6 +3252,185 @@
           "params": {
             "window": "completed"
           }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "subgenre": "-fantasy"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-scifi"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-romance"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-horror"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-mystery"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-lgbtq"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-spy"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "en"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-high-school"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-university"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-junior-high"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-campus"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-coming-of-age"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-elementary"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-teachers"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            },
+            {
+              "params": {
+                "subgenre": "-magic-school"
+              },
+              "belongTo": {
+                "paramName": "region",
+                "value": [
+                  "ja"
+                ]
+              }
+            }
+          ]
         }
       ]
     }
@@ -1182,6 +3536,22 @@
                 "year": "今年热门",
                 "completed": "完结推荐"
               }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-contemporary": "现代爱情",
+                "-historical": "历史爱情",
+                "-paranormal": "超自然爱情",
+                "-romantic-fantasy": "奇幻爱情",
+                "-romcom": "浪漫喜剧",
+                "-young-adult": "青春爱情",
+                "-romantic-sf": "科幻爱情",
+                "-harem": "后宫",
+                "-qiongyao": "琼瑶",
+                "-yuri": "百合"
+              }
             }
           }
         },
@@ -1205,6 +3575,26 @@
                 "month": "本月热门",
                 "year": "今年热门",
                 "completed": "完结推荐"
+              }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-detective": "侦探",
+                "-psychological": "心理惊悚",
+                "-political": "政治惊悚",
+                "-techno": "科技惊悚",
+                "-historical": "历史推理",
+                "-legal": "法庭推理",
+                "-serial-killers": "连环杀手",
+                "-sherlock": "福尔摩斯",
+                "-christie": "阿加莎·克里斯蒂",
+                "-japanese": "日本推理",
+                "-gongan": "公案",
+                "-thriller": "惊悚",
+                "-top": "高分推理",
+                "-short-stories": "推理短篇"
               }
             }
           }
@@ -1230,6 +3620,27 @@
                 "year": "今年热门",
                 "completed": "完结推荐"
               }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-space": "太空",
+                "-dystopia": "反乌托邦",
+                "-space-opera": "太空歌剧",
+                "-parallel": "平行世界",
+                "-military": "军事科幻",
+                "-ai": "人工智能与机器人",
+                "-steampunk": "蒸汽朋克",
+                "-isekai": "异世界",
+                "-wisely": "卫斯理",
+                "-science-fantasy": "科学奇幻",
+                "-short-stories": "科幻短篇",
+                "-aliens": "外星人",
+                "-top": "高分科幻",
+                "-cyberpunk": "赛博朋克",
+                "-sf-horror": "科幻恐怖"
+              }
             }
           }
         },
@@ -1253,6 +3664,25 @@
                 "month": "本月热门",
                 "year": "今年热门",
                 "completed": "完结推荐"
+              }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-high": "史诗奇幻",
+                "-dark": "黑暗奇幻",
+                "-contemporary": "都市奇幻",
+                "-historical": "历史奇幻",
+                "-magic": "魔法",
+                "-fairies": "精灵",
+                "-romantic-fantasy": "奇幻爱情",
+                "-isekai": "异世界",
+                "-children": "儿童奇幻",
+                "-classic": "古典奇幻",
+                "-shenmo": "神魔",
+                "-science-fantasy": "科学奇幻",
+                "-xuanhuan": "玄幻"
               }
             }
           }
@@ -1278,6 +3708,18 @@
                 "year": "今年热门",
                 "completed": "完结推荐"
               }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-jinyong": "金庸",
+                "-liangyusheng": "梁羽生",
+                "-gulong": "古龙",
+                "-huangyi": "黄易",
+                "-xianxia": "仙侠",
+                "-edo": "江户时代"
+              }
             }
           }
         },
@@ -1302,11 +3744,29 @@
                 "year": "今年热门",
                 "completed": "完结推荐"
               }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-vampires": "吸血鬼",
+                "-ghosts": "鬼故事",
+                "-demons": "恶魔",
+                "-zombies": "僵尸",
+                "-werewolves": "狼人",
+                "-psychological": "心理恐怖",
+                "-lovecraftian": "克苏鲁",
+                "-young-adult": "青少年恐怖",
+                "-short-stories": "恐怖短篇",
+                "-american": "美国惊悚",
+                "-dark-tower": "黑塔",
+                "-top": "高分恐怖"
+              }
             }
           }
         },
         "genre-history": {
-          "title": "历史",
+          "title": "历史小说",
           "description": "走进过去的时代与人物。",
           "params": {
             "region": {
@@ -1325,6 +3785,21 @@
                 "month": "本月热门",
                 "year": "今年热门",
                 "completed": "完结推荐"
+              }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-middle-ages": "中世纪",
+                "-alternate": "架空历史",
+                "-antiquity": "古代",
+                "-early-modern": "近代早期",
+                "-family-saga": "家族史诗",
+                "-biographical": "传记小说",
+                "-war": "战争",
+                "-top": "高分历史小说",
+                "-cold-war": "冷战"
               }
             }
           }
@@ -1349,6 +3824,51 @@
                 "month": "本月热门",
                 "year": "今年热门",
                 "completed": "完结推荐"
+              }
+            },
+            "subgenre": {
+              "title": "子类型",
+              "options": {
+                "": "全部",
+                "-fantasy": "青少年奇幻",
+                "-scifi": "青少年科幻",
+                "-romance": "青少年爱情",
+                "-horror": "青少年恐怖",
+                "-mystery": "青少年推理",
+                "-lgbtq": "多元性别",
+                "-spy": "少年间谍",
+                "-high-school": "高中",
+                "-university": "大学",
+                "-junior-high": "初中",
+                "-campus": "校园",
+                "-coming-of-age": "青春",
+                "-elementary": "小学",
+                "-teachers": "教师",
+                "-magic-school": "魔法学校"
+              }
+            }
+          }
+        },
+        "fiction": {
+          "title": "小说与文学",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            },
+            "list": {
+              "title": "清单",
+              "options": {
+                "today": "今日热门",
+                "month": "本月热门",
+                "year": "今年热门",
+                "completed": "完结推荐",
+                "classics": "经典名著"
               }
             }
           }
@@ -1455,6 +3975,22 @@
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
               }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-contemporary": "Contemporary Romance",
+                "-historical": "Historical Romance",
+                "-paranormal": "Paranormal Romance",
+                "-romantic-fantasy": "Romantic Fantasy",
+                "-romcom": "Romantic Comedy",
+                "-young-adult": "Young Adult Romance",
+                "-romantic-sf": "Science Fiction Romance",
+                "-harem": "Harem",
+                "-qiongyao": "Chiung Yao",
+                "-yuri": "Yuri"
+              }
             }
           }
         },
@@ -1478,6 +4014,26 @@
                 "month": "Popular This Month",
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
+              }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-detective": "Detective",
+                "-psychological": "Psychological Thrillers",
+                "-political": "Political Thrillers",
+                "-techno": "Techno-Thrillers",
+                "-historical": "Historical Mysteries",
+                "-legal": "Legal Thrillers",
+                "-serial-killers": "Serial Killers",
+                "-sherlock": "Sherlock Holmes",
+                "-christie": "Agatha Christie",
+                "-japanese": "Japanese Crime",
+                "-gongan": "Gong'an",
+                "-thriller": "Thrillers",
+                "-top": "Top-Rated Mysteries",
+                "-short-stories": "Mystery Short Stories"
               }
             }
           }
@@ -1503,6 +4059,27 @@
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
               }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-space": "Outer Space",
+                "-dystopia": "Dystopia",
+                "-space-opera": "Space Opera",
+                "-parallel": "Parallel Universes",
+                "-military": "Military Science Fiction",
+                "-ai": "AI & Robots",
+                "-steampunk": "Steampunk",
+                "-isekai": "Isekai",
+                "-wisely": "Wisely Series",
+                "-science-fantasy": "Science Fantasy",
+                "-short-stories": "Science Fiction Short Stories",
+                "-aliens": "Aliens",
+                "-top": "Top-Rated Science Fiction",
+                "-cyberpunk": "Cyberpunk",
+                "-sf-horror": "Science Fiction Horror"
+              }
             }
           }
         },
@@ -1526,6 +4103,25 @@
                 "month": "Popular This Month",
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
+              }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-high": "High Fantasy",
+                "-dark": "Dark Fantasy",
+                "-contemporary": "Contemporary Fantasy",
+                "-historical": "Historical Fantasy",
+                "-magic": "Magic",
+                "-fairies": "Fairies",
+                "-romantic-fantasy": "Romantic Fantasy",
+                "-isekai": "Isekai",
+                "-children": "Children's Fantasy",
+                "-classic": "Classic Fantasy",
+                "-shenmo": "Gods & Demons",
+                "-science-fantasy": "Science Fantasy",
+                "-xuanhuan": "Xuanhuan"
               }
             }
           }
@@ -1551,6 +4147,18 @@
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
               }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-jinyong": "Jin Yong",
+                "-liangyusheng": "Liang Yusheng",
+                "-gulong": "Gu Long",
+                "-huangyi": "Huang Yi",
+                "-xianxia": "Xianxia",
+                "-edo": "Edo Period"
+              }
             }
           }
         },
@@ -1575,11 +4183,29 @@
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
               }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-vampires": "Vampires",
+                "-ghosts": "Ghosts",
+                "-demons": "Demons",
+                "-zombies": "Zombies",
+                "-werewolves": "Werewolves",
+                "-psychological": "Psychological Horror",
+                "-lovecraftian": "Lovecraftian Horror",
+                "-young-adult": "Young Adult Horror",
+                "-short-stories": "Horror Short Stories",
+                "-american": "American Thrillers",
+                "-dark-tower": "The Dark Tower",
+                "-top": "Top-Rated Horror"
+              }
             }
           }
         },
         "genre-history": {
-          "title": "Historical",
+          "title": "Historical Fiction",
           "description": "Times and people of the past.",
           "params": {
             "region": {
@@ -1598,6 +4224,21 @@
                 "month": "Popular This Month",
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
+              }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-middle-ages": "Middle Ages",
+                "-alternate": "Alternate History",
+                "-antiquity": "Antiquity",
+                "-early-modern": "Early Modern",
+                "-family-saga": "Family Sagas",
+                "-biographical": "Biographical Novels",
+                "-war": "War",
+                "-top": "Top-Rated Historical Fiction",
+                "-cold-war": "Cold War"
               }
             }
           }
@@ -1622,6 +4263,51 @@
                 "month": "Popular This Month",
                 "year": "Popular This Year",
                 "completed": "Completed Picks"
+              }
+            },
+            "subgenre": {
+              "title": "Subgenre",
+              "options": {
+                "": "All",
+                "-fantasy": "Young Adult Fantasy",
+                "-scifi": "Young Adult Science Fiction",
+                "-romance": "Young Adult Romance",
+                "-horror": "Young Adult Horror",
+                "-mystery": "Young Adult Mystery",
+                "-lgbtq": "LGBTQ+",
+                "-spy": "Junior Spies",
+                "-high-school": "High School",
+                "-university": "University",
+                "-junior-high": "Middle School",
+                "-campus": "Campus",
+                "-coming-of-age": "Coming of Age",
+                "-elementary": "Elementary School",
+                "-teachers": "Teachers",
+                "-magic-school": "Magic School"
+              }
+            }
+          }
+        },
+        "fiction": {
+          "title": "Fiction & Literature",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            },
+            "list": {
+              "title": "List",
+              "options": {
+                "today": "Popular Today",
+                "month": "Popular This Month",
+                "year": "Popular This Year",
+                "completed": "Completed Picks",
+                "classics": "Classics"
               }
             }
           }
@@ -1728,6 +4414,22 @@
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
               }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-contemporary": "現代ロマンス",
+                "-historical": "ヒストリカル・ロマンス",
+                "-paranormal": "パラノーマル・ロマンス",
+                "-romantic-fantasy": "ロマンス・ファンタジー",
+                "-romcom": "ラブコメ",
+                "-young-adult": "ヤングアダルト・ロマンス",
+                "-romantic-sf": "SFロマンス",
+                "-harem": "ハーレム",
+                "-qiongyao": "瓊瑤",
+                "-yuri": "百合"
+              }
             }
           }
         },
@@ -1751,6 +4453,26 @@
                 "month": "今月の人気",
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
+              }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-detective": "探偵小説",
+                "-psychological": "サイコスリラー",
+                "-political": "ポリティカル・スリラー",
+                "-techno": "テクノスリラー",
+                "-historical": "歴史ミステリー",
+                "-legal": "リーガル・サスペンス",
+                "-serial-killers": "連続殺人",
+                "-sherlock": "シャーロック・ホームズ",
+                "-christie": "アガサ・クリスティー",
+                "-japanese": "日本の犯罪小説",
+                "-gongan": "公案小説",
+                "-thriller": "スリラー",
+                "-top": "高評価のミステリー",
+                "-short-stories": "ミステリー短編集"
               }
             }
           }
@@ -1776,6 +4498,27 @@
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
               }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-space": "宇宙",
+                "-dystopia": "ディストピア",
+                "-space-opera": "スペースオペラ",
+                "-parallel": "パラレルワールド",
+                "-military": "ミリタリーSF",
+                "-ai": "AI・ロボット",
+                "-steampunk": "スチームパンク",
+                "-isekai": "異世界",
+                "-wisely": "衛斯理シリーズ",
+                "-science-fantasy": "サイエンス・ファンタジー",
+                "-short-stories": "SF短編",
+                "-aliens": "異星人",
+                "-top": "高評価のSF",
+                "-cyberpunk": "サイバーパンク",
+                "-sf-horror": "SFホラー"
+              }
             }
           }
         },
@@ -1799,6 +4542,25 @@
                 "month": "今月の人気",
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
+              }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-high": "ハイファンタジー",
+                "-dark": "ダークファンタジー",
+                "-contemporary": "現代ファンタジー",
+                "-historical": "歴史ファンタジー",
+                "-magic": "魔法",
+                "-fairies": "妖精",
+                "-romantic-fantasy": "ロマンス・ファンタジー",
+                "-isekai": "異世界",
+                "-children": "児童ファンタジー",
+                "-classic": "古典ファンタジー",
+                "-shenmo": "神魔小説",
+                "-science-fantasy": "サイエンス・ファンタジー",
+                "-xuanhuan": "玄幻"
               }
             }
           }
@@ -1824,6 +4586,18 @@
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
               }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-jinyong": "金庸",
+                "-liangyusheng": "梁羽生",
+                "-gulong": "古龍",
+                "-huangyi": "黄易",
+                "-xianxia": "仙侠",
+                "-edo": "江戸時代"
+              }
             }
           }
         },
@@ -1848,11 +4622,29 @@
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
               }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-vampires": "吸血鬼",
+                "-ghosts": "幽霊",
+                "-demons": "悪魔",
+                "-zombies": "ゾンビ",
+                "-werewolves": "人狼",
+                "-psychological": "心理ホラー",
+                "-lovecraftian": "クトゥルフ",
+                "-young-adult": "ヤングアダルト・ホラー",
+                "-short-stories": "ホラー短編",
+                "-american": "アメリカのスリラー",
+                "-dark-tower": "ダーク・タワー",
+                "-top": "高評価のホラー"
+              }
             }
           }
         },
         "genre-history": {
-          "title": "歴史",
+          "title": "歴史小説",
           "description": "過ぎた時代と人々をたどる。",
           "params": {
             "region": {
@@ -1871,6 +4663,21 @@
                 "month": "今月の人気",
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
+              }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-middle-ages": "中世",
+                "-alternate": "歴史改変",
+                "-antiquity": "古代",
+                "-early-modern": "近世",
+                "-family-saga": "大河小説",
+                "-biographical": "伝記小説",
+                "-war": "戦争",
+                "-top": "高評価の歴史小説",
+                "-cold-war": "冷戦"
               }
             }
           }
@@ -1895,6 +4702,51 @@
                 "month": "今月の人気",
                 "year": "今年の人気",
                 "completed": "完結作品のおすすめ"
+              }
+            },
+            "subgenre": {
+              "title": "サブジャンル",
+              "options": {
+                "": "すべて",
+                "-fantasy": "YAファンタジー",
+                "-scifi": "YA SF",
+                "-romance": "YAロマンス",
+                "-horror": "YAホラー",
+                "-mystery": "YAミステリー",
+                "-lgbtq": "LGBTQ+",
+                "-spy": "少年スパイ",
+                "-high-school": "高校",
+                "-university": "大学",
+                "-junior-high": "中学校",
+                "-campus": "学園",
+                "-coming-of-age": "青春",
+                "-elementary": "小学校",
+                "-teachers": "教師",
+                "-magic-school": "魔法学校"
+              }
+            }
+          }
+        },
+        "fiction": {
+          "title": "小説・文学",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            },
+            "list": {
+              "title": "リスト",
+              "options": {
+                "today": "今日の人気",
+                "month": "今月の人気",
+                "year": "今年の人気",
+                "completed": "完結作品のおすすめ",
+                "classics": "名作"
               }
             }
           }
@@ -2001,6 +4853,22 @@
                 "year": "올해의 인기",
                 "completed": "완결 추천"
               }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-contemporary": "현대 로맨스",
+                "-historical": "역사 로맨스",
+                "-paranormal": "초자연 로맨스",
+                "-romantic-fantasy": "로맨스 판타지",
+                "-romcom": "로맨틱 코미디",
+                "-young-adult": "청소년 로맨스",
+                "-romantic-sf": "SF 로맨스",
+                "-harem": "하렘",
+                "-qiongyao": "충야오",
+                "-yuri": "백합"
+              }
             }
           }
         },
@@ -2024,6 +4892,26 @@
                 "month": "이달의 인기",
                 "year": "올해의 인기",
                 "completed": "완결 추천"
+              }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-detective": "탐정",
+                "-psychological": "심리 스릴러",
+                "-political": "정치 스릴러",
+                "-techno": "테크노 스릴러",
+                "-historical": "역사 미스터리",
+                "-legal": "법정 스릴러",
+                "-serial-killers": "연쇄 살인",
+                "-sherlock": "셜록 홈스",
+                "-christie": "애거사 크리스티",
+                "-japanese": "일본 범죄 소설",
+                "-gongan": "공안 소설",
+                "-thriller": "스릴러",
+                "-top": "평점 높은 미스터리",
+                "-short-stories": "미스터리 단편"
               }
             }
           }
@@ -2049,6 +4937,27 @@
                 "year": "올해의 인기",
                 "completed": "완결 추천"
               }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-space": "우주",
+                "-dystopia": "디스토피아",
+                "-space-opera": "스페이스 오페라",
+                "-parallel": "평행 우주",
+                "-military": "밀리터리 SF",
+                "-ai": "AI와 로봇",
+                "-steampunk": "스팀펑크",
+                "-isekai": "이세계",
+                "-wisely": "위슬리 시리즈",
+                "-science-fantasy": "사이언스 판타지",
+                "-short-stories": "SF 단편",
+                "-aliens": "외계인",
+                "-top": "평점 높은 SF",
+                "-cyberpunk": "사이버펑크",
+                "-sf-horror": "SF 호러"
+              }
             }
           }
         },
@@ -2072,6 +4981,25 @@
                 "month": "이달의 인기",
                 "year": "올해의 인기",
                 "completed": "완결 추천"
+              }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-high": "하이 판타지",
+                "-dark": "다크 판타지",
+                "-contemporary": "현대 판타지",
+                "-historical": "역사 판타지",
+                "-magic": "마법",
+                "-fairies": "요정",
+                "-romantic-fantasy": "로맨스 판타지",
+                "-isekai": "이세계",
+                "-children": "아동 판타지",
+                "-classic": "고전 판타지",
+                "-shenmo": "신마 소설",
+                "-science-fantasy": "사이언스 판타지",
+                "-xuanhuan": "현환"
               }
             }
           }
@@ -2097,6 +5025,18 @@
                 "year": "올해의 인기",
                 "completed": "완결 추천"
               }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-jinyong": "김용",
+                "-liangyusheng": "양우생",
+                "-gulong": "고룡",
+                "-huangyi": "황이",
+                "-xianxia": "선협",
+                "-edo": "에도 시대"
+              }
             }
           }
         },
@@ -2121,11 +5061,29 @@
                 "year": "올해의 인기",
                 "completed": "완결 추천"
               }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-vampires": "뱀파이어",
+                "-ghosts": "유령",
+                "-demons": "악마",
+                "-zombies": "좀비",
+                "-werewolves": "늑대인간",
+                "-psychological": "심리 호러",
+                "-lovecraftian": "러브크래프트 호러",
+                "-young-adult": "청소년 호러",
+                "-short-stories": "호러 단편",
+                "-american": "미국 스릴러",
+                "-dark-tower": "다크 타워",
+                "-top": "평점 높은 호러"
+              }
             }
           }
         },
         "genre-history": {
-          "title": "역사",
+          "title": "역사 소설",
           "description": "지나간 시대와 인물 속으로.",
           "params": {
             "region": {
@@ -2144,6 +5102,21 @@
                 "month": "이달의 인기",
                 "year": "올해의 인기",
                 "completed": "완결 추천"
+              }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-middle-ages": "중세",
+                "-alternate": "대체 역사",
+                "-antiquity": "고대",
+                "-early-modern": "근세",
+                "-family-saga": "가족 대하소설",
+                "-biographical": "전기 소설",
+                "-war": "전쟁",
+                "-top": "평점 높은 역사 소설",
+                "-cold-war": "냉전"
               }
             }
           }
@@ -2168,6 +5141,51 @@
                 "month": "이달의 인기",
                 "year": "올해의 인기",
                 "completed": "완결 추천"
+              }
+            },
+            "subgenre": {
+              "title": "하위 장르",
+              "options": {
+                "": "전체",
+                "-fantasy": "청소년 판타지",
+                "-scifi": "청소년 SF",
+                "-romance": "청소년 로맨스",
+                "-horror": "청소년 호러",
+                "-mystery": "청소년 미스터리",
+                "-lgbtq": "LGBTQ+",
+                "-spy": "소년 스파이",
+                "-high-school": "고등학교",
+                "-university": "대학",
+                "-junior-high": "중학교",
+                "-campus": "캠퍼스",
+                "-coming-of-age": "청춘",
+                "-elementary": "초등학교",
+                "-teachers": "교사",
+                "-magic-school": "마법 학교"
+              }
+            }
+          }
+        },
+        "fiction": {
+          "title": "소설 및 문학",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            },
+            "list": {
+              "title": "목록",
+              "options": {
+                "today": "오늘의 인기",
+                "month": "이달의 인기",
+                "year": "올해의 인기",
+                "completed": "완결 추천",
+                "classics": "고전 명작"
               }
             }
           }

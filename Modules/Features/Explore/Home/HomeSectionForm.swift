@@ -870,8 +870,10 @@ private struct HomeModuleParameters: View {
 
     var body: some View {
         Section {
-            RuleModuleParameterRows(params: entry.shownParams(in: values, language: aggregation.readingLanguages.language),
-                                    values: values, identifier: "homeSection.parameter", set: set)
+            let language = aggregation.readingLanguages.language
+            RuleModuleParameterRows(params: entry.shownParams(in: values, language: language), values: values,
+                                    current: RuleModule.Param.currentValues(of: entry.params, in: values, language: language),
+                                    identifier: "homeSection.parameter", set: set)
         } header: {
             Text(localized("篩選"))
         }

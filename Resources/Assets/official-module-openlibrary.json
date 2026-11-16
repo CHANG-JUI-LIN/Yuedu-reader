@@ -4,8 +4,8 @@
   "description": "Internet Archive 的開放書目資料。搜尋時會把關鍵字送到 Open Library；書架上的書缺封面、簡介或分類時，會把 ISBN 或書名和作者送去查詢。",
   "author": "閱讀",
   "site": "https://openlibrary.org",
-  "version": "1.0",
-  "requiredVersion": "3.0",
+  "version": "1.1",
+  "requiredVersion": "3.0.2",
   "hosts": [
     "openlibrary.org",
     "covers.openlibrary.org",
@@ -14,19 +14,4515 @@
   "rateLimit": "1/1000",
   "localizations": {
     "zh-Hans": {
-      "description": "Internet Archive 的开放书目资料。搜索时会把关键字发送到 Open Library；书架上的书缺封面、简介或分类时，会把 ISBN 或书名和作者发送去查询。"
+      "description": "Internet Archive 的开放书目资料。搜索时会把关键字发送到 Open Library；书架上的书缺封面、简介或分类时，会把 ISBN 或书名和作者发送去查询。",
+      "entries": {
+        "kids": {
+          "title": "儿童",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"juvenile fiction\"": "全部",
+                "subject:\"picture books\"": "图画书",
+                "subject:\"fairy tales\"": "童话",
+                "subject:\"animals\" subject:\"juvenile fiction\"": "动物故事",
+                "subject:\"adventure and adventurers\" subject:\"juvenile fiction\"": "冒险",
+                "subject:\"schools\" subject:\"juvenile fiction\"": "校园",
+                "subject:\"friendship\" subject:\"juvenile fiction\"": "友谊"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "nonfiction": {
+          "title": "非小说",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"nonfiction\"": "全部",
+                "subject:\"self-help\"": "自我成长",
+                "subject:\"true crime\"": "真实犯罪",
+                "subject:\"popular science\"": "科普",
+                "subject:\"essays\"": "散文随笔",
+                "subject:\"philosophy\"": "哲学",
+                "subject:\"social sciences\"": "社会科学"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "biography": {
+          "title": "传记与回忆录",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"biography\"": "全部",
+                "subject:\"autobiography\"": "自传",
+                "subject:\"actors\"": "演艺人物",
+                "subject:\"politicians\"": "政治人物",
+                "subject:\"athletes\"": "运动员",
+                "subject:\"artists\"": "艺术家",
+                "subject:\"scientists\"": "科学家"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "history": {
+          "title": "历史",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"history\"": "全部",
+                "subject:\"world history\"": "世界史",
+                "subject:\"military history\"": "军事史",
+                "subject:\"ancient history\"": "古代史",
+                "subject:\"world war, 1939-1945\"": "第二次世界大战",
+                "subject:\"china\" subject:\"history\"": "中国史",
+                "subject:\"japan\" subject:\"history\"": "日本史"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "business": {
+          "title": "商业与个人理财",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"business\"": "全部",
+                "subject:\"personal finance\"": "个人理财",
+                "subject:\"investments\"": "投资",
+                "subject:\"leadership\"": "领导",
+                "subject:\"marketing\"": "营销",
+                "subject:\"economics\"": "经济学",
+                "subject:\"entrepreneurship\"": "创业"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "health": {
+          "title": "健康、心理与生理",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"health\"": "全部",
+                "subject:\"psychology\"": "心理学",
+                "subject:\"physical fitness\"": "健身",
+                "subject:\"nutrition\"": "营养",
+                "subject:\"meditation\"": "冥想",
+                "subject:\"mental health\"": "心理健康",
+                "subject:\"diet\"": "饮食"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "religion": {
+          "title": "宗教与灵修",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"religion\"": "全部",
+                "subject:\"christian life\"": "基督教",
+                "subject:\"buddhism\"": "佛教",
+                "subject:\"spirituality\"": "灵性",
+                "subject:\"islam\"": "伊斯兰教",
+                "subject:\"mythology\"": "神话"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "politics": {
+          "title": "政治与时事",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"politics and government\"": "全部",
+                "subject:\"international relations\"": "国际关系",
+                "subject:\"democracy\"": "民主",
+                "subject:\"social problems\"": "社会议题",
+                "subject:\"journalism\"": "新闻",
+                "subject:\"human rights\"": "人权"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "education": {
+          "title": "教育",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"education\"": "全部",
+                "subject:\"teaching\"": "教学",
+                "subject:\"study skills\"": "学习方法",
+                "subject:\"language and languages\"": "语言学习",
+                "subject:\"early childhood education\"": "幼儿教育"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "cooking": {
+          "title": "食谱、美食与品酒",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"cooking\"": "全部",
+                "subject:\"baking\"": "烘焙",
+                "subject:\"desserts\"": "甜点",
+                "subject:\"vegetarian cooking\"": "素食",
+                "subject:\"wine and wine making\"": "葡萄酒",
+                "subject:\"cooking, chinese\"": "中式料理",
+                "subject:\"cooking, italian\"": "意式料理"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "sports": {
+          "title": "运动与户外活动",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"sports\"": "全部",
+                "subject:\"soccer\"": "足球",
+                "subject:\"basketball\"": "篮球",
+                "subject:\"baseball\"": "棒球",
+                "subject:\"mountaineering\"": "登山",
+                "subject:\"fishing\"": "钓鱼",
+                "subject:\"running\"": "跑步"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "computers": {
+          "title": "电脑与网络",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"computers\"": "全部",
+                "subject:\"computer programming\"": "程序设计",
+                "subject:\"internet\"": "互联网",
+                "subject:\"artificial intelligence\"": "人工智能",
+                "subject:\"computer security\"": "信息安全",
+                "subject:\"database management\"": "数据库"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "arts": {
+          "title": "艺术与娱乐",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"art\"": "全部",
+                "subject:\"music\"": "音乐",
+                "subject:\"motion pictures\"": "电影",
+                "subject:\"photographers\"": "摄影",
+                "subject:\"architecture\"": "建筑",
+                "subject:\"design\"": "设计"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "science": {
+          "title": "科学与自然",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"science\"": "全部",
+                "subject:\"physics\"": "物理",
+                "subject:\"biology\"": "生物",
+                "subject:\"astronomy\"": "天文",
+                "subject:\"mathematics\"": "数学",
+                "subject:\"natural history\"": "自然",
+                "subject:\"animals\"": "动物"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "travel": {
+          "title": "旅游与探险",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"travel\"": "全部",
+                "subject:\"guidebooks\"": "旅游指南",
+                "subject:\"adventure and adventurers\"": "探险",
+                "subject:\"voyages and travels\"": "航海与游记",
+                "subject:\"europe, description and travel\"": "欧洲",
+                "subject:\"asia, description and travel\"": "亚洲"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "lifestyle": {
+          "title": "生活与家居",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"home economics\"": "全部",
+                "subject:\"gardening\"": "园艺",
+                "subject:\"handicraft\"": "手工",
+                "subject:\"interior decoration\"": "居家布置",
+                "subject:\"pets\"": "宠物"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "parenting": {
+          "title": "育儿",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"parenting\"": "全部",
+                "subject:\"parent and child\"": "亲子",
+                "subject:\"infants\"": "婴幼儿",
+                "subject:\"adolescence\"": "青春期"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "humor": {
+          "title": "幽默",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"humor\"": "全部",
+                "subject:\"wit and humor\"": "笑话与妙语",
+                "subject:\"comic books, strips\"": "漫画短篇"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "professional": {
+          "title": "专业与技术",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"technology\"": "全部",
+                "subject:\"engineering\"": "工程",
+                "subject:\"medicine\"": "医学",
+                "subject:\"law\"": "法律",
+                "subject:\"nursing\"": "护理"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        },
+        "reference": {
+          "title": "参考",
+          "params": {
+            "topic": {
+              "title": "主题",
+              "options": {
+                "subject:\"reference\"": "全部",
+                "subject:\"dictionaries\"": "词典",
+                "subject:\"encyclopedias\"": "百科全书",
+                "subject:\"authorship\"": "写作"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "trending": "热门书籍",
+                "new": "最新出版",
+                "rating": "好评推荐"
+              }
+            }
+          }
+        }
+      }
     },
     "en": {
-      "description": "Open book records from the Internet Archive. Searches send the keyword to Open Library; for books on your shelf that lack a cover, description or categories, the ISBN, or the title and author, is sent to look them up."
+      "description": "Open book records from the Internet Archive. Searches send the keyword to Open Library; for books on your shelf that lack a cover, description or categories, the ISBN, or the title and author, is sent to look them up.",
+      "entries": {
+        "kids": {
+          "title": "Kids",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"juvenile fiction\"": "All",
+                "subject:\"picture books\"": "Picture Books",
+                "subject:\"fairy tales\"": "Fairy Tales",
+                "subject:\"animals\" subject:\"juvenile fiction\"": "Animal Stories",
+                "subject:\"adventure and adventurers\" subject:\"juvenile fiction\"": "Adventure",
+                "subject:\"schools\" subject:\"juvenile fiction\"": "School",
+                "subject:\"friendship\" subject:\"juvenile fiction\"": "Friendship"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "nonfiction": {
+          "title": "Nonfiction",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"nonfiction\"": "All",
+                "subject:\"self-help\"": "Self-Improvement",
+                "subject:\"true crime\"": "True Crime",
+                "subject:\"popular science\"": "Popular Science",
+                "subject:\"essays\"": "Essays",
+                "subject:\"philosophy\"": "Philosophy",
+                "subject:\"social sciences\"": "Social Science"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "biography": {
+          "title": "Biographies & Memoirs",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"biography\"": "All",
+                "subject:\"autobiography\"": "Autobiography",
+                "subject:\"actors\"": "Arts & Entertainment",
+                "subject:\"politicians\"": "Political Figures",
+                "subject:\"athletes\"": "Sports Figures",
+                "subject:\"artists\"": "Artists",
+                "subject:\"scientists\"": "Scientists"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "history": {
+          "title": "History",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"history\"": "All",
+                "subject:\"world history\"": "World History",
+                "subject:\"military history\"": "Military History",
+                "subject:\"ancient history\"": "Ancient History",
+                "subject:\"world war, 1939-1945\"": "World War II",
+                "subject:\"china\" subject:\"history\"": "Chinese History",
+                "subject:\"japan\" subject:\"history\"": "Japanese History"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "business": {
+          "title": "Business & Personal Finance",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"business\"": "All",
+                "subject:\"personal finance\"": "Personal Finance",
+                "subject:\"investments\"": "Investing",
+                "subject:\"leadership\"": "Leadership",
+                "subject:\"marketing\"": "Marketing",
+                "subject:\"economics\"": "Economics",
+                "subject:\"entrepreneurship\"": "Entrepreneurship"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "health": {
+          "title": "Health, Mind & Body",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"health\"": "All",
+                "subject:\"psychology\"": "Psychology",
+                "subject:\"physical fitness\"": "Fitness",
+                "subject:\"nutrition\"": "Nutrition",
+                "subject:\"meditation\"": "Meditation",
+                "subject:\"mental health\"": "Mental Health",
+                "subject:\"diet\"": "Diet"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "religion": {
+          "title": "Religion & Spirituality",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"religion\"": "All",
+                "subject:\"christian life\"": "Christianity",
+                "subject:\"buddhism\"": "Buddhism",
+                "subject:\"spirituality\"": "Spirituality",
+                "subject:\"islam\"": "Islam",
+                "subject:\"mythology\"": "Mythology"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "politics": {
+          "title": "Politics & Current Events",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"politics and government\"": "All",
+                "subject:\"international relations\"": "International Relations",
+                "subject:\"democracy\"": "Democracy",
+                "subject:\"social problems\"": "Social Issues",
+                "subject:\"journalism\"": "Journalism",
+                "subject:\"human rights\"": "Human Rights"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "education": {
+          "title": "Education",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"education\"": "All",
+                "subject:\"teaching\"": "Teaching",
+                "subject:\"study skills\"": "Study Skills",
+                "subject:\"language and languages\"": "Language Learning",
+                "subject:\"early childhood education\"": "Early Childhood"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "cooking": {
+          "title": "Cookbooks, Food & Wine",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"cooking\"": "All",
+                "subject:\"baking\"": "Baking",
+                "subject:\"desserts\"": "Desserts",
+                "subject:\"vegetarian cooking\"": "Vegetarian",
+                "subject:\"wine and wine making\"": "Wine",
+                "subject:\"cooking, chinese\"": "Chinese Cooking",
+                "subject:\"cooking, italian\"": "Italian Cooking"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "sports": {
+          "title": "Sports & Outdoors",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"sports\"": "All",
+                "subject:\"soccer\"": "Soccer",
+                "subject:\"basketball\"": "Basketball",
+                "subject:\"baseball\"": "Baseball",
+                "subject:\"mountaineering\"": "Mountaineering",
+                "subject:\"fishing\"": "Fishing",
+                "subject:\"running\"": "Running"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "computers": {
+          "title": "Computers & Internet",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"computers\"": "All",
+                "subject:\"computer programming\"": "Programming",
+                "subject:\"internet\"": "Internet",
+                "subject:\"artificial intelligence\"": "Artificial Intelligence",
+                "subject:\"computer security\"": "Security",
+                "subject:\"database management\"": "Databases"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "arts": {
+          "title": "Arts & Entertainment",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"art\"": "All",
+                "subject:\"music\"": "Music",
+                "subject:\"motion pictures\"": "Film",
+                "subject:\"photographers\"": "Photography",
+                "subject:\"architecture\"": "Architecture",
+                "subject:\"design\"": "Design"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "science": {
+          "title": "Science & Nature",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"science\"": "All",
+                "subject:\"physics\"": "Physics",
+                "subject:\"biology\"": "Biology",
+                "subject:\"astronomy\"": "Astronomy",
+                "subject:\"mathematics\"": "Mathematics",
+                "subject:\"natural history\"": "Nature",
+                "subject:\"animals\"": "Animals"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "travel": {
+          "title": "Travel & Adventure",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"travel\"": "All",
+                "subject:\"guidebooks\"": "Guidebooks",
+                "subject:\"adventure and adventurers\"": "Adventure",
+                "subject:\"voyages and travels\"": "Voyages & Travels",
+                "subject:\"europe, description and travel\"": "Europe",
+                "subject:\"asia, description and travel\"": "Asia"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "lifestyle": {
+          "title": "Lifestyle & Home",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"home economics\"": "All",
+                "subject:\"gardening\"": "Gardening",
+                "subject:\"handicraft\"": "Crafts",
+                "subject:\"interior decoration\"": "Interior Design",
+                "subject:\"pets\"": "Pets"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "parenting": {
+          "title": "Parenting",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"parenting\"": "All",
+                "subject:\"parent and child\"": "Parent & Child",
+                "subject:\"infants\"": "Babies",
+                "subject:\"adolescence\"": "Teens"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "humor": {
+          "title": "Humor",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"humor\"": "All",
+                "subject:\"wit and humor\"": "Wit & Humor",
+                "subject:\"comic books, strips\"": "Comic Strips"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "professional": {
+          "title": "Professional & Technical",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"technology\"": "All",
+                "subject:\"engineering\"": "Engineering",
+                "subject:\"medicine\"": "Medicine",
+                "subject:\"law\"": "Law",
+                "subject:\"nursing\"": "Nursing"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        },
+        "reference": {
+          "title": "Reference",
+          "params": {
+            "topic": {
+              "title": "Topic",
+              "options": {
+                "subject:\"reference\"": "All",
+                "subject:\"dictionaries\"": "Dictionaries",
+                "subject:\"encyclopedias\"": "Encyclopedias",
+                "subject:\"authorship\"": "Writing"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "trending": "Popular",
+                "new": "New",
+                "rating": "Top Rated"
+              }
+            }
+          }
+        }
+      }
     },
     "ja": {
-      "description": "Internet Archive のオープンな書誌データ。検索ではキーワードを Open Library に送ります。本棚の本に表紙・紹介文・分類がないときは、ISBN または書名と著者を送って調べます。"
+      "description": "Internet Archive のオープンな書誌データ。検索ではキーワードを Open Library に送ります。本棚の本に表紙・紹介文・分類がないときは、ISBN または書名と著者を送って調べます。",
+      "entries": {
+        "kids": {
+          "title": "児童書",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"juvenile fiction\"": "すべて",
+                "subject:\"picture books\"": "絵本",
+                "subject:\"fairy tales\"": "童話",
+                "subject:\"animals\" subject:\"juvenile fiction\"": "動物の物語",
+                "subject:\"adventure and adventurers\" subject:\"juvenile fiction\"": "冒険",
+                "subject:\"schools\" subject:\"juvenile fiction\"": "学校",
+                "subject:\"friendship\" subject:\"juvenile fiction\"": "友情"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "nonfiction": {
+          "title": "ノンフィクション",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"nonfiction\"": "すべて",
+                "subject:\"self-help\"": "自己啓発",
+                "subject:\"true crime\"": "実録犯罪",
+                "subject:\"popular science\"": "ポピュラーサイエンス",
+                "subject:\"essays\"": "エッセイ",
+                "subject:\"philosophy\"": "哲学",
+                "subject:\"social sciences\"": "社会科学"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "biography": {
+          "title": "伝記・回想録",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"biography\"": "すべて",
+                "subject:\"autobiography\"": "自伝",
+                "subject:\"actors\"": "芸能人",
+                "subject:\"politicians\"": "政治家",
+                "subject:\"athletes\"": "スポーツ選手",
+                "subject:\"artists\"": "芸術家",
+                "subject:\"scientists\"": "科学者"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "history": {
+          "title": "歴史",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"history\"": "すべて",
+                "subject:\"world history\"": "世界史",
+                "subject:\"military history\"": "軍事史",
+                "subject:\"ancient history\"": "古代史",
+                "subject:\"world war, 1939-1945\"": "第二次世界大戦",
+                "subject:\"china\" subject:\"history\"": "中国史",
+                "subject:\"japan\" subject:\"history\"": "日本史"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "business": {
+          "title": "ビジネス・マネー",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"business\"": "すべて",
+                "subject:\"personal finance\"": "資産運用",
+                "subject:\"investments\"": "投資",
+                "subject:\"leadership\"": "リーダーシップ",
+                "subject:\"marketing\"": "マーケティング",
+                "subject:\"economics\"": "経済学",
+                "subject:\"entrepreneurship\"": "起業"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "health": {
+          "title": "健康・心と体",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"health\"": "すべて",
+                "subject:\"psychology\"": "心理学",
+                "subject:\"physical fitness\"": "フィットネス",
+                "subject:\"nutrition\"": "栄養",
+                "subject:\"meditation\"": "瞑想",
+                "subject:\"mental health\"": "メンタルヘルス",
+                "subject:\"diet\"": "食事法"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "religion": {
+          "title": "宗教・スピリチュアル",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"religion\"": "すべて",
+                "subject:\"christian life\"": "キリスト教",
+                "subject:\"buddhism\"": "仏教",
+                "subject:\"spirituality\"": "スピリチュアリティ",
+                "subject:\"islam\"": "イスラム教",
+                "subject:\"mythology\"": "神話"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "politics": {
+          "title": "政治・時事",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"politics and government\"": "すべて",
+                "subject:\"international relations\"": "国際関係",
+                "subject:\"democracy\"": "民主主義",
+                "subject:\"social problems\"": "社会問題",
+                "subject:\"journalism\"": "ジャーナリズム",
+                "subject:\"human rights\"": "人権"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "education": {
+          "title": "教育",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"education\"": "すべて",
+                "subject:\"teaching\"": "教授法",
+                "subject:\"study skills\"": "勉強法",
+                "subject:\"language and languages\"": "語学",
+                "subject:\"early childhood education\"": "幼児教育"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "cooking": {
+          "title": "料理・グルメ・ワイン",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"cooking\"": "すべて",
+                "subject:\"baking\"": "お菓子・パン作り",
+                "subject:\"desserts\"": "デザート",
+                "subject:\"vegetarian cooking\"": "ベジタリアン",
+                "subject:\"wine and wine making\"": "ワイン",
+                "subject:\"cooking, chinese\"": "中華料理",
+                "subject:\"cooking, italian\"": "イタリア料理"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "sports": {
+          "title": "スポーツ・アウトドア",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"sports\"": "すべて",
+                "subject:\"soccer\"": "サッカー",
+                "subject:\"basketball\"": "バスケットボール",
+                "subject:\"baseball\"": "野球",
+                "subject:\"mountaineering\"": "登山",
+                "subject:\"fishing\"": "釣り",
+                "subject:\"running\"": "ランニング"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "computers": {
+          "title": "コンピュータ・インターネット",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"computers\"": "すべて",
+                "subject:\"computer programming\"": "プログラミング",
+                "subject:\"internet\"": "インターネット",
+                "subject:\"artificial intelligence\"": "人工知能",
+                "subject:\"computer security\"": "セキュリティ",
+                "subject:\"database management\"": "データベース"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "arts": {
+          "title": "アート・エンターテインメント",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"art\"": "すべて",
+                "subject:\"music\"": "音楽",
+                "subject:\"motion pictures\"": "映画",
+                "subject:\"photographers\"": "写真",
+                "subject:\"architecture\"": "建築",
+                "subject:\"design\"": "デザイン"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "science": {
+          "title": "科学・自然",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"science\"": "すべて",
+                "subject:\"physics\"": "物理学",
+                "subject:\"biology\"": "生物学",
+                "subject:\"astronomy\"": "天文学",
+                "subject:\"mathematics\"": "数学",
+                "subject:\"natural history\"": "自然",
+                "subject:\"animals\"": "動物"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "travel": {
+          "title": "旅行・冒険",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"travel\"": "すべて",
+                "subject:\"guidebooks\"": "ガイドブック",
+                "subject:\"adventure and adventurers\"": "探検",
+                "subject:\"voyages and travels\"": "航海・紀行",
+                "subject:\"europe, description and travel\"": "ヨーロッパ",
+                "subject:\"asia, description and travel\"": "アジア"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "lifestyle": {
+          "title": "暮らし・住まい",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"home economics\"": "すべて",
+                "subject:\"gardening\"": "ガーデニング",
+                "subject:\"handicraft\"": "手芸",
+                "subject:\"interior decoration\"": "インテリア",
+                "subject:\"pets\"": "ペット"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "parenting": {
+          "title": "子育て",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"parenting\"": "すべて",
+                "subject:\"parent and child\"": "親子",
+                "subject:\"infants\"": "乳幼児",
+                "subject:\"adolescence\"": "思春期"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "humor": {
+          "title": "ユーモア",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"humor\"": "すべて",
+                "subject:\"wit and humor\"": "ジョーク",
+                "subject:\"comic books, strips\"": "風刺漫画"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "professional": {
+          "title": "専門・技術",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"technology\"": "すべて",
+                "subject:\"engineering\"": "工学",
+                "subject:\"medicine\"": "医学",
+                "subject:\"law\"": "法律",
+                "subject:\"nursing\"": "看護"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        },
+        "reference": {
+          "title": "リファレンス",
+          "params": {
+            "topic": {
+              "title": "トピック",
+              "options": {
+                "subject:\"reference\"": "すべて",
+                "subject:\"dictionaries\"": "辞書",
+                "subject:\"encyclopedias\"": "百科事典",
+                "subject:\"authorship\"": "文章術"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "trending": "人気の本",
+                "new": "新刊",
+                "rating": "高評価"
+              }
+            }
+          }
+        }
+      }
     },
     "ko": {
-      "description": "Internet Archive의 공개 도서 정보. 검색할 때 검색어를 Open Library로 보내고, 책장의 책에 표지·소개·분류가 없으면 ISBN 또는 제목과 저자를 보내 조회합니다."
+      "description": "Internet Archive의 공개 도서 정보. 검색할 때 검색어를 Open Library로 보내고, 책장의 책에 표지·소개·분류가 없으면 ISBN 또는 제목과 저자를 보내 조회합니다.",
+      "entries": {
+        "kids": {
+          "title": "어린이",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"juvenile fiction\"": "전체",
+                "subject:\"picture books\"": "그림책",
+                "subject:\"fairy tales\"": "동화",
+                "subject:\"animals\" subject:\"juvenile fiction\"": "동물 이야기",
+                "subject:\"adventure and adventurers\" subject:\"juvenile fiction\"": "모험",
+                "subject:\"schools\" subject:\"juvenile fiction\"": "학교",
+                "subject:\"friendship\" subject:\"juvenile fiction\"": "우정"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "nonfiction": {
+          "title": "논픽션",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"nonfiction\"": "전체",
+                "subject:\"self-help\"": "자기계발",
+                "subject:\"true crime\"": "실화 범죄",
+                "subject:\"popular science\"": "대중 과학",
+                "subject:\"essays\"": "에세이",
+                "subject:\"philosophy\"": "철학",
+                "subject:\"social sciences\"": "사회과학"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "biography": {
+          "title": "전기 및 회고록",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"biography\"": "전체",
+                "subject:\"autobiography\"": "자서전",
+                "subject:\"actors\"": "연예인",
+                "subject:\"politicians\"": "정치인",
+                "subject:\"athletes\"": "운동선수",
+                "subject:\"artists\"": "예술가",
+                "subject:\"scientists\"": "과학자"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "history": {
+          "title": "역사",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"history\"": "전체",
+                "subject:\"world history\"": "세계사",
+                "subject:\"military history\"": "군사사",
+                "subject:\"ancient history\"": "고대사",
+                "subject:\"world war, 1939-1945\"": "제2차 세계 대전",
+                "subject:\"china\" subject:\"history\"": "중국사",
+                "subject:\"japan\" subject:\"history\"": "일본사"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "business": {
+          "title": "비즈니스 및 개인 금융",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"business\"": "전체",
+                "subject:\"personal finance\"": "개인 금융",
+                "subject:\"investments\"": "투자",
+                "subject:\"leadership\"": "리더십",
+                "subject:\"marketing\"": "마케팅",
+                "subject:\"economics\"": "경제학",
+                "subject:\"entrepreneurship\"": "창업"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "health": {
+          "title": "건강, 마음 및 신체",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"health\"": "전체",
+                "subject:\"psychology\"": "심리학",
+                "subject:\"physical fitness\"": "피트니스",
+                "subject:\"nutrition\"": "영양",
+                "subject:\"meditation\"": "명상",
+                "subject:\"mental health\"": "정신 건강",
+                "subject:\"diet\"": "식단"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "religion": {
+          "title": "종교 및 영성",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"religion\"": "전체",
+                "subject:\"christian life\"": "기독교",
+                "subject:\"buddhism\"": "불교",
+                "subject:\"spirituality\"": "영성",
+                "subject:\"islam\"": "이슬람교",
+                "subject:\"mythology\"": "신화"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "politics": {
+          "title": "정치 및 시사",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"politics and government\"": "전체",
+                "subject:\"international relations\"": "국제 관계",
+                "subject:\"democracy\"": "민주주의",
+                "subject:\"social problems\"": "사회 문제",
+                "subject:\"journalism\"": "저널리즘",
+                "subject:\"human rights\"": "인권"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "education": {
+          "title": "교육",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"education\"": "전체",
+                "subject:\"teaching\"": "교수법",
+                "subject:\"study skills\"": "학습법",
+                "subject:\"language and languages\"": "어학",
+                "subject:\"early childhood education\"": "유아 교육"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "cooking": {
+          "title": "요리, 음식 및 와인",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"cooking\"": "전체",
+                "subject:\"baking\"": "베이킹",
+                "subject:\"desserts\"": "디저트",
+                "subject:\"vegetarian cooking\"": "채식",
+                "subject:\"wine and wine making\"": "와인",
+                "subject:\"cooking, chinese\"": "중식",
+                "subject:\"cooking, italian\"": "이탈리아 요리"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "sports": {
+          "title": "스포츠 및 아웃도어",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"sports\"": "전체",
+                "subject:\"soccer\"": "축구",
+                "subject:\"basketball\"": "농구",
+                "subject:\"baseball\"": "야구",
+                "subject:\"mountaineering\"": "등산",
+                "subject:\"fishing\"": "낚시",
+                "subject:\"running\"": "달리기"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "computers": {
+          "title": "컴퓨터 및 인터넷",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"computers\"": "전체",
+                "subject:\"computer programming\"": "프로그래밍",
+                "subject:\"internet\"": "인터넷",
+                "subject:\"artificial intelligence\"": "인공지능",
+                "subject:\"computer security\"": "보안",
+                "subject:\"database management\"": "데이터베이스"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "arts": {
+          "title": "예술 및 엔터테인먼트",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"art\"": "전체",
+                "subject:\"music\"": "음악",
+                "subject:\"motion pictures\"": "영화",
+                "subject:\"photographers\"": "사진",
+                "subject:\"architecture\"": "건축",
+                "subject:\"design\"": "디자인"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "science": {
+          "title": "과학 및 자연",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"science\"": "전체",
+                "subject:\"physics\"": "물리학",
+                "subject:\"biology\"": "생물학",
+                "subject:\"astronomy\"": "천문학",
+                "subject:\"mathematics\"": "수학",
+                "subject:\"natural history\"": "자연",
+                "subject:\"animals\"": "동물"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "travel": {
+          "title": "여행 및 모험",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"travel\"": "전체",
+                "subject:\"guidebooks\"": "여행 안내서",
+                "subject:\"adventure and adventurers\"": "탐험",
+                "subject:\"voyages and travels\"": "항해와 여행기",
+                "subject:\"europe, description and travel\"": "유럽",
+                "subject:\"asia, description and travel\"": "아시아"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "lifestyle": {
+          "title": "라이프스타일 및 홈",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"home economics\"": "전체",
+                "subject:\"gardening\"": "원예",
+                "subject:\"handicraft\"": "공예",
+                "subject:\"interior decoration\"": "인테리어",
+                "subject:\"pets\"": "반려동물"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "parenting": {
+          "title": "육아",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"parenting\"": "전체",
+                "subject:\"parent and child\"": "부모와 자녀",
+                "subject:\"infants\"": "영유아",
+                "subject:\"adolescence\"": "사춘기"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "humor": {
+          "title": "유머",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"humor\"": "전체",
+                "subject:\"wit and humor\"": "재치와 유머",
+                "subject:\"comic books, strips\"": "만화"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "professional": {
+          "title": "전문 및 기술",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"technology\"": "전체",
+                "subject:\"engineering\"": "공학",
+                "subject:\"medicine\"": "의학",
+                "subject:\"law\"": "법률",
+                "subject:\"nursing\"": "간호"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        },
+        "reference": {
+          "title": "참고",
+          "params": {
+            "topic": {
+              "title": "주제",
+              "options": {
+                "subject:\"reference\"": "전체",
+                "subject:\"dictionaries\"": "사전",
+                "subject:\"encyclopedias\"": "백과사전",
+                "subject:\"authorship\"": "글쓰기"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "trending": "인기 도서",
+                "new": "신간",
+                "rating": "높은 평점"
+              }
+            }
+          }
+        }
+      }
     }
   },
-  "modules": [],
+  "modules": [
+    {
+      "id": "kids",
+      "title": "兒童",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"juvenile fiction\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"juvenile fiction\""
+            },
+            {
+              "title": "圖畫書",
+              "value": "subject:\"picture books\""
+            },
+            {
+              "title": "童話",
+              "value": "subject:\"fairy tales\""
+            },
+            {
+              "title": "動物故事",
+              "value": "subject:\"animals\" subject:\"juvenile fiction\""
+            },
+            {
+              "title": "冒險",
+              "value": "subject:\"adventure and adventurers\" subject:\"juvenile fiction\""
+            },
+            {
+              "title": "校園",
+              "value": "subject:\"schools\" subject:\"juvenile fiction\""
+            },
+            {
+              "title": "友誼",
+              "value": "subject:\"friendship\" subject:\"juvenile fiction\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"picture books\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"fairy tales\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"animals\" subject:\"juvenile fiction\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"adventure and adventurers\" subject:\"juvenile fiction\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"schools\" subject:\"juvenile fiction\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"friendship\" subject:\"juvenile fiction\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nonfiction",
+      "title": "非小說",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"nonfiction\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"nonfiction\""
+            },
+            {
+              "title": "自我成長",
+              "value": "subject:\"self-help\""
+            },
+            {
+              "title": "真實犯罪",
+              "value": "subject:\"true crime\""
+            },
+            {
+              "title": "科普",
+              "value": "subject:\"popular science\""
+            },
+            {
+              "title": "散文隨筆",
+              "value": "subject:\"essays\""
+            },
+            {
+              "title": "哲學",
+              "value": "subject:\"philosophy\""
+            },
+            {
+              "title": "社會科學",
+              "value": "subject:\"social sciences\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"self-help\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"true crime\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"popular science\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"essays\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"philosophy\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"social sciences\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biography",
+      "title": "傳記與回憶錄",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"biography\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"biography\""
+            },
+            {
+              "title": "自傳",
+              "value": "subject:\"autobiography\""
+            },
+            {
+              "title": "演藝人物",
+              "value": "subject:\"actors\""
+            },
+            {
+              "title": "政治人物",
+              "value": "subject:\"politicians\""
+            },
+            {
+              "title": "運動員",
+              "value": "subject:\"athletes\""
+            },
+            {
+              "title": "藝術家",
+              "value": "subject:\"artists\""
+            },
+            {
+              "title": "科學家",
+              "value": "subject:\"scientists\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"autobiography\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"actors\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"politicians\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"athletes\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"artists\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"scientists\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "title": "歷史",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"history\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"history\""
+            },
+            {
+              "title": "世界史",
+              "value": "subject:\"world history\""
+            },
+            {
+              "title": "軍事史",
+              "value": "subject:\"military history\""
+            },
+            {
+              "title": "古代史",
+              "value": "subject:\"ancient history\""
+            },
+            {
+              "title": "第二次世界大戰",
+              "value": "subject:\"world war, 1939-1945\""
+            },
+            {
+              "title": "中國史",
+              "value": "subject:\"china\" subject:\"history\""
+            },
+            {
+              "title": "日本史",
+              "value": "subject:\"japan\" subject:\"history\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"world history\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"military history\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"ancient history\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"world war, 1939-1945\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"china\" subject:\"history\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"japan\" subject:\"history\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "business",
+      "title": "商業與個人理財",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"business\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"business\""
+            },
+            {
+              "title": "個人理財",
+              "value": "subject:\"personal finance\""
+            },
+            {
+              "title": "投資",
+              "value": "subject:\"investments\""
+            },
+            {
+              "title": "領導",
+              "value": "subject:\"leadership\""
+            },
+            {
+              "title": "行銷",
+              "value": "subject:\"marketing\""
+            },
+            {
+              "title": "經濟學",
+              "value": "subject:\"economics\""
+            },
+            {
+              "title": "創業",
+              "value": "subject:\"entrepreneurship\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"personal finance\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"investments\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"leadership\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"marketing\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"economics\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"entrepreneurship\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "health",
+      "title": "健康、心理與生理",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"health\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"health\""
+            },
+            {
+              "title": "心理學",
+              "value": "subject:\"psychology\""
+            },
+            {
+              "title": "健身",
+              "value": "subject:\"physical fitness\""
+            },
+            {
+              "title": "營養",
+              "value": "subject:\"nutrition\""
+            },
+            {
+              "title": "冥想",
+              "value": "subject:\"meditation\""
+            },
+            {
+              "title": "心理健康",
+              "value": "subject:\"mental health\""
+            },
+            {
+              "title": "飲食",
+              "value": "subject:\"diet\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"psychology\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"physical fitness\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"nutrition\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"meditation\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"mental health\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"diet\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "religion",
+      "title": "宗教與靈修",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"religion\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"religion\""
+            },
+            {
+              "title": "基督教",
+              "value": "subject:\"christian life\""
+            },
+            {
+              "title": "佛教",
+              "value": "subject:\"buddhism\""
+            },
+            {
+              "title": "靈性",
+              "value": "subject:\"spirituality\""
+            },
+            {
+              "title": "伊斯蘭教",
+              "value": "subject:\"islam\""
+            },
+            {
+              "title": "神話",
+              "value": "subject:\"mythology\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"christian life\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"buddhism\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"spirituality\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"islam\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"mythology\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "politics",
+      "title": "政治與時事",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"politics and government\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"politics and government\""
+            },
+            {
+              "title": "國際關係",
+              "value": "subject:\"international relations\""
+            },
+            {
+              "title": "民主",
+              "value": "subject:\"democracy\""
+            },
+            {
+              "title": "社會議題",
+              "value": "subject:\"social problems\""
+            },
+            {
+              "title": "新聞",
+              "value": "subject:\"journalism\""
+            },
+            {
+              "title": "人權",
+              "value": "subject:\"human rights\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"international relations\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"democracy\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"social problems\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"journalism\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"human rights\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "education",
+      "title": "教育",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"education\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"education\""
+            },
+            {
+              "title": "教學",
+              "value": "subject:\"teaching\""
+            },
+            {
+              "title": "學習方法",
+              "value": "subject:\"study skills\""
+            },
+            {
+              "title": "語言學習",
+              "value": "subject:\"language and languages\""
+            },
+            {
+              "title": "幼兒教育",
+              "value": "subject:\"early childhood education\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"teaching\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"study skills\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"language and languages\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"early childhood education\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cooking",
+      "title": "食譜、美食與品酒",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"cooking\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"cooking\""
+            },
+            {
+              "title": "烘焙",
+              "value": "subject:\"baking\""
+            },
+            {
+              "title": "甜點",
+              "value": "subject:\"desserts\""
+            },
+            {
+              "title": "素食",
+              "value": "subject:\"vegetarian cooking\""
+            },
+            {
+              "title": "葡萄酒",
+              "value": "subject:\"wine and wine making\""
+            },
+            {
+              "title": "中式料理",
+              "value": "subject:\"cooking, chinese\""
+            },
+            {
+              "title": "義式料理",
+              "value": "subject:\"cooking, italian\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"baking\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"desserts\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"vegetarian cooking\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"wine and wine making\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"cooking, chinese\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"cooking, italian\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sports",
+      "title": "運動與戶外活動",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"sports\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"sports\""
+            },
+            {
+              "title": "足球",
+              "value": "subject:\"soccer\""
+            },
+            {
+              "title": "籃球",
+              "value": "subject:\"basketball\""
+            },
+            {
+              "title": "棒球",
+              "value": "subject:\"baseball\""
+            },
+            {
+              "title": "登山",
+              "value": "subject:\"mountaineering\""
+            },
+            {
+              "title": "釣魚",
+              "value": "subject:\"fishing\""
+            },
+            {
+              "title": "跑步",
+              "value": "subject:\"running\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"soccer\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"basketball\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"baseball\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"mountaineering\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"fishing\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"running\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "computers",
+      "title": "電腦與網路",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"computers\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"computers\""
+            },
+            {
+              "title": "程式設計",
+              "value": "subject:\"computer programming\""
+            },
+            {
+              "title": "網際網路",
+              "value": "subject:\"internet\""
+            },
+            {
+              "title": "人工智慧",
+              "value": "subject:\"artificial intelligence\""
+            },
+            {
+              "title": "資訊安全",
+              "value": "subject:\"computer security\""
+            },
+            {
+              "title": "資料庫",
+              "value": "subject:\"database management\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"computer programming\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"internet\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"artificial intelligence\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"computer security\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"database management\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arts",
+      "title": "藝術與娛樂",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"art\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"art\""
+            },
+            {
+              "title": "音樂",
+              "value": "subject:\"music\""
+            },
+            {
+              "title": "電影",
+              "value": "subject:\"motion pictures\""
+            },
+            {
+              "title": "攝影",
+              "value": "subject:\"photographers\""
+            },
+            {
+              "title": "建築",
+              "value": "subject:\"architecture\""
+            },
+            {
+              "title": "設計",
+              "value": "subject:\"design\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"music\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"motion pictures\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"photographers\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"architecture\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"design\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "science",
+      "title": "科學與自然",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"science\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"science\""
+            },
+            {
+              "title": "物理",
+              "value": "subject:\"physics\""
+            },
+            {
+              "title": "生物",
+              "value": "subject:\"biology\""
+            },
+            {
+              "title": "天文",
+              "value": "subject:\"astronomy\""
+            },
+            {
+              "title": "數學",
+              "value": "subject:\"mathematics\""
+            },
+            {
+              "title": "自然",
+              "value": "subject:\"natural history\""
+            },
+            {
+              "title": "動物",
+              "value": "subject:\"animals\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"physics\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"biology\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"astronomy\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"mathematics\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"natural history\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"animals\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "travel",
+      "title": "旅遊與探險",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"travel\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"travel\""
+            },
+            {
+              "title": "旅遊指南",
+              "value": "subject:\"guidebooks\""
+            },
+            {
+              "title": "探險",
+              "value": "subject:\"adventure and adventurers\""
+            },
+            {
+              "title": "航海與遊記",
+              "value": "subject:\"voyages and travels\""
+            },
+            {
+              "title": "歐洲",
+              "value": "subject:\"europe, description and travel\""
+            },
+            {
+              "title": "亞洲",
+              "value": "subject:\"asia, description and travel\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"guidebooks\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"adventure and adventurers\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"voyages and travels\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"europe, description and travel\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"asia, description and travel\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lifestyle",
+      "title": "生活與家居",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"home economics\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"home economics\""
+            },
+            {
+              "title": "園藝",
+              "value": "subject:\"gardening\""
+            },
+            {
+              "title": "手作",
+              "value": "subject:\"handicraft\""
+            },
+            {
+              "title": "居家佈置",
+              "value": "subject:\"interior decoration\""
+            },
+            {
+              "title": "寵物",
+              "value": "subject:\"pets\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"gardening\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"handicraft\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"interior decoration\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"pets\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "parenting",
+      "title": "育兒",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"parenting\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"parenting\""
+            },
+            {
+              "title": "親子",
+              "value": "subject:\"parent and child\""
+            },
+            {
+              "title": "嬰幼兒",
+              "value": "subject:\"infants\""
+            },
+            {
+              "title": "青春期",
+              "value": "subject:\"adolescence\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"parent and child\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"infants\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"adolescence\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "humor",
+      "title": "幽默",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"humor\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"humor\""
+            },
+            {
+              "title": "笑話與妙語",
+              "value": "subject:\"wit and humor\""
+            },
+            {
+              "title": "漫畫短篇",
+              "value": "subject:\"comic books, strips\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"wit and humor\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"comic books, strips\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "professional",
+      "title": "專業與技術",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"technology\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"technology\""
+            },
+            {
+              "title": "工程",
+              "value": "subject:\"engineering\""
+            },
+            {
+              "title": "醫學",
+              "value": "subject:\"medicine\""
+            },
+            {
+              "title": "法律",
+              "value": "subject:\"law\""
+            },
+            {
+              "title": "護理",
+              "value": "subject:\"nursing\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"engineering\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"medicine\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"law\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"nursing\""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reference",
+      "title": "參考",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "topic",
+          "title": "主題",
+          "type": "enumeration",
+          "value": "subject:\"reference\"",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "subject:\"reference\""
+            },
+            {
+              "title": "字典",
+              "value": "subject:\"dictionaries\""
+            },
+            {
+              "title": "百科全書",
+              "value": "subject:\"encyclopedias\""
+            },
+            {
+              "title": "寫作",
+              "value": "subject:\"authorship\""
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "trending",
+          "enumOptions": [
+            {
+              "title": "熱門書籍",
+              "value": "trending"
+            },
+            {
+              "title": "最新出版",
+              "value": "new"
+            },
+            {
+              "title": "好評推薦",
+              "value": "rating"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://openlibrary.org/search.json?q={{topic}}%20-subject%3A%22fiction%22%20-subject%3A%22romance%22%20-subject%3A%22love%20stories%22%20-subject%3A%22erotica%22%20-subject%3A%22erotic%20photography%22%20-subject%3A%22photography%2C%20erotic%22%20-subject%3A%22erotic%20literature%22%20-subject%3A%22sex%20instruction%22&sort={{sort}}&fields=key,title,author_name,cover_i,language,isbn&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.docs[*]",
+        "title": "$.title",
+        "author": "$.author_name",
+        "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+        "url": "$.key",
+        "language": "$.language",
+        "isbn": "$.isbn"
+      },
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "trending"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "new"
+          }
+        },
+        {
+          "layout": "row",
+          "params": {
+            "sort": "rating"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "topic": "subject:\"dictionaries\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"encyclopedias\""
+              }
+            },
+            {
+              "params": {
+                "topic": "subject:\"authorship\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "search": {
     "request": {
       "url": "https://openlibrary.org/search.json?q={{keyword}}&fields=key,title,author_name,cover_i,language,isbn&limit=20",

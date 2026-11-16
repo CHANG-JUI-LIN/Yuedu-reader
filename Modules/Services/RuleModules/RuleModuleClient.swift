@@ -95,9 +95,10 @@ extension RuleModule {
 
 extension RuleModule.Param {
     /// Each parameter's value by name: the reader's own, else as `currentValue` defaults it; a
-    /// parameter its `belongTo` hides sends its default instead (Forward hides it the same way).
-    /// Whether a parameter is hidden follows from the values its target sends, so a chain is
-    /// settled one link per pass; the validator refuses a cycle.
+    /// parameter its `belongTo` hides, or whose value is an option its own `belongTo` does not
+    /// offer now, sends its default instead (Forward hides it the same way). Both follow from
+    /// the values their target sends, so a chain is settled one link per pass; the validator
+    /// refuses a cycle, and an option `belongTo` on the default.
     static func currentValues(of params: [RuleModule.Param], in parameters: [String: String],
                               language: String?) -> [String: String] {
         let own = Dictionary(params.map { ($0.name, $0.currentValue(in: parameters, language: language)) },
@@ -105,7 +106,8 @@ extension RuleModule.Param {
         var values = own
         for _ in 0..<max(params.count, 1) {
             var next = own
-            for param in params where !param.isShown(among: values) {
+            for param in params where !param.isShown(among: values)
+                || !param.offers(own[param.name] ?? "", among: values) {
                 next[param.name] = param.currentValue(in: [:], language: language)
             }
             if next == values { break }
@@ -119,6 +121,18 @@ extension RuleModule.Param {
     func isShown(among values: [String: String]) -> Bool {
         guard let belongTo else { return true }
         return belongTo.value.contains(values[belongTo.paramName] ?? "")
+    }
+
+    /// Whether `value` may be sent among `values`: not an option whose `belongTo` names a value
+    /// its target does not have (format 3.0.2); anything else may.
+    func offers(_ value: String, among values: [String: String]) -> Bool {
+        guard let belongTo = enumOptions?.first(where: { $0.value == value })?.belongTo else { return true }
+        return belongTo.value.contains(values[belongTo.paramName] ?? "")
+    }
+
+    /// The options a picker lists among `values` (`offers`).
+    func offeredOptions(among values: [String: String]) -> [RuleModule.Option] {
+        (enumOptions ?? []).filter { offers($0.value, among: values) }
     }
 
     /// The section's own value, else the option in `language` (the reader's 中繼資料語言偏好推薦,

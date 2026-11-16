@@ -206,6 +206,108 @@ GENRE_CANDIDATES = LIST_LENGTH * 3
 # pool is mostly books long finished, or works Bangumi does not have (a daily ask was ~1 200
 # searches, 20 minutes at Bangumi's pace).
 GENRE_RECHECK = timedelta(days=7)
+# A genre's subgenres, a shelf each on its store (maintainer, 2026-11-16, after Apple Books' More in
+# Romance; 「維基為主、華日用 Bangumi 補」). Each wiki's are its own, picked from the subcategories
+# that held 8 or more of the genre pool's stories, walked two levels (measured on the host
+# 2026-11-16: en.wikipedia had 15–20 a genre, zh.wikipedia 0–6, half of them one author's books,
+# ja.wikipedia 1–7). A wiki subgenre is the genre's pool narrowed to its categories' pages, so it
+# asks no pageview of its own. On zh and ja, a `bangumi:` one is Bangumi's novels under that tag,
+# by Bangumi's rank: one search a week. Its files are the genre's, its id between the two:
+# genre-romance-historical-month.json; the module names each.
+SUBGENRES = {
+    'romance': {
+        'en': {'contemporary': ('Category:Contemporary romance novels',),
+               'historical': ('Category:Historical romance novels',),
+               'paranormal': ('Category:Paranormal romance novels',),
+               'romantic-fantasy': ('Category:Romantic fantasy novels',),
+               'romcom': ('Category:Romantic comedy novels',),
+               'young-adult': ('Category:Young adult romance novels',),
+               'romantic-sf': ('Category:Romantic science fiction novels',)},
+        'zh': {'harem': ('Category:后宫型小说',), 'qiongyao': ('Category:瓊瑤愛情小說',), 'yuri': 'bangumi:百合'},
+        'ja': {'romcom': ('Category:ロマンティック・コメディ小説',), 'harem': 'bangumi:后宫', 'yuri': 'bangumi:百合'},
+    },
+    'mystery': {
+        'en': {'detective': ('Category:Detective novels',),
+               'psychological': ('Category:Psychological thriller novels',),
+               'political': ('Category:Political thriller novels',),
+               'techno': ('Category:Techno-thriller novels',),
+               'historical': ('Category:Historical mystery novels',),
+               'legal': ('Category:Legal thriller novels',),
+               'serial-killers': ('Category:Novels about serial killers',),
+               'sherlock': ('Category:Sherlock Holmes novels',)},
+        'zh': {'christie': ('Category:阿嘉莎·克莉絲蒂小說',), 'japanese': ('Category:日本犯罪小說',),
+               'gongan': ('Category:公案小说',), 'thriller': ('Category:驚悚小說',), 'top': 'bangumi:推理'},
+        'ja': {'short-stories': ('Category:ミステリの短編小説集',), 'top': 'bangumi:推理'},
+    },
+    'scifi': {
+        'en': {'space': ('Category:Novels set in outer space',), 'dystopia': ('Category:Dystopian novels',),
+               'space-opera': ('Category:Space opera novels',),
+               'parallel': ('Category:Novels about parallel universes',),
+               'military': ('Category:Military science fiction novels',),
+               'ai': ('Category:Novels about artificial intelligence',), 'steampunk': ('Category:Steampunk novels',),
+               'isekai': ('Category:Isekai novels and light novels',)},
+        'zh': {'wisely': ('Category:衛斯理系列',), 'science-fantasy': ('Category:科学奇幻小说',),
+               'short-stories': ('Category:科幻短篇小說',), 'aliens': ('Category:外星科幻小說',), 'top': 'bangumi:科幻'},
+        'ja': {'space': ('Category:宇宙を舞台とした小説',), 'cyberpunk': ('Category:サイバーパンク小説',),
+               'ai': ('Category:ロボティクスSF小説', 'Category:自律ロボットを題材とした小説'),
+               'sf-horror': ('Category:SFホラー小説',), 'top': 'bangumi:科幻'},
+    },
+    'fantasy': {
+        'en': {'high': ('Category:High fantasy novels',), 'dark': ('Category:Dark fantasy novels',),
+               'contemporary': ('Category:Contemporary fantasy novels',),
+               'historical': ('Category:Historical fantasy novels',),
+               'magic': ('Category:Novels about magic (supernatural)',), 'fairies': ('Category:Novels about fairies',),
+               'romantic-fantasy': ('Category:Romantic fantasy novels',),
+               'isekai': ('Category:Isekai novels and light novels',),
+               'children': ("Category:Children's fantasy novels",)},
+        'zh': {'classic': ('Category:古典奇幻小說',), 'shenmo': ('Category:神魔小說',), 'children': ('Category:兒童奇幻小說',),
+               'romantic-fantasy': ('Category:奇幻愛情小說',), 'science-fantasy': ('Category:科学奇幻小说',),
+               'isekai': 'bangumi:异世界', 'xuanhuan': 'bangumi:玄幻'},
+        'ja': {'high': ('Category:ハイファンタジー小説',), 'isekai': 'bangumi:异世界'},
+    },
+    'wuxia': {
+        'en': {'jinyong': ('Category:Novels by Jin Yong',), 'liangyusheng': ('Category:Novels by Liang Yusheng',)},
+        'zh': {'jinyong': ('Category:金庸小說',), 'gulong': ('Category:古龍小說',), 'liangyusheng': ('Category:梁羽生小说',),
+               'huangyi': ('Category:黃易小說',), 'xianxia': 'bangumi:仙侠'},
+        'ja': {'edo': ('Category:江戸時代を舞台とした小説',)},
+    },
+    'horror': {
+        'en': {'vampires': ('Category:Novels about vampires',), 'ghosts': ('Category:Novels about ghosts',),
+               'demons': ('Category:Novels about demons',), 'zombies': ('Category:Zombie novels',),
+               'werewolves': ('Category:Novels about werewolves',),
+               'psychological': ('Category:Psychological horror novels',),
+               'lovecraftian': ('Category:Lovecraftian horror novels',),
+               'young-adult': ('Category:Young adult horror novels',)},
+        'zh': {'short-stories': ('Category:恐怖短篇小说',), 'american': ('Category:美國驚悚小說',),
+               'dark-tower': ('Category:黑塔小說系列',), 'top': 'bangumi:恐怖'},
+        'ja': {'lovecraftian': ('Category:クトゥルフ神話に関する小説',), 'short-stories': ('Category:ホラーの短編小説集',),
+               'top': 'bangumi:恐怖'},
+    },
+    'history': {
+        'en': {'middle-ages': ('Category:Novels set in the Middle Ages',), 'alternate': ('Category:Alternate history novels',),
+               'antiquity': ('Category:Novels set in antiquity',),
+               'early-modern': ('Category:Novels set in the early modern period',),
+               'family-saga': ('Category:Family saga novels',), 'biographical': ('Category:Biographical novels',),
+               'war': ('Category:War novels by war',)},
+        'zh': {'top': 'bangumi:历史'},
+        'ja': {'cold-war': ('Category:冷戦の小説',), 'top': 'bangumi:历史'},
+    },
+    'youth': {
+        'en': {'fantasy': ('Category:Young adult fantasy novels',), 'scifi': ('Category:Young adult science fiction novels',),
+               'romance': ('Category:Young adult romance novels',), 'horror': ('Category:Young adult horror novels',),
+               'mystery': ('Category:Young adult mystery fiction',),
+               'lgbtq': ('Category:LGBTQ-related young adult novels',), 'spy': ('Category:Junior spy novels',)},
+        'zh': {'high-school': ('Category:高中背景小說',), 'university': ('Category:大學背景小說',),
+               'junior-high': ('Category:初級中學背景小說',), 'campus': 'bangumi:校园', 'coming-of-age': 'bangumi:青春'},
+        'ja': {'high-school': ('Category:高等学校を舞台とした小説',), 'university': ('Category:大学を舞台とした小説',),
+               'junior-high': ('Category:中学校を舞台とした小説',), 'elementary': ('Category:小学校を舞台とした小説',),
+               'teachers': ('Category:教師を主人公とした小説',), 'magic-school': ('Category:魔法学校を舞台とした小説',),
+               'coming-of-age': 'bangumi:青春'},
+    },
+}
+SUBGENRE_DEPTH = 2
+# A subgenre's lists are a shelf's: shorter than its genre's.
+SUBGENRE_LENGTH = 20
 # Classes of a book that is one book, finished when it is out: on zh and ja, whose genre pools
 # are not told by infoboxes. A series class (novel series, light novel series, web novel) is
 # asked of Bangumi instead.
@@ -566,10 +668,10 @@ def folded(totals, groups):
     return result
 
 
-def shown_entries(totals, done):
+def shown_entries(totals, done, length=LIST_LENGTH):
     """The entries some list shows: each window's most viewed, and the year's finished ones."""
-    shown = {title for window in totals.values() for title in ranked(window)}
-    return shown | set(ranked({title: total for title, total in totals['year'].items() if title in done}))
+    shown = {title for window in totals.values() for title in ranked(window, limit=length)}
+    return shown | set(ranked({title: total for title, total in totals['year'].items() if title in done}, limit=length))
 
 
 def ended_entries(entries, groups, works, finished, by_series):
@@ -1189,14 +1291,15 @@ class Job:
         return order
 
 
-def build_region(job, name, region, pool_works, details, done, totals, groups, series_names, volumes, pool=None):
+def build_region(job, name, region, pool_works, details, done, totals, groups, series_names, volumes, pool=None,
+                 length=LIST_LENGTH):
     """The region's lists: `{list: [work, …]}`, from each window's `totals`, where a series is
     one entry under its head (`groups`), and `done` the entries finished. A work that is a whole
     series (`volumes`: `{qid: its volumes}`, `Job.bangumi_series`) fans them and names no series:
     its title is the series'. Either kind of series lists its books (`volumes`) for the app's
     series page: a series of the pool's books each as an entry of its own, which the app can
     open; a whole series' as Bangumi names them, in the region's language and script. `pool` is
-    the region's own unless a genre's (`build_genre`)."""
+    the region's own unless a genre's (`build_genre`); a subgenre's lists are `length` long."""
     pool = pool or POOLS[region.pool]
     wiki = pool.wiki
     variant_key = region.variant
@@ -1252,9 +1355,9 @@ def build_region(job, name, region, pool_works, details, done, totals, groups, s
     lists = {}
     for list_name in region.lists:
         if list_name in totals:
-            titles = ranked(totals[list_name])
+            titles = ranked(totals[list_name], limit=length)
         elif list_name == 'completed':
-            titles = ranked({title: total for title, total in totals['year'].items() if title in done})
+            titles = ranked({title: total for title, total in totals['year'].items() if title in done}, limit=length)
         else:
             continue
         intros = job.intros(wiki, titles, region.variant)
@@ -1389,7 +1492,16 @@ def build_genre(job, language, genre, names):
     groups = series_groups(works)
     totals = folded(job.popular(pool, list(works), GENRE_WINDOWS), groups)
     candidates = ranked(totals['year'], limit=GENRE_CANDIDATES)
-    first_shown = shown_entries(totals, set()) | set(candidates)
+    subgenres = SUBGENRES.get(genre, {}).get(language, {})
+    # Each wiki subgenre's windows: the genre's, narrowed to its pages (a series under its head).
+    sub_totals = {}
+    for sub, categories in subgenres.items():
+        if isinstance(categories, tuple):
+            heads = subgenre_heads(job, pool, categories, works, groups)
+            sub_totals[sub] = {window: {title: views for title, views in counted.items() if title in heads}
+                               for window, counted in totals.items()}
+    first_shown = shown_entries(totals, set()) | set(candidates) | \
+        {title for windows in sub_totals.values() for title in shown_entries(windows, set(), SUBGENRE_LENGTH)}
     site = pool.wiki.replace('.wikipedia.org', 'wiki')
     series_items = entities(job.client, sorted({groups[title][0] for title in first_shown if title in groups}),
                             props='labels|sitelinks', site=site)
@@ -1432,7 +1544,8 @@ def build_genre(job, language, genre, names):
             alone = title not in groups and single_book(claim_ids(classes.get(qid, {}), 'P31'))
             finished[qid] = alone or bool((job.store.finished(qid) or (None, 0))[1])
     done = ended_entries([title for title in totals['year'] if title in first_shown], groups, works, finished, by_series)
-    shown = shown_entries(totals, done)
+    shown = shown_entries(totals, done) | \
+        {title for windows in sub_totals.values() for title in shown_entries(windows, done, SUBGENRE_LENGTH)}
     missing = sorted(title for title in shown if works[title]['qid'] not in details)
     if missing:
         details.update(authors_of(missing))
@@ -1447,8 +1560,60 @@ def build_genre(job, language, genre, names):
         as_genre = Region(region.pool, region.variant, region.labels, region.classic_languages, GENRE_LISTS)
         lists[name] = build_region(job, name, as_genre, works, details, done, totals, groups, names_of, volumes,
                                    pool=pool)
-    job.say(f'genre {pool.store_key}: {len(works)} stories, {len(candidates)} candidates, {len(done)} finished')
+        for sub, windows in sub_totals.items():
+            built = build_region(job, name, as_genre, works, details, done, windows, groups, names_of, volumes,
+                                 pool=pool, length=SUBGENRE_LENGTH)
+            lists[name].update({f'{sub}-{list_name}': entries for list_name, entries in built.items()})
+    for sub, tag in subgenres.items():
+        if isinstance(tag, str):
+            subjects = bangumi_tagged(job.client, tag.removeprefix('bangumi:'))
+            for name in names:
+                entries = bangumi_entries(job, subjects, REGIONS[name], pool.wiki)
+                # Bangumi's rank is no window: each of the genre's lists is the same shelf.
+                lists[name].update({f'{sub}-{list_name}': entries for list_name in GENRE_LISTS})
+    job.say(f'genre {pool.store_key}: {len(works)} stories, {len(candidates)} candidates, {len(done)} finished, '
+            f'subgenres ' + ', '.join(f'{sub} {len(windows["year"])}' for sub, windows in sub_totals.items()))
     return lists
+
+
+def subgenre_heads(job, pool, categories, works, groups):
+    """The genre's entries a subgenre holds: its categories' pages, `SUBGENRE_DEPTH` levels down,
+    that are the genre's stories, a series' book as the series' head."""
+    pages = set(category_pages(job.client, Pool(pool.wiki, categories, SUBGENRE_DEPTH))) & set(works)
+    under = {title: head for head, (_, titles) in groups.items() for title in titles}
+    return {under.get(title, title) for title in pages}
+
+
+def bangumi_tagged(client, tag):
+    """Bangumi's ranked novels under `tag`, its best first (`SUBGENRE_LENGTH`)."""
+    answer = client.json(f'https://api.bgm.tv/v0/search/subjects?limit={SUBGENRE_LENGTH}', body={
+        'keyword': '', 'sort': 'rank',
+        'filter': {'type': [1], 'tag': [tag], 'meta_tags': ['小说'], 'rank': ['>0'], 'nsfw': False}})
+    return answer.get('data') or []
+
+
+def bangumi_entries(job, subjects, region, wiki):
+    """Bangumi subjects as a list's works: a Chinese wiki's region by the Chinese name in its
+    script (the wiki's converter), Japanese by the original."""
+    def name_of(subject):
+        return (subject.get('name_cn') or subject.get('name')) if wiki.startswith('zh.') else \
+            (subject.get('name') or subject.get('name_cn'))
+    names = {name_of(subject) for subject in subjects}
+    shown_as = convert_variant(job.client, wiki, names, region.variant) if region.variant and names else {}
+    authors = {author for subject in subjects for author in bangumi_authors(subject)}
+    authors_as = convert_variant(job.client, wiki, authors, region.variant) if region.variant and authors else {}
+    entries = []
+    for subject in subjects:
+        title = shown_as.get(name_of(subject), name_of(subject))
+        listed = {'title': title, 'author': [authors_as.get(author, author) for author in bangumi_authors(subject)][:5],
+                  'intro': (subject.get('summary') or '').strip(), 'url': f'https://bgm.tv/subject/{subject["id"]}',
+                  'aliases': [alias for alias in dict.fromkeys([subject.get('name'), subject.get('name_cn')])
+                              if alias and alias != title]}
+        cover = bangumi_cover(subject)
+        if cover:
+            listed['cover'] = cover
+        entries.append(listed)
+    return entries
 
 
 def genre_due(job, language, genre):

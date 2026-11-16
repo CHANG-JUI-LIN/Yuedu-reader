@@ -4,8 +4,8 @@
   "description": "Bangumi（bgm.tv）的漫畫與小說排行和搜尋。書架上缺簡介或分類的書，會把書名送到 Bangumi 查詢。",
   "author": "閱讀",
   "site": "https://bgm.tv",
-  "version": "1.0",
-  "requiredVersion": "3.0",
+  "version": "1.1",
+  "requiredVersion": "3.0.2",
   "hosts": [
     "api.bgm.tv",
     "lain.bgm.tv"
@@ -21,6 +21,34 @@
         },
         "novel-rank": {
           "title": "小说排行"
+        },
+        "comics": {
+          "title": "漫画与图画小说",
+          "params": {
+            "tag": {
+              "title": "标签",
+              "options": {
+                "漫画": "全部",
+                "恋爱": "恋爱",
+                "奇幻": "奇幻",
+                "热血": "热血",
+                "搞笑": "搞笑",
+                "悬疑": "悬疑",
+                "科幻": "科幻",
+                "校园": "校园",
+                "运动": "运动",
+                "日常": "日常",
+                "百合": "百合"
+              }
+            },
+            "sort": {
+              "title": "排序",
+              "options": {
+                "heat": "热门",
+                "rank": "高分"
+              }
+            }
+          }
         }
       }
     },
@@ -33,6 +61,34 @@
         },
         "novel-rank": {
           "title": "Top Novels"
+        },
+        "comics": {
+          "title": "Comics & Graphic Novels",
+          "params": {
+            "tag": {
+              "title": "Tag",
+              "options": {
+                "漫画": "All",
+                "恋爱": "Romance",
+                "奇幻": "Fantasy",
+                "热血": "Action",
+                "搞笑": "Comedy",
+                "悬疑": "Mystery",
+                "科幻": "Science Fiction",
+                "校园": "School",
+                "运动": "Sports",
+                "日常": "Slice of Life",
+                "百合": "Yuri"
+              }
+            },
+            "sort": {
+              "title": "Sort",
+              "options": {
+                "heat": "Popular",
+                "rank": "Top Rated"
+              }
+            }
+          }
         }
       }
     },
@@ -45,6 +101,34 @@
         },
         "novel-rank": {
           "title": "小説ランキング"
+        },
+        "comics": {
+          "title": "コミック・グラフィックノベル",
+          "params": {
+            "tag": {
+              "title": "タグ",
+              "options": {
+                "漫画": "すべて",
+                "恋爱": "恋愛",
+                "奇幻": "ファンタジー",
+                "热血": "熱血",
+                "搞笑": "ギャグ",
+                "悬疑": "サスペンス",
+                "科幻": "SF",
+                "校园": "学園",
+                "运动": "スポーツ",
+                "日常": "日常",
+                "百合": "百合"
+              }
+            },
+            "sort": {
+              "title": "並べ替え",
+              "options": {
+                "heat": "人気",
+                "rank": "高評価"
+              }
+            }
+          }
         }
       }
     },
@@ -57,6 +141,34 @@
         },
         "novel-rank": {
           "title": "소설 순위"
+        },
+        "comics": {
+          "title": "만화 및 그래픽 노블",
+          "params": {
+            "tag": {
+              "title": "태그",
+              "options": {
+                "漫画": "전체",
+                "恋爱": "연애",
+                "奇幻": "판타지",
+                "热血": "열혈",
+                "搞笑": "개그",
+                "悬疑": "미스터리",
+                "科幻": "SF",
+                "校园": "학원",
+                "运动": "스포츠",
+                "日常": "일상",
+                "百合": "백합"
+              }
+            },
+            "sort": {
+              "title": "정렬",
+              "options": {
+                "heat": "인기",
+                "rank": "높은 평점"
+              }
+            }
+          }
         }
       }
     }
@@ -161,6 +273,198 @@
         "完结",
         "网络小说",
         "画集"
+      ]
+    },
+    {
+      "id": "comics",
+      "title": "漫畫與圖畫小說",
+      "cacheDuration": 86400,
+      "contentKind": "comic",
+      "params": [
+        {
+          "name": "tag",
+          "title": "標籤",
+          "type": "enumeration",
+          "value": "漫画",
+          "enumOptions": [
+            {
+              "title": "全部",
+              "value": "漫画"
+            },
+            {
+              "title": "戀愛",
+              "value": "恋爱"
+            },
+            {
+              "title": "奇幻",
+              "value": "奇幻"
+            },
+            {
+              "title": "熱血",
+              "value": "热血"
+            },
+            {
+              "title": "搞笑",
+              "value": "搞笑"
+            },
+            {
+              "title": "懸疑",
+              "value": "悬疑"
+            },
+            {
+              "title": "科幻",
+              "value": "科幻"
+            },
+            {
+              "title": "校園",
+              "value": "校园"
+            },
+            {
+              "title": "運動",
+              "value": "运动"
+            },
+            {
+              "title": "日常",
+              "value": "日常"
+            },
+            {
+              "title": "百合",
+              "value": "百合"
+            }
+          ]
+        },
+        {
+          "name": "sort",
+          "title": "排序",
+          "type": "enumeration",
+          "value": "heat",
+          "enumOptions": [
+            {
+              "title": "熱門",
+              "value": "heat"
+            },
+            {
+              "title": "高分",
+              "value": "rank"
+            }
+          ]
+        },
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://api.bgm.tv/v0/search/subjects?limit=20&offset={{offset}}",
+        "method": "POST",
+        "bodyEncoding": "json",
+        "body": "{\"keyword\":\"\",\"sort\":\"{{sort}}\",\"filter\":{\"type\":[1],\"tag\":[\"{{tag}}\"],\"meta_tags\":[\"漫画\"],\"rank\":[\">0\"],\"nsfw\":false}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Content-Type": "application/json"
+        }
+      },
+      "list": {
+        "items": "$.data[*]",
+        "title": "$.name_cn||$.name",
+        "author": "$.infobox[?(@.key=='原作')].value||$.infobox[?(@.key=='作者')].value",
+        "cover": "$.images.common||$.images.large",
+        "intro": "$.summary",
+        "url": "https://bgm.tv/subject/{{$.id}}",
+        "aliases": "$.name&&$.infobox[?(@.key=='别名')].value[*].v",
+        "tags": "$.tags[*].name",
+        "publisher": "$.infobox[?(@.key=='出版社')].value"
+      },
+      "excludeTags": [
+        "漫画",
+        "单行本",
+        "漫画单行本",
+        "漫画分卷",
+        "コミックス",
+        "小说",
+        "轻小说",
+        "小説",
+        "ライトノベル",
+        "日本",
+        "中国",
+        "韩国",
+        "美国",
+        "原创",
+        "系列",
+        "连载中",
+        "已完结",
+        "完结",
+        "网络小说",
+        "画集"
+      ],
+      "store": [
+        {
+          "layout": "heroCards",
+          "params": {
+            "sort": "heat"
+          }
+        },
+        {
+          "layout": "heroGrid",
+          "params": {
+            "sort": "rank"
+          }
+        },
+        {
+          "layout": "groupedShelves",
+          "shelves": [
+            {
+              "params": {
+                "tag": "恋爱"
+              }
+            },
+            {
+              "params": {
+                "tag": "奇幻"
+              }
+            },
+            {
+              "params": {
+                "tag": "热血"
+              }
+            },
+            {
+              "params": {
+                "tag": "搞笑"
+              }
+            },
+            {
+              "params": {
+                "tag": "悬疑"
+              }
+            },
+            {
+              "params": {
+                "tag": "科幻"
+              }
+            },
+            {
+              "params": {
+                "tag": "校园"
+              }
+            },
+            {
+              "params": {
+                "tag": "运动"
+              }
+            },
+            {
+              "params": {
+                "tag": "日常"
+              }
+            },
+            {
+              "params": {
+                "tag": "百合"
+              }
+            }
+          ]
+        }
       ]
     }
   ],

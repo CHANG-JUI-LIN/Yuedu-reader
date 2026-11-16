@@ -4562,3 +4562,4 @@
 "這個類型還沒有作品" = "No Books in This Genre Yet";
 "還沒有類型" = "No Genres Yet";
 "安裝提供類型的模組後會列在這裡。" = "Genres appear here once a module that offers them is installed.";
+"書店：更多%@" = "More in %@";

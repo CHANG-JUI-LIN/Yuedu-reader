@@ -12,6 +12,9 @@ enum OfficialRuleModules {
     /// this order.
     static let ids = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "trends", "zlibrary", "rakuten-books"]
     static let reservedIDs = Set(ids)
+    /// 所有類型's order across the official modules (maintainer, 2026-11-16: Apple Books' twenty-odd
+    /// categories): the novels' genres, then comics, then Open Library's nonfiction.
+    static let storeOrder = ["trends", "bangumi", "openlibrary"]
     /// Open Library, which replaced the app's own Open Library search and fill (OL3).
     nonisolated static let openLibraryID = "openlibrary"
 
