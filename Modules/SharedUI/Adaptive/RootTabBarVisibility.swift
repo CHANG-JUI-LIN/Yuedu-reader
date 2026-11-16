@@ -167,6 +167,7 @@ extension View {
     /// With the sidebar away that swipe leaves the reader, and a sidebar that was open
     /// beside the page closes for the reader and opens again after it. Only readers ask; the
     /// other pages that hide the tab bar keep the sidebar (`IPadReaderSidebarUITests`).
+    /// Nothing changes before iOS 27 (`RootTabSidebarGate`).
     func keepsRootTabSidebarAway() -> some View {
         modifier(RootTabSidebarKeptAwayModifier())
     }
@@ -180,17 +181,19 @@ extension View {
 /// `isTabViewSidebarAvailable` is read-only), and the style cannot be swapped for
 /// `.tabBarOnly` under a condition without rebuilding the tabs and every stack in them.
 /// `UITabBarController.mode` is the public switch for the same thing.
+///
+/// iOS 27 only, where the swipe opens the sidebar: before it the tabs are left as they were.
 struct RootTabSidebarGate: View {
     @ObservedObject var visibility: RootTabBarVisibility
 
     var body: some View {
-        if #available(iOS 18.0, *) {
+        if #available(iOS 27.0, *) {
             Representable(keepsSidebarAway: visibility.isSidebarKeptAway)
                 .frame(width: 0, height: 0)
         }
     }
 
-    @available(iOS 18.0, *)
+    @available(iOS 27.0, *)
     private struct Representable: UIViewRepresentable {
         let keepsSidebarAway: Bool
 
@@ -201,7 +204,7 @@ struct RootTabSidebarGate: View {
         }
     }
 
-    @available(iOS 18.0, *)
+    @available(iOS 27.0, *)
     final class GateView: UIView {
         var keepsSidebarAway = false {
             didSet { if keepsSidebarAway != oldValue { apply() } }
