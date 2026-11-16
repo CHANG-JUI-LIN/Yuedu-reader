@@ -95,6 +95,9 @@ private struct BookReaderContent: View {
                 ReaderView(bookId: bookId, openingTOCTarget: openingTOCTarget)
             }
         }
+        // Whatever kind of reader it is. Before the environment below, so a reader that
+        // covers the tabs (a modal one) asks for nothing.
+        .keepsRootTabSidebarAway()
         .environment(\.rootTabBarVisibility, isInTabNavigation ? rootTabBarVisibility : nil)
         .onReceive(dependencies.remoteLibrary.failurePublisher) { failure in
             resourceFailureAlert.receive(failure, bookID: bookId, isReady: remoteReady)

@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import UIKit
 
 /// Which screens, anywhere in the app, are asking for the root tab bar to be hidden
 /// right now — the one place every tab reads that answer from.
@@ -26,6 +27,21 @@ final class RootTabBarVisibility: ObservableObject {
         }
         let hidden = !hidingRequests.isEmpty
         if hidden != isTabBarHidden { isTabBarHidden = hidden }
+    }
+
+    /// Whether a reader in a tab's stack is on screen: the tabs' sidebar is then out of
+    /// reach as well as the tab bar (`RootTabSidebarGate`).
+    @Published private(set) var isSidebarKeptAway = false
+    private var sidebarRequests: Set<UUID> = []
+
+    func setSidebarRequest(_ id: UUID, keepsSidebarAway: Bool) {
+        if keepsSidebarAway {
+            sidebarRequests.insert(id)
+        } else {
+            sidebarRequests.remove(id)
+        }
+        let keptAway = !sidebarRequests.isEmpty
+        if keptAway != isSidebarKeptAway { isSidebarKeptAway = keptAway }
     }
 }
 
@@ -125,6 +141,95 @@ extension View {
     /// (`HiddenBottomScrollEdge`).
     func hidesRootTabBar(_ hides: Bool = true, hasBottomBar: Bool = false) -> some View {
         modifier(RootTabBarHidingModifier(hidesTabBar: hides, hasBottomBar: hasBottomBar))
+    }
+}
+
+// MARK: - Sidebar
+
+private struct RootTabSidebarKeptAwayModifier: ViewModifier {
+    @Environment(\.rootTabBarVisibility) private var rootTabBar
+    @State private var requestID = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { rootTabBar?.setSidebarRequest(requestID, keepsSidebarAway: true) }
+            .onDisappear { rootTabBar?.setSidebarRequest(requestID, keepsSidebarAway: false) }
+    }
+}
+
+extension View {
+    /// For a reader: while it is on screen, the root tabs' sidebar cannot be opened over it.
+    ///
+    /// Hiding the tab bar does not do that. On an iPad the root tabs are `.sidebarAdaptable`
+    /// (iOS 18+), and on iOS 27 the sidebar still slid in over the page from a swipe at the
+    /// leading edge, where a reader's swipe back is (FB-206: iOS 27.2 iPad simulator, a
+    /// reader pushed from 作品詳情 or 探索; on iOS 26.5 the same swipe already went back).
+    /// With the sidebar away that swipe leaves the reader, and a sidebar that was open
+    /// beside the page closes for the reader and opens again after it. Only readers ask; the
+    /// other pages that hide the tab bar keep the sidebar (`IPadReaderSidebarUITests`).
+    func keepsRootTabSidebarAway() -> some View {
+        modifier(RootTabSidebarKeptAwayModifier())
+    }
+}
+
+/// On the root `TabView`: takes the sidebar away from the tabs while a reader asks
+/// (`keepsRootTabSidebarAway()`), and gives it back as it was.
+///
+/// UIKit, because SwiftUI has no say here: a `TabView`'s sidebar has no visibility of its
+/// own to set (`.toolbar(_:for:)` has no sidebar placement; iOS 27's
+/// `isTabViewSidebarAvailable` is read-only), and the style cannot be swapped for
+/// `.tabBarOnly` under a condition without rebuilding the tabs and every stack in them.
+/// `UITabBarController.mode` is the public switch for the same thing.
+struct RootTabSidebarGate: View {
+    @ObservedObject var visibility: RootTabBarVisibility
+
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            Representable(keepsSidebarAway: visibility.isSidebarKeptAway)
+                .frame(width: 0, height: 0)
+        }
+    }
+
+    @available(iOS 18.0, *)
+    private struct Representable: UIViewRepresentable {
+        let keepsSidebarAway: Bool
+
+        func makeUIView(context: Context) -> GateView { GateView() }
+
+        func updateUIView(_ view: GateView, context: Context) {
+            view.keepsSidebarAway = keepsSidebarAway
+        }
+    }
+
+    @available(iOS 18.0, *)
+    final class GateView: UIView {
+        var keepsSidebarAway = false {
+            didSet { if keepsSidebarAway != oldValue { apply() } }
+        }
+
+        /// The mode SwiftUI gave the tabs, held while the sidebar is away.
+        private var modeToRestore: UITabBarController.Mode?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            apply()
+        }
+
+        private func apply() {
+            guard let root = window?.rootViewController else { return }
+            guard let tabs = UITabBarController.first(in: root) else {
+                AppLogger.error("RootTabSidebarGate: no root tab bar controller under the window")
+                return
+            }
+            if keepsSidebarAway {
+                guard modeToRestore == nil, tabs.mode != .tabBar else { return }
+                modeToRestore = tabs.mode
+                tabs.mode = .tabBar
+            } else if let mode = modeToRestore {
+                modeToRestore = nil
+                tabs.mode = mode
+            }
+        }
     }
 }
 

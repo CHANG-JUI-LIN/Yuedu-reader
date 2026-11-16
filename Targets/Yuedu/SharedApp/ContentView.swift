@@ -127,6 +127,9 @@ struct ContentView: View {
         }
         .font(DSFont.body)
         .iPadAdaptiveRootTabStyle()
+        // An overlay, as every platform view around a page is here: in a background it makes
+        // SwiftUI order the accessibility elements by position (`RootTabBarHidingModifier`).
+        .overlay(alignment: .topLeading) { RootTabSidebarGate(visibility: rootTabBar) }
         .background {
             ImportedBookPresentation(
                 request: importDrainer.lastOutcome == nil ? importDrainer.readerRequest : nil,
