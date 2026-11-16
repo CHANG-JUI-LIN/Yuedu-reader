@@ -237,6 +237,8 @@ struct HomeView: View {
     @Bindable private var gs = GlobalSettings.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.accessibilitySwitchControlEnabled) private var switchControlEnabled
 
     @State private var showAddSheet = false
     @State private var showCalibreWireless = false
@@ -1162,6 +1164,9 @@ struct HomeView: View {
 
     private func bookListContent(entries: [ShelfEntry], page: ShelfPage, isInView: Bool) -> some View {
         let isSelecting = editMode == .active
+        let offersSwipe = BookshelfRowSwipe.isOffered(
+            voiceOverEnabled: voiceOverEnabled, switchControlEnabled: switchControlEnabled
+        )
         // A group's page pushed over the shelf leaves 書架's title alone.
         let measuresTitleFade = isInView && page.isOnPager
         // Native multi-select: binding the selection Set drives the system selection circles in
@@ -1184,7 +1189,8 @@ struct HomeView: View {
                             onEdit: { editingBook = book },
                             onDelete: { bookToDelete = book },
                             onShowWork: { showWorkDetail(for: book) },
-                            onTogglePin: { togglePin(book) }
+                            onTogglePin: { togglePin(book) },
+                            swipeIsOffered: offersSwipe
                         )
                         .equatable()
                         .tag(book.id)
@@ -1193,9 +1199,10 @@ struct HomeView: View {
                             if page.isOnPager { ShelfPagerRowSwipeArbiter() }
                         }
                         // 左滑 (feedback #17), as legado's shelf: 置頂 and 刪除, the delete going
-                        // through the same confirmation as the ••• menu's. The list only.
+                        // through the same confirmation as the ••• menu's. The list only, and
+                        // not under VoiceOver or Switch Control (`BookshelfRowSwipe`).
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if !isSelecting {
+                            if !isSelecting, offersSwipe {
                                 Button(role: .destructive) { bookToDelete = book } label: {
                                     Label(localized("刪除"), systemImage: "trash")
                                 }
@@ -1922,6 +1929,10 @@ struct BookRow: View {
     var onShowWork: (() -> Void)? = nil
     /// 置頂 / 取消置頂 (feedback #17).
     var onTogglePin: (() -> Void)? = nil
+    /// The list gives the row its 左滑 (置頂, 刪除), and the system hands those to VoiceOver.
+    /// When it does not (`BookshelfRowSwipe`), or the row is not in that list, the row offers
+    /// them as its own actions.
+    var swipeIsOffered: Bool = false
 
     /// A row's cover. A group's folder in the list takes the same frame.
     static let coverSize = CGSize(width: 45, height: 65)
@@ -1944,12 +1955,12 @@ struct BookRow: View {
                     if let onShowWork {
                         Button(localized("作品詳情")) { onShowWork() }
                     }
-                    // 置頂 and 刪除 are the row's swipe, which iOS 27 reads out by itself.
-                    if !BookshelfRowSwipe.reachesVoiceOver, let onTogglePin {
+                    // With the swipe, 置頂 and 刪除 reach VoiceOver as the swipe's own actions.
+                    if !swipeIsOffered, let onTogglePin {
                         Button(BookshelfPinLabel.title(isPinned: book.isPinned)) { onTogglePin() }
                     }
                     Button(localized("編輯書籍資訊")) { onEdit() }
-                    if !BookshelfRowSwipe.reachesVoiceOver {
+                    if !swipeIsOffered {
                         Button(localized("刪除書籍"), role: .destructive) { onDelete() }
                     }
                 }
@@ -2266,6 +2277,10 @@ struct BookGridCell: View {
             if !isEditing {
                 if let onShowWork {
                     Button(localized("作品詳情")) { onShowWork() }
+                }
+                // The grid has no swipe: 置頂 is the ••• menu's, and VoiceOver's here.
+                if let onTogglePin {
+                    Button(BookshelfPinLabel.title(isPinned: book.isPinned)) { onTogglePin() }
                 }
                 Button(localized("編輯書籍資訊")) { onEdit() }
                 Button(localized("刪除書籍"), role: .destructive) { onDelete() }
@@ -2703,18 +2718,20 @@ private struct BookOverflowMenu: View {
     }
 }
 
-/// Whether the system hands a list row's swipe actions (置頂, 刪除) to VoiceOver itself.
+/// Whether a shelf list row gets its 左滑 (置頂, 刪除).
 ///
-/// From iOS 27 SwiftUI adds a `List` row's `swipeActions` to the row's accessibility element,
-/// so a `BookRow` that also declared 置頂 and 刪除書籍 as accessibility actions was read with
-/// them twice (a blind user's report, 2026-11-14). Measured on the row's element:
-/// iOS 27.2 — 置頂, 刪除, 刪除書籍, 編輯書籍資訊, 作品詳情; iOS 26.5 — only the four the row
-/// declares. So before iOS 27 the row still declares all four, or VoiceOver there would have
-/// no 置頂 and no delete. Delete this, and the two actions it guards, once the deployment
-/// target is iOS 27. `BookshelfRowVoiceOverActionsTests` holds both sides.
+/// Not under VoiceOver or Switch Control. Those read a row's actions, and the system hands a
+/// `List` row's swipe actions to them by itself, more than once on iOS 27: measured with the
+/// app's accessibility runtime on (the actions VoiceOver's rotor lists, not the element's own
+/// `accessibilityCustomActions`), a plain row with a two-button swipe offered each button once
+/// on iOS 17.5, 18.6 and 26.5 and twice on 27.2, where SwiftUI adds them to the row's element
+/// and UIKit adds the cell's again. A blind user heard two 置頂 and two 刪除 on 27.2.1
+/// (FB-196). Neither can make the swipe gesture, so there the row offers 置頂 and 刪除書籍 as
+/// its own actions, once on every system, and the list has no swipe.
+/// `BookshelfRowVoiceOverActionsTests` reads both.
 enum BookshelfRowSwipe {
-    static var reachesVoiceOver: Bool {
-        if #available(iOS 27.0, *) { true } else { false }
+    static func isOffered(voiceOverEnabled: Bool, switchControlEnabled: Bool) -> Bool {
+        !voiceOverEnabled && !switchControlEnabled
     }
 }
 
@@ -2902,6 +2919,7 @@ extension BookRow: @MainActor Equatable {
             && (lhs.onShowWork == nil) == (rhs.onShowWork == nil)
             && (lhs.onTogglePin == nil) == (rhs.onTogglePin == nil)
             && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
+            && lhs.swipeIsOffered == rhs.swipeIsOffered
     }
 }
 
