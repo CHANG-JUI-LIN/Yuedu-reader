@@ -223,23 +223,6 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 - 用了 3.0 欄位但 `requiredVersion` 低於 `3.0` 或沒寫。
 - `requiredVersion` 比使用者的 App 版本新（會請使用者更新 App）。
 
----
-
-## 5. 以 ISBN 補資料 `lookup`
-
-書架上的書有 ISBN、但缺封面、簡介或出版社時，「閱讀」會用 `lookup` 查。
-`lookup` 是一個清單（§3），另外：
-
-- `request.url` 或 `request.body` 必須含 `{{isbn}}`。
-- `list.isbn` 必填：回應裡的 ISBN 要跟書架那本一致才採用。
-- `isbnPrefixes`：網站有的 ISBN-13 前綴（openBD 是 `9784`）。其他書的 ISBN **不會離開裝置**。
-
-可以補的欄位：`cover`、`intro`、`publisher`、`series`、`tags`、`aliases`。模組的 `search` 也會用書名補資料。
-使用者在 設定 → 聚合設定 → 資料來源 取消勾選就不會用它補資料（搜尋在同一頁的「搜尋來源」），或在模組頁按「停用」整個關掉。
-
-### 5.1 書的詳情頁 `detail`
-
-有些網站的搜尋結果沒有簡介，要再開那本書自己的頁面才有（Open Library 的簡介在 `/works/<編號>.json`）。
 ### 4.1 JavaScript `javascript`
 
 網站的請求要簽名、回應是加密的，規則讀不了的時候，在頂層寫 `"javascript": true`，就可以：
@@ -280,6 +263,23 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 一段腳本最多跑 2 秒、最長 100 KB。跑超過時間的腳本停不下來，這個模組的腳本會整個關掉，到 App 重新啟動為止。
 匯入畫面會告訴使用者這個模組會執行 JavaScript。
 
+---
+
+## 5. 以 ISBN 補資料 `lookup`
+
+書架上的書有 ISBN、但缺封面、簡介或出版社時，「閱讀」會用 `lookup` 查。
+`lookup` 是一個清單（§3），另外：
+
+- `request.url` 或 `request.body` 必須含 `{{isbn}}`。
+- `list.isbn` 必填：回應裡的 ISBN 要跟書架那本一致才採用。
+- `isbnPrefixes`：網站有的 ISBN-13 前綴（openBD 是 `9784`）。其他書的 ISBN **不會離開裝置**。
+
+可以補的欄位：`cover`、`intro`、`publisher`、`series`、`tags`、`aliases`。模組的 `search` 也會用書名補資料。
+使用者在 設定 → 聚合設定 → 資料來源 取消勾選就不會用它補資料（搜尋在同一頁的「搜尋來源」），或在模組頁按「停用」整個關掉。
+
+### 5.1 書的詳情頁 `detail`
+
+有些網站的搜尋結果沒有簡介，要再開那本書自己的頁面才有（Open Library 的簡介在 `/works/<編號>.json`）。
 `search` 或 `lookup` 可以加 `detail`：
 
 ```json
@@ -364,23 +364,6 @@ App 照這個順序找紀錄：
 一次最多留 100 則。使用者在 設定 → 聚合設定 → 資料來源 取消勾選這個模組，或在模組頁按「停用」，就不會問它。
 請在模組的 `description` 寫明：打開作品詳情時會把 ISBN 或書名送到你的網站。
 
-### 5.3 打開一本書 `detail`（頂層）
-
-點開這個模組列出的書時，「閱讀」會用頂層的 `detail` 讀那本書自己的頁面，補上清單沒給的簡介和標籤
-（Forward 的 `loadDetail`）。跟 §5.1 寫法一樣，另外：
-
-- `request` 必須用 `{{url}}`（那本書的 `url`，所以至少一份清單要有 `list.url`），也可以用 `globalParams`。
-- `cacheDuration`：秒數，這段時間內同一本書直接用上次讀到的。只有頂層的 `detail` 讀它。
-- 只問「從這個模組打開的那一本」，每次打開一次；請求失敗就照清單給的顯示。
-
-### 5.4 相關作品 `related`
-
-```json
-"related": {
-  "request": { "url": "https://example.com/api/books/{{id}}/related" },
-  "cacheDuration": 86400,
-  "list": { "items": "$.works[*]", "title": "$.title", "author": "$.author", "cover": "$.cover", "url": "$.href" }
-}
 ### 5.2.1 正文裡的評論 `comments`
 
 讀者讀一本書時，「閱讀」會問模組有沒有**正在讀的這一章**的評論，畫在正文裡，跟來源配置自帶的段評一樣：
@@ -455,6 +438,23 @@ App 照這個順序找紀錄：
 請在模組的 `description` 寫明：讀者讀書時會把書名、作者（或 ISBN）送到你的網站。章名和內文不會送出。
 讀者可以在 設定 → 模組 關掉「在正文顯示模組的評論」，或在「資料來源」取消勾選這個模組。
 
+### 5.3 打開一本書 `detail`（頂層）
+
+點開這個模組列出的書時，「閱讀」會用頂層的 `detail` 讀那本書自己的頁面，補上清單沒給的簡介和標籤
+（Forward 的 `loadDetail`）。跟 §5.1 寫法一樣，另外：
+
+- `request` 必須用 `{{url}}`（那本書的 `url`，所以至少一份清單要有 `list.url`），也可以用 `globalParams`。
+- `cacheDuration`：秒數，這段時間內同一本書直接用上次讀到的。只有頂層的 `detail` 讀它。
+- 只問「從這個模組打開的那一本」，每次打開一次；請求失敗就照清單給的顯示。
+
+### 5.4 相關作品 `related`
+
+```json
+"related": {
+  "request": { "url": "https://example.com/api/books/{{id}}/related" },
+  "cacheDuration": 86400,
+  "list": { "items": "$.works[*]", "title": "$.title", "author": "$.author", "cover": "$.cover", "url": "$.href" }
+}
 ```
 
 | 欄位 | 必填 | 說明 |

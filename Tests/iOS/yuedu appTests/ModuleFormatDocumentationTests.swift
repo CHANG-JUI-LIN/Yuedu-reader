@@ -41,7 +41,6 @@ struct ModuleFormatDocumentationTests {
      "detail":{"request":{"url":"{{url}}.json"},"intro":"i","tags":"t","cacheDuration":60},
      "related":{"request":{"url":"https://example.com/rel/{{id}}"},"cacheDuration":60,"list":{"items":"i","title":"t"}},
      "genre":{"request":{"url":"https://example.com/g?t={{tag}}"},"list":{"items":"i","title":"t","url":"u"}},
-     "attribution":{"text":"t","url":"https://example.com"},
      "javascript":true,
      "comments":{"cacheDuration":60,
                  "chapters":{"request":{"url":"https://example.com/b/{{id}}"},"list":{"items":"i","id":"d","title":"t"}},
@@ -53,6 +52,7 @@ struct ModuleFormatDocumentationTests {
                  "hot":{"request":{"url":"https://example.com/h/{{chapterId}}"},"paragraphCount":"c",
                         "list":{"items":"i","text":"t","author":"a","likes":"l","quote":"q","index":"n","id":"d"}},
                  "authorSay":{"request":{"url":"https://example.com/a/{{chapterId}}"},"text":"t","author":"a"}},
+     "attribution":{"text":"t","url":"https://example.com"},
      "localizations":{"en":{"title":"t","description":"d","entries":{"e":{"title":"t","description":"d"}}}}}
     """
 

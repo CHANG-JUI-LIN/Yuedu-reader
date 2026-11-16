@@ -187,7 +187,6 @@ enum RuleModuleValidator {
             if format301 == nil { format301 = "reviews" }
             try validate(reviews, records: [module.search, module.lookup].compactMap { $0 }, hosts: hosts, globals: globalNames)
         }
-
         if module.javascript != nil { uses302("javascript") }
         if let comments = module.comments {
             uses302("comments")
@@ -200,6 +199,7 @@ enum RuleModuleValidator {
             guard module.javascript == true else { throw .javaScript(field: "\(path).request.script") }
             try requireText(script, "\(path).request.script")
         }
+
         // The newest format it uses is the one it must ask for.
         if let field = format302 {
             let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
@@ -221,7 +221,6 @@ enum RuleModuleValidator {
         }
     }
 
-    // MARK: - Entries
     /// Every request the module has, by the path of what holds it.
     private static func requests(of module: RuleModule) -> [(String, RuleModule.Request)] {
         var found: [(String, RuleModule.Request)] = []
@@ -364,6 +363,7 @@ enum RuleModuleValidator {
         }
     }
 
+    // MARK: - Entries
 
     private static func validate(_ entry: RuleModule.Entry, path: String, hosts: RuleModuleHosts,
                                  isSearch: Bool, isLookup: Bool = false, globals: Set<String>, format3: inout String?,
