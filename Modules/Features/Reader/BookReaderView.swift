@@ -52,7 +52,6 @@ private struct BookReaderContent: View {
     @Environment(\.appDependencies) private var dependencies
     @Environment(\.readerNavigator) private var readerNavigator
     @Environment(\.readerUsesParentNavigationStack) private var usesParentNavigationStack
-    @Environment(\.readerClosesOnLeadingEdgeSwipe) private var closesOnLeadingEdgeSwipe
     @Environment(\.rootTabBarVisibility) private var rootTabBarVisibility
     // iOS 17 repeatedly invalidates DismissAction during a detail-to-reader
     // push, feeding navigation layout back into this entire reader hierarchy.
@@ -198,10 +197,11 @@ private struct BookReaderContent: View {
         readerNavigator != nil || usesParentNavigationStack
     }
 
-    /// Asked for by the presenter of a cover (`readerClosesOnLeadingEdgeSwipe`); a reader in a
-    /// tab's stack leaves on the same swipe with the system's back gesture instead.
+    /// A reader outside a tab's stack is in a full-screen cover, whoever presented it
+    /// (`closesCoverOnLeadingEdgeSwipe`); one in a stack leaves on the same swipe with the
+    /// system's back gesture instead.
     private var closesCoverOnEdgeSwipe: Bool {
-        closesOnLeadingEdgeSwipe && !isInTabNavigation
+        !isInTabNavigation
     }
 
     private var shouldUseFixedPageReader: Bool {

@@ -1,30 +1,16 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Opting in
-
-private struct ReaderClosesOnLeadingEdgeSwipeKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// Set by a presenter that shows the reader in a full-screen cover, for a swipe in from the
-    /// leading edge to close it, as it closes a reader pushed in a tab (FB-206). Read by
-    /// `BookReaderView`, which applies it to its text and comic readers only.
-    var readerClosesOnLeadingEdgeSwipe: Bool {
-        get { self[ReaderClosesOnLeadingEdgeSwipeKey.self] }
-        set { self[ReaderClosesOnLeadingEdgeSwipeKey.self] = newValue }
-    }
-}
-
 extension View {
     /// Closes the full-screen cover this reader is in on a swipe in from the leading edge.
     ///
     /// A reader pushed in a tab leaves on that swipe with the system's back gesture
     /// (`reservingNavigationBackSwipe()`, the shelf's card pop). A cover has no navigation
     /// controller to go back in, so the swipe did nothing there (FB-206: iPad, a comic opened
-    /// from 書架). The cover closes with its own animation once the swipe ends; it does not
-    /// follow the finger.
+    /// from 書架). Every reader outside a tab's stack is in one — the iPad shelf's, an import's,
+    /// an online book's, 搜尋's recent books, the browser's, the now-playing artwork's — and
+    /// `BookReaderView` gives all of them this. The cover closes with its own animation once
+    /// the swipe ends; it does not follow the finger.
     ///
     /// An overlay, never a background: a UIKit view in a page's background reorders its
     /// accessibility elements by position (`reservingNavigationBackSwipe()`).

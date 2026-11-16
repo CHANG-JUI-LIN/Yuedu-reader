@@ -797,8 +797,6 @@ struct HomeView: View {
             if let bookId = modalReaderBookId {
                 BookReaderView(bookId: bookId)
                     .environmentObject(store)
-                    // A pushed reader leaves on a swipe in from the leading edge; this one too.
-                    .environment(\.readerClosesOnLeadingEdgeSwipe, true)
             }
         }
     }
