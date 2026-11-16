@@ -480,6 +480,11 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// How a value goes into `body`: `form` (absent), percent-encoded, or `json`, escaped as
         /// a JSON string's contents, for a body such as `{"keyword":"{{keyword}}"}` (format 3.0).
         var bodyEncoding: String?
+        /// JavaScript run once the templates are filled, in a module that declares `javascript`
+        /// (format 3.0.2): `request` is `{url, method, body, headers}` and `values` the templates'
+        /// values; the request sent is the object it returns, else `request` as it left it. For a
+        /// site that signs its requests. The address it writes is still held to `hosts`.
+        var script: String?
     }
 
     /// `Request.bodyEncoding`'s values.
@@ -494,11 +499,6 @@ struct RuleModule: Codable, Hashable, Sendable {
         var author: String?
         var cover: String?
         var intro: String?
-        /// JavaScript run once the templates are filled, in a module that declares `javascript`
-        /// (format 3.0.2): `request` is `{url, method, body, headers}` and `values` the templates'
-        /// values; the request sent is the object it returns, else `request` as it left it. For a
-        /// site that signs its requests. The address it writes is still held to `hosts`.
-        var script: String?
         var url: String?
         var kind: String?
         var language: String?
