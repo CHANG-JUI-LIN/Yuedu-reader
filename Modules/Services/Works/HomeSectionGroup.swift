@@ -22,11 +22,36 @@ struct HomeSectionGroup: Identifiable, Equatable {
     /// What each row shows under 範圍, by row id; a row not yet loaded has none.
     let entries: [String: [CollectionEntry]]
     /// The reader's languages, which order the section's books; nil leaves them as loaded.
-    var languages: ReadingLanguagePreferences?
+    var languages: ReadingLanguagePreferences? {
+        didSet { state = resolvedState }
+    }
     /// Every card drawn, one that failed or holds nothing as its name over blank covers: the
     /// section's form, where its cards are picked to edit (maintainer, 2026-11-16) and a card the
     /// home leaves out must still be there to give another source or to remove.
-    var keepsEveryCard = false
+    var keepsEveryCard = false {
+        didSet { state = resolvedState }
+    }
+    /// The rows' states as one (`resolvedState`), worked out as the group is made. Read many
+    /// times a frame while the home lays out (its body, `drawsColorBand`, the row, the slot); worked
+    /// out on each read, a section of lists made every card again each time, with its blurbs in
+    /// the reader's script: 88 ms of a cold home's first scroll on an iOS 27.2 simulator.
+    private(set) var state: HomeModel.RowState = .idle
+
+    init(section: HomeSection, rows: [HomeModel.Row], entries: [String: [CollectionEntry]],
+         languages: ReadingLanguagePreferences? = nil, keepsEveryCard: Bool = false) {
+        self.section = section
+        self.rows = rows
+        self.entries = entries
+        self.languages = languages
+        self.keepsEveryCard = keepsEveryCard
+        state = resolvedState
+    }
+
+    /// `state` is made from the rest.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.section == rhs.section && lhs.rows == rhs.rows && lhs.entries == rhs.entries
+            && lhs.languages == rhs.languages && lhs.keepsEveryCard == rhs.keepsEveryCard
+    }
 
     var id: String { section.id.uuidString }
 
@@ -56,7 +81,7 @@ struct HomeSectionGroup: Identifiable, Equatable {
     /// - else, if any failed, the first failure, which 重試 asks of every failed row;
     /// - else it is empty, and takes no room.
     /// A failed row beside one with books is not shown; the model logs its failure.
-    var state: HomeModel.RowState {
+    private var resolvedState: HomeModel.RowState {
         if section.drawsLists { return listsState }
         let alternated = Self.alternate(rows.compactMap { row in
             guard case .loaded = row.state else { return nil }

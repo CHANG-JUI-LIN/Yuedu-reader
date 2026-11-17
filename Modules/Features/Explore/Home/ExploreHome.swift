@@ -103,7 +103,8 @@ private struct ExploreHomeRoot: View {
     }
 
     /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d). Built again on each
-    /// read, several per body: a span, so a main-thread stall during it is named.
+    /// read, so the body reads it once and hands it on (`home(_:)`): a span, so a main-thread
+    /// stall during it is named.
     private var groups: [HomeSectionGroup] {
         SourcePerfTrace.span("home.groups", "rows=\(model.rows.count)", thresholdMs: 16) {
             let lookup = store.copyLookup()
@@ -115,8 +116,7 @@ private struct ExploreHomeRoot: View {
     /// The home's sections, each one view in and out of 編輯首頁 (`HomeSectionSlot`): one list
     /// in both, the sections drawn and every section 編輯首頁 lists, so the morph changes no
     /// section's place in it, and its cards the home's books, so it changes no row either.
-    private var sectionEntries: [HomeSectionEntry] {
-        let drawn = groups
+    private func sectionEntries(_ drawn: [HomeSectionGroup]) -> [HomeSectionEntry] {
         let home = Dictionary(drawn.map { ($0.section.id, $0) }, uniquingKeysWith: { first, _ in first })
         let editable = pageStore.page?.editableSections.map(\.id) ?? []
         // The page before its first read saves it: what the home draws.
@@ -140,7 +140,7 @@ private struct ExploreHomeRoot: View {
     /// Every section is settled with nothing in it, so the home would be blank: a China
     /// storefront with no source and nothing read yet, a source no section draws from, or a
     /// 首頁配置 with no section shown.
-    private var showsNothing: Bool {
+    private func showsNothing(_ groups: [HomeSectionGroup]) -> Bool {
         groups.allSatisfy(\.isSettledEmpty)
     }
 
@@ -166,7 +166,7 @@ private struct ExploreHomeRoot: View {
         // the status bar).
         NavigationStack(path: $path) {
             if tabModel.isLoaded {
-                home
+                home(groups)
                 .toolbar { toolbar }
                 // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
                 // its ＋ takes the bar's place (maintainer, 2026-10-17).
@@ -232,8 +232,10 @@ private struct ExploreHomeRoot: View {
 
     // MARK: 全部
 
-    private var home: some View {
-        ScrollViewReader { proxy in
+    /// - Parameter groups: `groups`, built once for the whole page.
+    private func home(_ groups: [HomeSectionGroup]) -> some View {
+        let drawsNothing = showsNothing(groups)
+        return ScrollViewReader { proxy in
         ScrollView {
             // Each section has the gap after it (`HomeSectionSlot`), going with it where only the
             // home or only the editor gives it room.
@@ -242,7 +244,7 @@ private struct ExploreHomeRoot: View {
                 top
                 VStack(alignment: .leading, spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        let entries = sectionEntries
+                        let entries = sectionEntries(groups)
                         let editableCount = entries.count(where: { $0.editableIndex != nil })
                         ForEach(entries) { entry in
                             HomeSectionSlot(entry: entry, isEditing: isEditing, pageWidth: pageWidth, count: editableCount,
@@ -253,7 +255,7 @@ private struct ExploreHomeRoot: View {
                         }
                     }
                     // Over a home with nothing drawn, the button is the empty state's own.
-                    if model.isReady, isEditing || !showsNothing {
+                    if model.isReady, isEditing || !drawsNothing {
                         // At the end of the home (maintainer, 2026-10-11, decision 18). Out of the lazy
                         // stack, so it is always there to scroll to.
                         Button { setEditing(!isEditing) } label: { HomeEditButtonTitle(isEditing: isEditing) }
@@ -316,7 +318,7 @@ private struct ExploreHomeRoot: View {
         .overlay {
             if !model.isReady {
                 ProgressView()
-            } else if showsNothing, !isEditing {
+            } else if drawsNothing, !isEditing {
                 ContentUnavailableView {
                     if hasNoSections {
                         UnavailableLabel(localized("這個首頁配置還沒有欄目"), systemImage: "rectangle.stack")
@@ -369,6 +371,7 @@ private struct ExploreHomeRoot: View {
         HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model, isEditable: isEditable,
                     push: push,
                     openSettings: { path.append(HomeEditRoute.section(group.section.id)) })
+        .equatable()
     }
 
     /// Pull to refresh, and ••• → 重新整理.
@@ -539,8 +542,12 @@ private struct ExploreHomeRoot: View {
 // MARK: - A section
 
 /// One section, resolved against the shelf when it draws. Its own view, so a section that did
-/// not change is not drawn again when another one loads.
-struct HomeRowHost: View {
+/// not change is not drawn again when another one loads: equal (`==`) while its group, the shelf
+/// and its editing are, whatever its closures, which SwiftUI can never compare. Drawn as
+/// `.equatable()`. Without it each row that landed made every section's cards again, their
+/// text in the reader's script: 159 sections drawn for 43 landings in a cold home's first
+/// scroll on an iOS 27.2 simulator.
+struct HomeRowHost: View, Equatable {
     let group: HomeSectionGroup
     let store: BookStore
     let aozoraIndex: AozoraCatalogIndex?
@@ -550,8 +557,33 @@ struct HomeRowHost: View {
     let isEditable: Bool
     let push: (ExplorePush) -> Void
     let openSettings: () -> Void
+    /// The shelf as the section was made against it (`BookStore.mutationRevision`): its cards'
+    /// 已加入書架 and their shelf copies change with it.
+    private let shelfRevision: UInt64
     @Environment(\.exploreZoom) private var zoom
     @State private var confirmsDelete = false
+
+    init(group: HomeSectionGroup, store: BookStore, aozoraIndex: AozoraCatalogIndex?, model: HomeModel,
+         isEditable: Bool, push: @escaping (ExplorePush) -> Void, openSettings: @escaping () -> Void) {
+        self.group = group
+        self.store = store
+        self.aozoraIndex = aozoraIndex
+        self.model = model
+        self.isEditable = isEditable
+        self.push = push
+        self.openSettings = openSettings
+        shelfRevision = store.mutationRevision
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.group == rhs.group && lhs.shelfRevision == rhs.shelfRevision && lhs.isEditable == rhs.isEditable
+                && lhs.store === rhs.store && lhs.model === rhs.model
+                // The index is made once a catalog is read; a section opens its places with it.
+                && (lhs.aozoraIndex == nil) == (rhs.aozoraIndex == nil)
+                && lhs.aozoraIndex?.worksByID.count == rhs.aozoraIndex?.worksByID.count
+        }
+    }
 
     var body: some View {
         row

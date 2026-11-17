@@ -88,6 +88,7 @@ private struct ModuleStoreContent: View {
                                             isEditing: false, pageWidth: pageWidth, count: 0, openSettings: { _ in }) { group in
                                 HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model,
                                             isEditable: false, push: push, openSettings: {})
+                                .equatable()
                             }
                         }
                     }
