@@ -95,6 +95,35 @@ final class WebViewCookieMirror: @unchecked Sendable {
     }
 }
 
+extension WebViewCookieMirror {
+    /// legado-E `CookieStore.setWebCookie(url, cookie)`: each `name=value` of a cookie header
+    /// goes into the in-app browser's jar for the URL's host, as Android's
+    /// `CookieManager.setCookie(baseUrl, it)` does. Android also drops every session cookie
+    /// of its WebView first; that is not copied, because here the browser jar also feeds the
+    /// sources' own requests (this mirror), so it would sign other sources out.
+    static func setBrowserCookies(url: String, cookie: String) {
+        guard let host = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines))?.host,
+              !host.isEmpty else {
+            AppLogger.parse("setWebCookie: no host", context: ["url": String(url.prefix(200))])
+            return
+        }
+        let cookies: [HTTPCookie] = cookie.split(separator: ";").compactMap { pair in
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            let name = parts.first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            guard !name.isEmpty else { return nil }
+            let value = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+            return HTTPCookie(properties: [
+                .domain: host, .path: "/", .name: name, .value: value,
+            ])
+        }
+        guard !cookies.isEmpty else { return }
+        Task { @MainActor in
+            let store = WKWebsiteDataStore.default().httpCookieStore
+            for cookie in cookies { await store.setCookie(cookie) }
+        }
+    }
+}
+
 /// Bridges `WKHTTPCookieStoreObserver` (an `@objc` protocol that must be registered
 /// and called on the main thread) back to the mirror.
 private final class CookieStoreObserver: NSObject, WKHTTPCookieStoreObserver, @unchecked Sendable {

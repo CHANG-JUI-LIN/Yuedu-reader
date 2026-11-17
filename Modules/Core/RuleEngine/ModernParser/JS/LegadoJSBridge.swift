@@ -547,6 +547,15 @@ struct LegadoHTTPResult {
     func getThemeMode() -> String
     func getThemeConfig() -> String
     func getThemeConfigMap() -> LegadoJavaMap
+    /// legado-E, MD3 and Sigma `java.getReadBookConfig()` (the original Legado has none).
+    func getReadBookConfig() -> String
+    /// Rhino gives the zero-argument getter its bean property too, and sources test that
+    /// property to tell those forks from the original: 哔哩哔哩（优+++, YCK 1331）'s
+    /// `loginCheckJs` opens a 「下载阅读Σ」 page after every request while
+    /// `typeof java.readBookConfig == "undefined"`.
+    var readBookConfig: String { get }
+    /// A `java.util.Map` in Rhino, so `getReadBookConfigMap()["textColor"]` reads too.
+    func getReadBookConfigMap() -> JSValue
 
     // Chinese character conversion
     func t2s(_ text: String) -> String
@@ -590,6 +599,9 @@ struct LegadoHTTPResult {
     func replaceCookie(_ url: String, _ cookie: String)
     func remove(_ url: String)
     func removeCookie(_ url: String)
+    /// legado-E / Sigma `cookie.setWebCookie(url, cookie)`: the cookies go to the built-in
+    /// browser only, not to the source's own requests.
+    func setWebCookie(_ url: String, _ cookie: String)
 }
 
 @objc class LegadoCookieBridge: NSObject, LegadoCookieBridgeExport {
@@ -630,6 +642,10 @@ struct LegadoHTTPResult {
 
     func removeCookie(_ url: String) {
         CookieStore.shared.remove(url: url)
+    }
+
+    func setWebCookie(_ url: String, _ cookie: String) {
+        WebViewCookieMirror.setBrowserCookies(url: url, cookie: cookie)
     }
 }
 
@@ -2628,6 +2644,45 @@ struct LegadoHTTPResult {
     /// Return the same Java Map-shaped wrapper used by response headers/cookies.
     func getThemeConfigMap() -> LegadoJavaMap {
         LegadoJavaMap(resolvedThemeConfigValues())
+    }
+
+    /// legado-E `JsExtensions.getReadBookConfig()`: `ReadBookConfig.durConfig` as JSON. iOS has
+    /// its own reader settings, so this carries the fields of that config the reader has an
+    /// equivalent for, under Legado's names — the day and night backgrounds and text colours
+    /// (老福特源 colours its SVGs with `getReadBookConfigMap()["textColor"]`/`["textColorNight"]`).
+    func getReadBookConfig() -> String {
+        let values = resolvedReadBookConfigValues()
+        guard let data = try? JSONSerialization.data(withJSONObject: values, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    var readBookConfig: String { getReadBookConfig() }
+
+    func getReadBookConfigMap() -> JSValue {
+        LegadoSourceBridge.javaMapValue(resolvedReadBookConfigValues())
+    }
+
+    /// Legado's day colours are the reader's light background (the one it returns to from
+    /// 黑色), its night colours are 黑色's.
+    private func resolvedReadBookConfigValues() -> [String: String] {
+        let overrides = GlobalSettings.persistedReaderTextColorOverrides()
+        let day = ReaderTheme.lastLightTheme
+        let night = ReaderTheme.night
+        func hex(_ color: UIColor) -> String {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            func byte(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
+            return String(format: "#%02X%02X%02X", byte(r), byte(g), byte(b))
+        }
+        return [
+            "bgStr": hex(day.uiBackgroundColor),
+            "bgStrNight": hex(night.uiBackgroundColor),
+            "textColor": hex(day.uiTextColor(textColorOverrides: overrides)),
+            "textColorNight": hex(night.uiTextColor(textColorOverrides: overrides)),
+        ]
     }
 
     private func resolvedThemeConfigValues() -> [String: String] {

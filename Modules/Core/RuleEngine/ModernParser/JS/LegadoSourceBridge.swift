@@ -524,7 +524,8 @@ import JavaScriptCore
     /// `java.util.Map` instances; JavaScriptCore would otherwise hand JS a plain object
     /// with no such methods, so `.get(key)` would throw and abort the rule.
     /// See `__yueduJavaMap` injected by `JSCoreEngine.configureContext`.
-    private static func javaMapValue(_ dict: [String: Any]) -> JSValue {
+    /// `dict` as a Rhino `java.util.Map` reads in the calling script: `map.get(k)` and `map[k]`.
+    static func javaMapValue(_ dict: [String: Any]) -> JSValue {
         let ctx = JSContext.current() ?? JSContext()!
         let object = JSValue(object: dict, in: ctx) ?? JSValue(newObjectIn: ctx)
         guard let object else { return JSValue(undefinedIn: ctx) }

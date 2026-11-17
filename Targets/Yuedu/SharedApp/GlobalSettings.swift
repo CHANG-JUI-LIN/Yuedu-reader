@@ -187,10 +187,16 @@ enum ReaderTheme: String, CaseIterable {
     /// the bound appearance palette → the background's built-in text color.
     @MainActor
     var uiTextColor: UIColor {
+        uiTextColor(textColorOverrides: GlobalSettings.shared.readerTextColorOverrides)
+    }
+
+    /// `uiTextColor` with the reader's 文字顏色 overrides handed in, for a caller off the main
+    /// actor (a source script's `java.getReadBookConfig()` runs on the JS queue).
+    func uiTextColor(textColorOverrides: [String: UInt32]) -> UIColor {
         if let preset = activeAppearancePreset, preset.readerBackgroundID != nil {
             return preset.text
         }
-        if let rgbHex = GlobalSettings.shared.readerTextColorOverride(for: self) {
+        if let rgbHex = textColorOverrides[rawValue] {
             return AppearanceThemePreset.hex(rgbHex)
         }
         if let preset = activeAppearancePreset { return preset.text }
@@ -627,7 +633,13 @@ class GlobalSettings {
     private static let ttsAIDialogueEnabledKey = "yd_tts_ai_dialogue_enabled"
     private static let ttsAutoCastEnabledKey = "yd_tts_auto_cast_enabled"
     private static let ttsEmotionEnabledKey = "yd_tts_emotion_enabled"
-    private static let readerTextColorOverridesKey = "yd_reader_text_color_overrides"
+    nonisolated private static let readerTextColorOverridesKey = "yd_reader_text_color_overrides"
+
+    /// The reader's 文字顏色 per background as saved, readable off the main actor.
+    nonisolated static func persistedReaderTextColorOverrides() -> [String: UInt32] {
+        (UserDefaults.standard.dictionary(forKey: readerTextColorOverridesKey) as? [String: Int])?
+            .mapValues { UInt32(clamping: $0) } ?? [:]
+    }
     static let readerCustomBackgroundsKey = "yd_reader_custom_backgrounds"
     nonisolated static let readerCustomBackgroundIDKey = "yd_reader_custom_background_id"
     static let readerDarkModeKey = "yd_reader_dark_mode"
@@ -2179,9 +2191,7 @@ class GlobalSettings {
             ?? loadedPageMarginV
         readerBottomJustify = (UserDefaults.standard.object(forKey: "yd_reader_bottom_justify") as? Bool) ?? true
         readerUsesBookSpacing = (UserDefaults.standard.object(forKey: "yd_reader_uses_book_spacing") as? Bool) ?? true
-        readerTextColorOverrides =
-            (UserDefaults.standard.dictionary(forKey: Self.readerTextColorOverridesKey) as? [String: Int])?
-                .mapValues { UInt32(clamping: $0) } ?? [:]
+        readerTextColorOverrides = Self.persistedReaderTextColorOverrides()
         let loadedFooterBottomPadding =
             (UserDefaults.standard.object(forKey: "yd_footer_bottom_padding") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultFooterBottomPadding)
