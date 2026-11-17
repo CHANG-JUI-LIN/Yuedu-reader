@@ -329,7 +329,8 @@ struct ModuleScriptAndCommentsTests {
         block["paragraph"] = ["request": ["url": "https://example.com/c/{{chapterId}}/p/{{paragraphId}}?p={{page}}"],
                               "list": ["items": "$.list[*]", "text": "$.content", "author": "$.user"]]
         block["counts"] = ["request": ["url": "https://example.com/c/{{chapterId}}/counts"],
-                           "list": ["items": "$.paragraphs[*]", "count": "$.n", "quote": "$.text", "index": "$.no", "id": "$.pid"]]
+                           "list": ["items": "$.paragraphs[*]", "count": "$.n", "quote": "$.text", "index": "$.no", "id": "$.pid",
+                                    "title": "$.isTitle"]]
         block["hot"] = ["request": ["url": "https://example.com/c/{{chapterId}}/hot"],
                         "list": ["items": "$.hot[*]", "text": "$.content", "author": "$.user", "likes": "$.likes", "quote": "$.para"]]
         block["authorSay"] = ["request": ["url": "https://example.com/c/{{chapterId}}/say"], "text": "$.say", "author": "$.author"]
@@ -366,7 +367,7 @@ struct ModuleScriptAndCommentsTests {
         ModuleStub.install([
             "example.com/s": .json(#"{"books":[{"title":"長夜","author":"某作者","href":"/b/7","id":7}]}"#),
             "example.com/b/7/chapters": .json(Self.remoteChapters),
-            "example.com/c/a3/counts": .json(#"{"paragraphs":[{"pid":"p9","no":2,"n":"12条","text":"　　風，起了。"},{"pid":"p10","no":3,"n":0,"text":"沒有評論的段"}]}"#),
+            "example.com/c/a3/counts": .json(#"{"paragraphs":[{"pid":"-1","n":5,"isTitle":true},{"pid":"p9","no":2,"n":"12条","text":"　　風，起了。","isTitle":false},{"pid":"p10","no":3,"n":0,"text":"沒有評論的段"}]}"#),
             "example.com/c/a3/hot": .status(502),
             "example.com/c/a3/say": .json(#"{"say":"今天兩更。","author":"某作者"}"#),
             "example.com/c/a3": .json(#"{"total":"128条","list":[{"content":"伏筆。","user":"甲","likes":9}]}"#),
@@ -374,8 +375,9 @@ struct ModuleScriptAndCommentsTests {
         ])
         let thread = try #require(await ChapterComments.thread(for: query("第三章 風起"), library: f.library, order: f.order, client: f.client))
         let notes = await ChapterComments.notes(in: thread, client: f.client)
-        #expect(notes.counts == [ModuleParagraphCount(paragraph: .init(quote: "风起了", index: 2, id: "p9"), count: 12)],
-                "a paragraph with no comments has no bubble")
+        #expect(notes.counts == [ModuleParagraphCount(paragraph: .init(quote: "", index: nil, id: "-1", isTitle: true), count: 5),
+                                 ModuleParagraphCount(paragraph: .init(quote: "风起了", index: 2, id: "p9"), count: 12)],
+                "the title's, told by the module's `title` rule; a paragraph with no comments has no bubble")
         #expect(notes.hot.isEmpty && notes.authorSay == ModuleAuthorSay(text: "今天兩更。", author: "某作者"))
         let chapter = try await ChapterComments.comments(in: thread, sort: nil, page: 1, client: f.client)
         #expect(chapter.total == 128 && chapter.comments.map(\.text) == ["伏筆。"])
@@ -495,5 +497,46 @@ struct ModuleScriptAndCommentsTests {
         sourced.addAttribute(HTMLAttributedStringBuilder.internalLinkAttribute, value: "ydreview://r?d=abc", range: NSRange(location: 8, length: 1))
         #expect(ReaderCommentPieces.hasSourceComments(sourced) && !ReaderCommentPieces.hasSourceComments(built),
                 "a chapter whose source drew its own comments is left alone")
+    }
+
+    @Test("a site's 段評 on the chapter's title is a bubble after the title, opening the title's comments; without the title in the text it has none")
+    func titleBubble() async throws {
+        let paragraphs = ["第三章", "風起", "　　風，起了。", "　　他推開門，走進長夜。"]
+        #expect(ChapterParagraphMatch.titleEnd(of: paragraphs, title: "第三章 風起") == 1, "number and name on two lines: the name's")
+        #expect(ChapterParagraphMatch.titleEnd(of: ["", "第三章 風起", "　　風，起了。"], title: "第三章 風起") == 1)
+        #expect(ChapterParagraphMatch.titleEnd(of: ["　　風，起了。"], title: "第三章 風起") == nil)
+
+        let thread = ChapterCommentThread(
+            module: try RuleModuleValidator.validate(module(["search": search, "comments": notesBlock()]), appVersion: "3.0.2"),
+            record: RuleListItem(name: "長夜", author: "", bookUrl: "/b/7", coverUrl: "", intro: "", wordCount: "", lastChapter: "", kind: ""),
+            chapter: ModuleCommentChapter(id: "a3", title: "第3章 風起"))
+        let decorator = ReaderChapterCommentDecorator { _ in
+            var notes = RuleModuleChapterNotes(fetchedAt: .now)
+            notes.counts = [ModuleParagraphCount(paragraph: .init(quote: "", index: nil, id: "-1", isTitle: true), count: 5),
+                            ModuleParagraphCount(paragraph: .init(quote: ChapterParagraphMatch.fold("他推開門"), index: nil, id: "p9"), count: 12)]
+            return .init(thread: thread, notes: notes, top: [WorkReview(text: "好看", author: "讀者", likes: 3)], total: 128)
+        }
+        func placements(spine: Int, _ paragraphs: [String]) async throws -> ReaderCommentPlacements? {
+            decorator.reset(work: WorkReviewQuery(title: "長夜", authors: [], contentKind: .text), chapterTitles: { Self.localTitles })
+            var arrived = false
+            let listening = decorator.updates.sink { _ in arrived = true }
+            defer { listening.cancel() }
+            _ = decorator.placements(forSpine: spine, title: "第三章 風起", paragraphs: paragraphs)
+            for _ in 0..<50 where !arrived { await Task.yield() }
+            return decorator.placements(forSpine: spine, title: "第三章 風起", paragraphs: paragraphs)
+        }
+
+        let drawn = try #require(try await placements(spine: 3, paragraphs))
+        let placed = try #require(drawn.bubbles[1])
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(placed.href))
+        let target = ModuleCommentTargets.target(marker.moduleToken)
+        #expect(placed.count == 5 && marker.count == "5", "the title's own count, not the chapter's 128")
+        #expect(target?.thread == thread && target?.paragraphID == "-1" && target?.heading == "第三章 風起",
+                "it opens the title's comments")
+        #expect(drawn.bubbles[3]?.count == 12 && drawn.bubbles.count == 2, "the paragraph keeps its own")
+        #expect(drawn.chapterEnd.map(\.content.kind) == [.chapterSay], "the 本章說 card stays after the chapter")
+
+        let untitled = try #require(try await placements(spine: 4, Array(paragraphs.dropFirst(2))))
+        #expect(Array(untitled.bubbles.keys) == [1], "the text does not begin with its title: the title's has nowhere to go")
     }
 }

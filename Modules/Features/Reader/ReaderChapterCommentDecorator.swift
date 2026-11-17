@@ -2,7 +2,8 @@ import Combine
 import SwiftUI
 
 /// A module's comments in the text of the book being read (maintainer, 2026-11-15: 段評、熱評、
-/// 本章說、作者說都在閱讀介面): a count bubble at the end of a paragraph, a 熱評 card under one,
+/// 本章說、作者說都在閱讀介面): a count bubble at the end of a paragraph (the chapter's title
+/// among them, when the site counts comments on it), a 熱評 card under one,
 /// 作者說 and 本章說 cards after the chapter, each drawn as a 來源配置's own is and opening the
 /// comments it stands for.
 ///
@@ -119,12 +120,20 @@ final class ReaderChapterCommentDecorator: ReaderChapterDecorationSource {
         var placements = ReaderCommentPlacements()
 
         /// The paragraph a site's item is about, and the comments tapping it opens: that
-        /// paragraph's when the module reads them, else the chapter's.
+        /// paragraph's when the module reads them, else the chapter's. An item about the
+        /// chapter's title is at the title's last line, when the text begins with its title.
         func place(_ reference: ModuleParagraphReference) -> (position: Int, token: String)? {
-            guard let index = ChapterParagraphMatch.index(of: reference, in: keys, remoteCount: data.notes.paragraphCount) else { return nil }
-            let position = body[index].position
+            let position: Int
+            if reference.isTitle {
+                guard let titleEnd = ChapterParagraphMatch.titleEnd(of: paragraphs, title: title) else { return nil }
+                position = titleEnd
+            } else {
+                guard let index = ChapterParagraphMatch.index(of: reference, in: keys, remoteCount: data.notes.paragraphCount) else { return nil }
+                position = body[index].position
+            }
             guard hasParagraphComments, !reference.id.isEmpty else { return (position, chapterToken) }
-            let heading = String(paragraphs[position].trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+            let heading = reference.isTitle ? title
+                : String(paragraphs[position].trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
             return (position, ModuleCommentTargets.token(for: ModuleCommentTarget(thread: data.thread, paragraphID: reference.id,
                                                                                   heading: heading)))
         }

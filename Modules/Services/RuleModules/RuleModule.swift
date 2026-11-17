@@ -90,6 +90,9 @@ struct RuleModule: Codable, Hashable, Sendable {
         var index: String?
         /// The site's own id of the paragraph, `{{paragraphId}}`; its `index` when absent.
         var id: String?
+        /// True for an item about the chapter's title, which a site counts comments on as a
+        /// paragraph of its own (起點's paragraph -1, QQ閱讀's 0).
+        var title: String?
     }
 
     /// 段評: `{{chapterId}}` is the chapter's; each item is a paragraph and how many comments it has.
@@ -106,8 +109,9 @@ struct RuleModule: Codable, Hashable, Sendable {
         var quote: String?
         var index: String?
         var id: String?
+        var title: String?
 
-        var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id) }
+        var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id, title: title) }
     }
 
     /// 熱評: each item is a comment and the paragraph it is under.
@@ -125,8 +129,9 @@ struct RuleModule: Codable, Hashable, Sendable {
         var quote: String?
         var index: String?
         var id: String?
+        var title: String?
 
-        var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id) }
+        var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id, title: title) }
     }
 
     /// 作者說: the note, read on the page itself (no `items`).

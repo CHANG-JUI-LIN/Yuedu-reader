@@ -17,17 +17,31 @@ enum ChapterParagraphMatch {
     /// The chapter's own paragraphs, folded, with where each is in `paragraphs` (the chapter's
     /// paragraphs' text, in order): without the chapter's title, which stands before the text.
     static func body(of paragraphs: [String], title: String) -> [(position: Int, key: String)] {
+        split(paragraphs, title: title).body
+    }
+
+    /// Where the chapter's title ends in `paragraphs`: its last line's position, nil when the
+    /// chapter's text does not begin with its title.
+    static func titleEnd(of paragraphs: [String], title: String) -> Int? {
+        split(paragraphs, title: title).titleEnd
+    }
+
+    private static func split(_ paragraphs: [String], title: String) -> (titleEnd: Int?, body: [(position: Int, key: String)]) {
         let titleKey = fold(title)
+        var titleEnd: Int?
         var body: [(position: Int, key: String)] = []
         for (position, paragraph) in paragraphs.enumerated() {
             let key = fold(paragraph)
             guard !key.isEmpty else { continue }
             // The title block: the first lines, each all of it or a part of it (number and name
             // on two lines).
-            if body.isEmpty, !titleKey.isEmpty, titleKey.contains(key) { continue }
+            if body.isEmpty, !titleKey.isEmpty, titleKey.contains(key) {
+                titleEnd = position
+                continue
+            }
             body.append((position, key))
         }
-        return body
+        return (titleEnd, body)
     }
 
     /// Where `reference`'s paragraph is in `body` (an index into it), nil when it cannot be told.

@@ -32,6 +32,8 @@ struct ModuleParagraphReference: Codable, Hashable, Sendable {
     var index: Int?
     /// The site's id of it, `{{paragraphId}}`: its `id`, else its `index`.
     var id: String
+    /// It is the chapter's title (the module's `title` rule), told by neither text nor number.
+    var isTitle = false
 }
 
 /// 段評: a paragraph and how many comments it has.
@@ -230,9 +232,12 @@ extension RuleModuleClient {
             guard let rule, !rule.trimmingCharacters(in: .whitespaces).isEmpty else { return "" }
             return engine.getString(ruleStr: rule)
         }
+        let id = value(rules.id).trimmingCharacters(in: .whitespacesAndNewlines)
+        if LegadoTruth.isTrue(value(rules.title)) {
+            return ModuleParagraphReference(quote: "", index: nil, id: id, isTitle: true)
+        }
         let quote = ChapterParagraphMatch.fold(OPDSClient.plainMetadata(value(rules.quote), limit: 400))
         let index = Int(value(rules.index).trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0 > 0 ? $0 : nil }
-        let id = value(rules.id).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !quote.isEmpty || index != nil else { return nil }
         return ModuleParagraphReference(quote: quote, index: index, id: id.isEmpty ? index.map(String.init) ?? "" : id)
     }

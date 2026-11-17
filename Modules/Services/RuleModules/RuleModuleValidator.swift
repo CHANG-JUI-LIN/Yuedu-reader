@@ -305,7 +305,8 @@ enum RuleModuleValidator {
         func has(_ rule: String?) -> Bool { !(rule ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard has(rules.quote) || has(rules.index) else { throw .missingField("\(path).list.quote") }
         if !has(rules.quote), !has(count) { throw .missingField("\(path).paragraphCount") }
-        for case let (name, rule?) in [("quote", rules.quote), ("index", rules.index), ("id", rules.id)] as [(String, String?)] {
+        for case let (name, rule?) in [("quote", rules.quote), ("index", rules.index), ("id", rules.id), ("title", rules.title)]
+            as [(String, String?)] {
             try checkRule(rule, field: "\(path).list.\(name)", declared: [], innerRules: true)
         }
     }
