@@ -17,13 +17,43 @@ import Foundation
 final class TTSChunkDecoder {
     /// Float32, deinterleaved, at the source's sample rate and channel count.
     let processingFormat: AVAudioFormat
-    /// Source length in frames, as `ExtAudioFile` reports it (`AVAudioFile.length` reads the
-    /// same property). The end of playback is found by reading, not by this number.
-    let length: AVAudioFramePosition
+    /// Length in frames: as `ExtAudioFile` reports it (`AVAudioFile.length` reads the same
+    /// property), or the trimmed window's when `trimsSilence` cut the clip. The end of
+    /// playback is found by reading, not by this number.
+    private(set) var length: AVAudioFramePosition
 
     private let source: Source
     private let audioFile: AudioFileID
     private let extAudioFile: ExtAudioFileRef
+    /// The window of the source this decoder plays, in source frames. Frame 0 of `seek` and
+    /// `read` is `windowStart`; reading stops at `windowEnd` (nil: the source's own end).
+    private var windowStart: AVAudioFramePosition = 0
+    private var windowEnd: AVAudioFramePosition?
+    /// Source frame the next `read` starts at.
+    private var position: AVAudioFramePosition = 0
+
+    /// Silence a synthesized clip may keep at each end. Speech services pad every clip — 微軟
+    /// 線上語音 measured 170 ms before and 600 ms after each paragraph (FB-23, 2026-11-17),
+    /// ~770 ms of dead air at every paragraph boundary once clips play back to back. The
+    /// maintainer chose a ~300 ms boundary: about what the system voice leaves (5 + 200 ms).
+    static let keptLeadingSilence: TimeInterval = 0.1
+    static let keptTrailingSilence: TimeInterval = 0.2
+    /// -40 dBFS. Edge's padding reads at the MP3 noise floor, far below this; speech onsets
+    /// rise through it within a few milliseconds.
+    static let silenceThreshold: Float = 0.01
+    /// How far back from the end the trailing scan looks; longer trailing silence than this
+    /// is left as it is rather than decoding the whole clip twice.
+    private static let trailingScanWindow: TimeInterval = 2
+
+    /// `trimsSilence` cuts the clip's leading and trailing silence down to
+    /// `keptLeadingSilence` / `keptTrailingSilence`. Synthesized speech only: direct chapter
+    /// audio is a recording, possibly an hour long, and is played exactly as served.
+    convenience init(data: Data, trimsSilence: Bool) throws {
+        try self.init(data: data)
+        if trimsSilence {
+            try SourcePerfTrace.span("tts.trimSilence", thresholdMs: 5) { try trimSilence() }
+        }
+    }
 
     init(data: Data) throws {
         let source = Source(data: data)
@@ -88,21 +118,100 @@ final class TTSChunkDecoder {
     }
 
     func seek(toFrame frame: AVAudioFramePosition) throws {
-        try Self.check(ExtAudioFileSeek(extAudioFile, frame), "ExtAudioFileSeek")
+        let target = windowStart + max(0, frame)
+        try Self.check(ExtAudioFileSeek(extAudioFile, target), "ExtAudioFileSeek")
+        position = target
     }
 
-    /// The next buffer of up to `frameCapacity` frames, or nil at the end of the source.
+    /// The next buffer of up to `frameCapacity` frames, or nil at the end of the window.
     func read(frameCapacity: AVAudioFrameCount) throws -> AVAudioPCMBuffer? {
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: processingFormat, frameCapacity: frameCapacity) else {
+        var capacity = frameCapacity
+        if let windowEnd {
+            let remaining = windowEnd - position
+            guard remaining > 0 else { return nil }
+            capacity = AVAudioFrameCount(min(AVAudioFramePosition(capacity), remaining))
+        }
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: processingFormat, frameCapacity: capacity) else {
             throw Self.error(kAudio_MemFullError, "AVAudioPCMBuffer")
         }
         // Sizes every channel's `mDataByteSize` to the capacity for `ExtAudioFileRead`.
-        buffer.frameLength = frameCapacity
-        var frames = UInt32(frameCapacity)
+        buffer.frameLength = capacity
+        var frames = UInt32(capacity)
         try Self.check(ExtAudioFileRead(extAudioFile, &frames, buffer.mutableAudioBufferList), "ExtAudioFileRead")
         guard frames > 0 else { return nil }
         buffer.frameLength = frames
+        position += AVAudioFramePosition(frames)
         return buffer
+    }
+
+    // MARK: - Silence trimming
+
+    /// Finds the first and last audible frame and narrows the window to them plus the kept
+    /// silence. Reads from the start only until speech begins, and the end only within
+    /// `trailingScanWindow`, so a clip is never decoded twice in full. A clip with no audible
+    /// frame in either scan is left whole: there is nothing to tell speech from padding by.
+    private func trimSilence() throws {
+        let rate = processingFormat.sampleRate
+        guard rate > 0 else { return }
+        let chunk: AVAudioFrameCount = 4_096
+
+        // Leading: the first frame above the threshold.
+        try seek(toFrame: 0)
+        var firstAudible: AVAudioFramePosition?
+        var scanned: AVAudioFramePosition = 0
+        while firstAudible == nil, let buffer = try read(frameCapacity: chunk) {
+            if let offset = Self.firstAudibleFrame(in: buffer) {
+                firstAudible = scanned + AVAudioFramePosition(offset)
+            }
+            scanned += AVAudioFramePosition(buffer.frameLength)
+        }
+        guard let firstAudible else {
+            try seek(toFrame: 0)
+            return
+        }
+
+        // Trailing: the last frame above the threshold within the final window, and the
+        // source's real end (an MP3's reported length can be off by its priming frames).
+        let tailStart = max(firstAudible, length - AVAudioFramePosition(Self.trailingScanWindow * rate))
+        try seek(toFrame: tailStart)
+        var lastAudible: AVAudioFramePosition?
+        var cursor = tailStart
+        while let buffer = try read(frameCapacity: chunk) {
+            if let offset = Self.lastAudibleFrame(in: buffer) {
+                lastAudible = cursor + AVAudioFramePosition(offset)
+            }
+            cursor += AVAudioFramePosition(buffer.frameLength)
+        }
+        let sourceEnd = cursor
+
+        let start = max(0, firstAudible - AVAudioFramePosition(Self.keptLeadingSilence * rate))
+        let end = lastAudible.map { min(sourceEnd, $0 + 1 + AVAudioFramePosition(Self.keptTrailingSilence * rate)) }
+            ?? sourceEnd
+        windowStart = start
+        windowEnd = end
+        length = end - start
+        try seek(toFrame: 0)
+    }
+
+    private static func firstAudibleFrame(in buffer: AVAudioPCMBuffer) -> Int? {
+        guard let channels = buffer.floatChannelData else { return nil }
+        let frames = Int(buffer.frameLength)
+        for frame in 0..<frames {
+            for channel in 0..<Int(buffer.format.channelCount) where abs(channels[channel][frame]) > silenceThreshold {
+                return frame
+            }
+        }
+        return nil
+    }
+
+    private static func lastAudibleFrame(in buffer: AVAudioPCMBuffer) -> Int? {
+        guard let channels = buffer.floatChannelData else { return nil }
+        for frame in stride(from: Int(buffer.frameLength) - 1, through: 0, by: -1) {
+            for channel in 0..<Int(buffer.format.channelCount) where abs(channels[channel][frame]) > silenceThreshold {
+                return frame
+            }
+        }
+        return nil
     }
 
     // MARK: - Private

@@ -41,6 +41,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
     private var pendingUnit: TTSNarrationUnit?
 
     private let synthesizer = AVSpeechSynthesizer()
+    /// Paragraph-boundary timing (`⏱ tts.gap`), from the synthesizer's own callbacks.
+    private(set) var gapTrace = TTSParagraphGapTrace(engine: "system")
     private var segments: [TTSSpeakableSegment] = []
     private var currentIndex = 0
     private var isPaused = false
@@ -133,6 +135,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
         guard isPlaying else { return }
         synthesizer.pauseSpeaking(at: .word)
         silence.stop()
+        gapTrace.cancel()
         isPaused = true
         isPlaying = false
         endBackgroundTask()
@@ -371,11 +374,12 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
         speakChunk(at: index, token: playbackToken)
     }
 
-    private func handlePlaybackEnded() {
+    private func handlePlaybackEnded(at time: TimeInterval) {
         let finishedIndex = currentIndex
         ttsLog("[TTS][SystemEngine] playback ended index=\(finishedIndex)")
         activeUtterance = nil
         guard isPlaying, !isPaused else { return }
+        gapTrace.segmentEnded(finishedIndex, at: time)
         speakChunk(at: finishedIndex + 1, token: playbackToken)
     }
 
@@ -525,6 +529,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
     }
 
     private func stopSynthesizer() {
+        gapTrace.cancel()
         activeUtterance = nil
         if synthesizer.isSpeaking || synthesizer.isPaused {
             synthesizer.stopSpeaking(at: .immediate)
@@ -543,6 +548,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
         isPlaying = false
         spokenUTF16Offset = 0
         utteranceBaseOffset = 0
+        gapTrace.reset()
         endBackgroundTask()
     }
 
@@ -723,11 +729,21 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
         }
     }
 
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         let utteranceID = (utterance as? IdentifiedUtterance)?.id
+        let time = SourcePerfTrace.now
         DispatchQueue.main.async { [weak self] in
             guard let self, let utteranceID, utteranceID == self.activeUtterance?.id else { return }
-            self.handlePlaybackEnded()
+            self.gapTrace.segmentStarted(self.currentIndex, next: "spoken", at: time)
+        }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let utteranceID = (utterance as? IdentifiedUtterance)?.id
+        let time = SourcePerfTrace.now
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let utteranceID, utteranceID == self.activeUtterance?.id else { return }
+            self.handlePlaybackEnded(at: time)
         }
     }
 

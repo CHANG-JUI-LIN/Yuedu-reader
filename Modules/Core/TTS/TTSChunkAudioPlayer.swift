@@ -147,11 +147,12 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
 
     /// Replaces the source while retaining the audio graph. The chunk is decoded from memory;
     /// nothing is written to disk (see `TTSChunkDecoder`). Drops anything queued.
-    func load(data: Data) throws {
+    /// `trimsSilence`: synthesized speech, whose padding is cut (`TTSChunkDecoder`).
+    func load(data: Data, trimsSilence: Bool = false) throws {
         stop()
         clearCurrentSource()
 
-        let newDecoder = try TTSChunkDecoder(data: data)
+        let newDecoder = try TTSChunkDecoder(data: data, trimsSilence: trimsSilence)
         install(newDecoder)
         connectGraph(for: newDecoder.processingFormat, force: true)
 
@@ -165,9 +166,9 @@ final class TTSChunkAudioPlayer: @unchecked Sendable {
     /// nothing playing to follow or its format differs: the node is connected for one sample
     /// rate and channel count, and two imported voice sources can disagree on both.
     @discardableResult
-    func enqueue(data: Data) throws -> Bool {
+    func enqueue(data: Data, trimsSilence: Bool = false) throws -> Bool {
         guard decoder != nil, queued == nil else { return false }
-        let next = try TTSChunkDecoder(data: data)
+        let next = try TTSChunkDecoder(data: data, trimsSilence: trimsSilence)
         guard next.processingFormat.sampleRate == connectedSampleRate,
               next.processingFormat.channelCount == connectedChannelCount else {
             ttsLog("[TTS][ChunkPlayer] queued chunk format differs; it will load at the boundary")

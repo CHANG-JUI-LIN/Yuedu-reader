@@ -68,6 +68,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
     /// the synthesized audio. When it doesn't (plain templates, direct chapter audio), the
     /// speed is applied client-side via `AVAudioPlayer.rate` instead.
     private var serverControlsSpeed = false
+    /// Synthesized speech has its padding trimmed at both ends (FB-23); direct chapter audio
+    /// is a recording and plays exactly as served.
+    private var trimsSilence = true
     private var pendingPlaybackIndex: Int?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     /// Playback offset (seconds into the current chunk) captured at `pause`, so a resume that
@@ -80,6 +83,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
     /// locked — playback stalling mid-book with the mini-player still showing "playing"
     /// until the device is unlocked.
     private let silence = TTSSilenceKeepAlive()
+
+    /// Paragraph-boundary timing (`⏱ tts.gap`), and how the next segment got to the player.
+    private(set) var gapTrace = TTSParagraphGapTrace(engine: "http")
+    private var boundaryNext = "cached"
 
     // Keep at least three segments ready, and enough lookahead to use the selected
     // concurrency after the current audio starts playing.
@@ -134,6 +141,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             return
         }
         let family = Self.family(of: audioProvider)
+        gapTrace = TTSParagraphGapTrace(engine: "http-\(family.rawValue)")
         // An imported source can only voice an emotion through its own template.
         let deliveryAudible = family != .bookSource
             || CustomHTTPProvider.templateTakesDelivery(GlobalSettings.shared.httpTtsUrlTemplate)
@@ -175,6 +183,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         playbackToken = UUID()
         lastTitle = title
         lastRate = rate
+        trimsSilence = !isDirectChapterAudio
         serverControlsSpeed = !isDirectChapterAudio
             && (audioProvider is EdgeTTSAudioProvider
                 || audioProvider is AzureTTSAudioProvider
@@ -193,6 +202,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         guard isPlaying else { return }
         audioPlayer?.pause()
         stopSilence()
+        gapTrace.cancel()
         resumePlaybackTime = audioPlayer?.currentTime ?? 0
         isPaused = true
         isPlaying = false
@@ -360,6 +370,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
 
         currentIndex = index
         publishSegmentChanged(index: index)
+        boundaryNext = audioCache[index] != nil ? "cached"
+            : activeTasks[index] != nil ? "inflight"
+            : failedPreloads.contains(index) ? "failed" : "miss"
 
         if let data = audioCache[index] {
             ttsLog("[TTS][HTTPEngine] playChunk cached index=\(index) bytes=\(data.count)")
@@ -604,7 +617,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
               let player = audioPlayer, player.isPlaying,
               let data = audioCache[next] else { return }
         do {
-            if try player.enqueue(data: data) {
+            if try player.enqueue(data: data, trimsSilence: trimsSilence) {
                 queuedPlayerIndex = next
                 ttsLog("[TTS][HTTPEngine] queued gapless index=\(next)")
             }
@@ -620,6 +633,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         currentIndex = next
         loadedPlayerIndex = next
         resumePlaybackTime = 0
+        gapTrace.segmentEnded(next - 1)
+        gapTrace.segmentStarted(next, next: "queued")
         publishSegmentChanged(index: next)
         if let audioPlayer { onPlaybackStarted?(audioPlayer.effectiveDuration) }
         ttsLog("[TTS][HTTPEngine] advanced gapless index=\(next)")
@@ -708,7 +723,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
 
             let player = audioPlayer ?? TTSChunkAudioPlayer()
             player.delegate = self
-            try player.load(data: data)
+            try player.load(data: data, trimsSilence: trimsSilence)
             player.rate = clientPlaybackRate
             audioPlayer = player
             loadedPlayerIndex = index
@@ -721,6 +736,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             if !success {
                 failPlayback(TTSPlaybackError.playbackFailed(index: index), token: token)
             } else {
+                gapTrace.segmentStarted(index, next: boundaryNext)
                 // Wall-clock length, so the Now Playing clock matches what is heard.
                 onPlaybackStarted?(player.effectiveDuration)
                 enqueueNextIfReady()
@@ -746,7 +762,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
 
             let player = audioPlayer ?? TTSChunkAudioPlayer()
             player.delegate = self
-            try player.load(data: data)
+            try player.load(data: data, trimsSilence: trimsSilence)
             player.rate = clientPlaybackRate
             player.currentTime = min(max(0, time), max(0, player.duration - 0.05))
             audioPlayer = player
@@ -771,6 +787,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
 
     private func jumpToChunk(at index: Int) {
         guard index >= 0, index < segments.count else { return }
+        gapTrace.cancel()
         invalidateDownloads()
         audioPlayer?.stop()
         loadedPlayerIndex = nil
@@ -804,6 +821,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         }
 
         guard isPlaying, !isPaused else { return }
+        gapTrace.segmentEnded(finishedIndex)
         playChunk(at: finishedIndex + 1, token: playbackToken)
     }
 
@@ -893,6 +911,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         loadedPlayerIndex = nil
         audioPlayer?.clear()
         stopSilence()
+        gapTrace.reset()
         endBackgroundTask()
     }
 

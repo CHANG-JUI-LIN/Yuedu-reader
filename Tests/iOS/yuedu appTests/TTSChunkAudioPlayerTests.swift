@@ -91,6 +91,61 @@ struct TTSChunkAudioPlayerTests {
         player.clear()
     }
 
+    /// FB-23: the pause a listener hears between two paragraphs played back to back is the
+    /// padding Edge puts at both ends of every clip. Trimmed, the boundary is the ~300 ms the
+    /// maintainer chose; untrimmed (build 131 through today) it is the full padding.
+    @Test("two queued Edge clips meet with a ~300 ms pause, not the service's padding", arguments: [true, false])
+    func queuedClipsMeetWithTrimmedPause(trimsSilence: Bool) async throws {
+        let data = try Data(contentsOf: Self.chunkURL)
+        let player = TTSChunkAudioPlayer(manualRenderingFormat: try Self.sourceFormat())
+        try player.load(data: data, trimsSilence: trimsSilence)
+        player.rate = 1
+        #expect(player.play())
+        #expect(try player.enqueue(data: data, trimsSilence: trimsSilence))
+        let rate = try Self.sourceFormat().sampleRate
+        let firstLength = Int(player.duration * rate)
+
+        let rendered = try await Self.render(player, frames: firstLength + Int(2 * rate))
+        let threshold = TTSChunkDecoder.silenceThreshold
+        let lastSpeech = try #require(rendered[..<firstLength].lastIndex { abs($0) > threshold })
+        let nextSpeech = try #require(rendered[firstLength...].firstIndex { abs($0) > threshold })
+        let pauseMs = Double(nextSpeech - lastSpeech) / rate * 1000
+        print("⏱ FB23 queued boundary trimsSilence=\(trimsSilence) pause=\(Int(pauseMs))ms")
+        if trimsSilence {
+            #expect(pauseMs <= 320)
+            #expect(pauseMs >= 250)
+        } else {
+            #expect(pauseMs > 600)
+        }
+        player.clear()
+    }
+
+    @Test("trimming keeps every audible sample and only the chosen silence around them")
+    func trimmingKeepsSpeech() throws {
+        let data = try Data(contentsOf: Self.chunkURL)
+        let whole = try TTSChunkDecoder(data: data)
+        var full: [Float] = []
+        while let buffer = try whole.read(frameCapacity: 4096) { full += Self.channel0(buffer) }
+
+        let trimmed = try TTSChunkDecoder(data: data, trimsSilence: true)
+        var kept: [Float] = []
+        while let buffer = try trimmed.read(frameCapacity: 4096) { kept += Self.channel0(buffer) }
+        #expect(Int64(kept.count) == trimmed.length)
+
+        let threshold = TTSChunkDecoder.silenceThreshold
+        let rate = whole.processingFormat.sampleRate
+        let first = try #require(full.firstIndex { abs($0) > threshold })
+        let last = try #require(full.lastIndex { abs($0) > threshold })
+        let lead = max(0, first - Int(TTSChunkDecoder.keptLeadingSilence * rate))
+        // The speech itself survives sample for sample.
+        #expect(Array(kept[(first - lead)...(last - lead)]) == Array(full[first...last]))
+        #expect(kept.count == (last - lead + 1) + Int(TTSChunkDecoder.keptTrailingSilence * rate))
+        // A seek counts from the trimmed start.
+        try trimmed.seek(toFrame: 0)
+        let again = try #require(try trimmed.read(frameCapacity: 16))
+        #expect(Self.channel0(again) == Array(kept.prefix(16)))
+    }
+
     @Test("seeking plays from the new position")
     func seekPlaysFromNewPosition() async throws {
         let reference = try Self.reference()
