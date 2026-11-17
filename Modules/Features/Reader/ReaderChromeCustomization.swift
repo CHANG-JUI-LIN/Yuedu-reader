@@ -155,6 +155,39 @@ enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiab
     }
 }
 
+/// The reader's fixed controls: 返回 in the top bar, ⏮ / ⏭ beside the progress slider and
+/// 更多 at the end of the tool row. Only their icons change — each is the one way to what it
+/// does, so none can be switched off. A theme replacing the tools' icons left these four as
+/// the system's symbols beside its artwork.
+enum ReaderChromeControlItem: String, CaseIterable, Codable, Hashable, Identifiable, ReaderChromeIconItem {
+    case back
+    case previousChapter
+    case nextChapter
+    case more
+
+    var id: String { rawValue }
+    var storageID: String { "control.\(rawValue)" }
+    var isAlwaysVisible: Bool { true }
+
+    var titleKey: String {
+        switch self {
+        case .back: return "退出閱讀"
+        case .previousChapter: return "上一章"
+        case .nextChapter: return "下一章"
+        case .more: return "更多"
+        }
+    }
+
+    var defaultSystemImage: String {
+        switch self {
+        case .back: return "chevron.left"
+        case .previousChapter: return "backward.end"
+        case .nextChapter: return "forward.end"
+        case .more: return "ellipsis"
+        }
+    }
+}
+
 // MARK: - Imported icon storage
 
 /// A user-imported replacement for one button's symbol, keyed by that button's

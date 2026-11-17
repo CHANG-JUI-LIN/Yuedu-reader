@@ -68,9 +68,18 @@ extension ReaderView {
         Button {
             closeReader()
         } label: {
-            Label(localized("退出閱讀"), systemImage: "chevron.left")
-                .labelStyle(.iconOnly)
-                .foregroundStyle(modernPalette.topIcon)
+            // An imported icon is artwork in its own colours, as in the bottom bar.
+            if let custom = settings.readerChromeIconImage(for: ReaderChromeControlItem.back) {
+                Image(uiImage: custom)
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: DSLayout.readerModernToolGlyphHeight, height: DSLayout.readerModernToolGlyphHeight)
+            } else {
+                Label(localized("退出閱讀"), systemImage: ReaderChromeControlItem.back.defaultSystemImage)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(modernPalette.topIcon)
+            }
         }
         .accessibilityIdentifier("reader_back_button")
         .accessibilityLabel(localized("退出閱讀"))

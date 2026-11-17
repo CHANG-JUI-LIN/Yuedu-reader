@@ -4563,3 +4563,5 @@
 "還沒有類型" = "No Genres Yet";
 "安裝提供類型的模組後會列在這裡。" = "Genres appear here once a module that offers them is installed.";
 "書店：更多%@" = "More in %@";
+"固定按鈕" = "Fixed Buttons";
+"返回在頂部，上一章、下一章在進度條兩側，更多在工具列最後。只能換圖示，不能關掉。" = "Back is in the top bar, Previous and Next Chapter beside the progress bar, and More at the end of the toolbar. Their icons can be changed; they can’t be turned off.";

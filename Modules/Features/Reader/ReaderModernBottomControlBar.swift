@@ -116,7 +116,7 @@ struct ReaderModernBottomControlBar: View {
     private var scrubberRow: some View {
         HStack(spacing: DSSpacing.sm) {
             chapterButton(
-                systemImage: "backward.end",
+                .previousChapter,
                 label: localized("上一章"),
                 isEnabled: canGoPrevChapter,
                 action: onPrevChapter
@@ -155,7 +155,7 @@ struct ReaderModernBottomControlBar: View {
             .frame(height: rowHeight)
 
             chapterButton(
-                systemImage: "forward.end",
+                .nextChapter,
                 label: localized(canGoNextChapter ? "下一章" : "書末頁"),
                 isEnabled: canGoNextChapter,
                 action: onNextChapter
@@ -165,14 +165,13 @@ struct ReaderModernBottomControlBar: View {
     }
 
     private func chapterButton(
-        systemImage: String,
+        _ item: ReaderChromeControlItem,
         label: String,
         isEnabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .foregroundStyle(palette.bottomIcon)
+            controlGlyph(item, size: DSLayout.readerModernToolGlyphHeight)
                 // Explicit, not left to the button style: `.plain` does not reliably
                 // dim a disabled label, and at a chapter boundary the arrow has to
                 // read as unavailable.
@@ -373,8 +372,27 @@ struct ReaderModernBottomControlBar: View {
 
     private var moreLabel: some View {
         toolLabel(localized("更多")) {
-            Image(systemName: "ellipsis")
-                .imageScale(.large)
+            controlGlyph(.more, size: DSLayout.readerModernToolGlyphHeight, imageScale: .large)
+        }
+    }
+
+    /// A fixed control's imported icon in its own colours, the way the tools draw theirs;
+    /// otherwise its symbol in the bar's icon colour.
+    @ViewBuilder
+    private func controlGlyph(
+        _ item: ReaderChromeControlItem,
+        size: CGFloat,
+        imageScale: Image.Scale = .medium
+    ) -> some View {
+        if let custom = settings.readerChromeIconImage(for: item) {
+            Image(uiImage: custom)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: item.defaultSystemImage)
+                .imageScale(imageScale)
                 .foregroundStyle(palette.bottomIcon)
         }
     }

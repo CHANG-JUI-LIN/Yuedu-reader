@@ -37,6 +37,11 @@ struct ReaderChromeIconSettingsView: View {
                 headerKey: "更多",
                 footerKey: "這些動作在底部工具列的「更多」裡。"
             )
+            section(
+                items: ReaderChromeControlItem.allCases,
+                headerKey: "固定按鈕",
+                footerKey: "返回在頂部，上一章、下一章在進度條兩側，更多在工具列最後。只能換圖示，不能關掉。"
+            )
         }
         .softScrollEdges()
         .scrollContentBackground(.hidden)

@@ -146,6 +146,36 @@ struct ReaderChromeCustomizationTests {
         #expect(settings.readerChromeIconImage(for: ReaderChromeActionItem.search) != nil)
     }
 
+    @Test("返回, ⏮, ⏭ and 更多 take imported icons and can never be hidden")
+    func fixedControlsTakeIconsButStay() throws {
+        let settings = GlobalSettings.shared
+        Self.resetAll(settings)
+        defer { Self.resetAll(settings) }
+
+        #expect(ReaderChromeControlItem.allCases.map(\.storageID)
+            == ["control.back", "control.previousChapter", "control.nextChapter", "control.more"])
+        #expect(ReaderChromeControlItem.allCases.map(\.defaultSystemImage)
+            == ["chevron.left", "backward.end", "forward.end", "ellipsis"])
+        // The four ids stay apart from the tools' and actions' in the one icon store.
+        let others = Set(ReaderChromeToolItem.allCases.map(\.storageID) + ReaderChromeActionItem.allCases.map(\.storageID))
+        #expect(Set(ReaderChromeControlItem.allCases.map(\.storageID)).isDisjoint(with: others))
+
+        let png = try #require(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+            .image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+            }
+            .pngData())
+        for item in ReaderChromeControlItem.allCases {
+            settings.setReaderChromeItem(item, visible: false)
+            #expect(settings.isReaderChromeItemVisible(item))
+            #expect(settings.readerChromeIconImage(for: item) == nil)
+            try settings.importReaderChromeIcon(data: png, originalFileName: "\(item.rawValue).png", item: item)
+            #expect(settings.readerChromeIconImage(for: item) != nil)
+        }
+        #expect(settings.readerChromeHiddenIDs.isEmpty)
+    }
+
     @Test("hiding an action drops it from the live book-action list")
     func hidingActionFiltersTheLiveList() {
         let settings = GlobalSettings.shared
