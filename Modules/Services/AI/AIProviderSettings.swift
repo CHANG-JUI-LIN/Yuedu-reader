@@ -150,13 +150,9 @@ enum AIProviderAssembly {
 
     /// The provider for the app's stored settings.
     static func makeProvider() -> Result<any LLMProviding, Unavailable> {
-        // Spelled out rather than given as default arguments: a default argument is
-        // evaluated in a nonisolated context, where a main-actor `shared` is off limits.
-        do {
-            let profiles = try AIProviderStore.shared.profiles()
-            guard let profile = profiles.first(where: { $0.id == AIProviderStore.shared.activeID }) ?? profiles.first else { return .failure(.notConfigured) }
-            return makeProvider(profile: profile)
-        } catch { return .failure(.corruptedConfiguration) }
+        // The same lookup as `activeService()` — one path, so `-debug-ai-endpoint` reaches
+        // every feature rather than only the ones that ask for the service's name.
+        activeService().map(\.provider)
     }
 
     /// The active service, with the name and model a run shows the reader before it starts.
@@ -236,6 +232,11 @@ extension AIProviderStore {
     }
 
     var hasConfiguredProfile: Bool {
+        #if DEBUG
+        // `-debug-ai-endpoint`: the fixture is the configured service (`activeService()`), so
+        // features gated on "an AI service is set up" (AI 多角色朗讀) run against it too.
+        if ProcessInfo.processInfo.arguments.contains("-debug-ai-endpoint") { return true }
+        #endif
         guard let data = defaults.data(forKey: key + ".profiles") else { return AIAPIKeyStore.hasKey }
         guard let profiles = try? JSONDecoder().decode([AIServiceProfile].self, from: data) else { return false }
         return profiles.contains { AIAPIKeyStore.load(providerID: $0.id)?.isEmpty == false }

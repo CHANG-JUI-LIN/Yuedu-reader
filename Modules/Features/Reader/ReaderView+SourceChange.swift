@@ -1036,11 +1036,15 @@ extension ReaderView {
         _ chapterIndex: Int,
         syncReader: Bool,
         startCharOffset: Int = 0,
-        layoutAwaited: Bool = false
+        layoutAwaited: Bool = false,
+        dialogue startDialogue: TTSStartDialogue = .lookUp
     ) -> Bool {
         guard spineChapters.indices.contains(chapterIndex) else { return false }
-        // Whatever this call does, it replaces a start still waiting on a layout.
+        // Whatever this call does, it replaces a start still waiting on a layout, and a
+        // switch to the whole chapter's analysis pending for an earlier start.
         ttsStartLayoutRequest = nil
+        ttsWholeChapterSwitch?.cancel()
+        ttsWholeChapterSwitch = nil
         // Starting on a volume separator (the reader is parked on one, or the user picked one
         // in the TOC) has nothing to read: begin at the next real chapter instead of failing
         // silently. The offset belongs to the separator, so it is dropped.
@@ -1091,22 +1095,33 @@ extension ReaderView {
             return false
         }
 
-        // AI 多角色朗讀: the chapter is analysed before it is read, so the first line already
-        // has the right voice. The analysis covers the whole chapter, then is sliced below
-        // along with the text.
+        // AI 多角色朗讀: what is read first is analysed before it is read, so the first line
+        // already has the right voice. The whole chapter's analysis is sliced below along with
+        // the text; until it exists, the opening's stands in (`startTTSChapterOnceAnalyzed`).
         var dialogue: TTSChapterDialogue?
+        var openingAnalysedThrough: Int?
+        var wholeChapterRequest: AIDialogueCastService.Request?
         if let request = ttsDialogueRequest(chapterIndex: chapterIndex, text: text) {
             switch AIDialogueCastService.shared.readiness(request) {
             case let .ready(analysed):
                 dialogue = analysed
             case .needsAnalysis:
-                startTTSChapterOnceAnalyzed(
-                    chapterIndex,
-                    syncReader: syncReader,
-                    startCharOffset: startCharOffset,
-                    request: request
-                )
-                return true
+                switch startDialogue {
+                case .lookUp:
+                    startTTSChapterOnceAnalyzed(
+                        chapterIndex,
+                        syncReader: syncReader,
+                        startCharOffset: startCharOffset,
+                        request: request
+                    )
+                    return true
+                case let .opening(opening, analysedThrough):
+                    dialogue = opening
+                    openingAnalysedThrough = analysedThrough
+                    wholeChapterRequest = request
+                case .withoutAnalysis:
+                    break
+                }
             case .unavailable:
                 break
             }
@@ -1155,11 +1170,16 @@ extension ReaderView {
                 author: ttsNowPlayingAuthor,
                 artwork: ttsNowPlayingArtwork(),
                 pronunciationHints: hints,
-                speakerAttributions: dialogue.map {
+                speakerAttributions: openingAnalysedThrough.map {
+                    ttsSpeakerAttributions(opening: dialogue, analysedThrough: $0, droppingPrefix: sliceOffset, text: text)
+                } ?? dialogue.map {
                     ttsSpeakerAttributions(for: $0, droppingPrefix: sliceOffset, textLength: (text as NSString).length)
                 }
             )
             step("speak")
+            if let wholeChapterRequest {
+                switchToWholeChapterAnalysis(wholeChapterRequest, chapterIndex: chapterIndex)
+            }
             ttsCoordinator.refreshNowPlayingForSystemSurfaces()
             step("nowPlaying")
         }
@@ -1283,7 +1303,8 @@ extension ReaderView {
             return
         }
         Task { @MainActor in
-            await engine.preloadChapter(at: next)
+            let outcome = await engine.preloadChapter(at: next)
+            AppLogger.render("⟐ [TTS][AI] next chapter=\(next) layout=\(outcome.rawValue)", level: .notice)
             // Analysed while this chapter plays, so the next one starts without a wait.
             prefetchTTSDialogue(for: next)
         }

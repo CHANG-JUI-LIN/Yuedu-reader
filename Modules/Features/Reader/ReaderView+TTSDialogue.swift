@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -5,6 +6,18 @@ import UIKit
 /// the result and the cast to the narrator. The analysis itself — requests, caching, the
 /// roster, automatic voices — belongs to `AIDialogueCastService`.
 extension ReaderView {
+
+    /// What a start already asked the AI, so `startTTSChapter` does not wait on it again.
+    enum TTSStartDialogue {
+        /// Use the whole chapter's analysis, waiting for it if it is missing.
+        case lookUp
+        /// The whole chapter is still being analysed: speak with the opening's lines (`nil`
+        /// when that request failed) up to `analysedThrough`, the prose's speakers after it,
+        /// and switch once the chapter's analysis lands.
+        case opening(TTSChapterDialogue?, analysedThrough: Int)
+        /// Nothing the AI could add to what is read from here.
+        case withoutAnalysis
+    }
 
     /// Whether a narration result still needs the AI before it can be read.
     enum TTSDialogueAttachment {
@@ -51,12 +64,42 @@ extension ReaderView {
         return attributions
     }
 
+    /// A start spoken before the whole chapter is analysed: the opening's speakers up to
+    /// `analysedThrough`, then the speakers read off the prose — the same the engine would find
+    /// itself — rather than every later quote in the narrator's voice.
+    func ttsSpeakerAttributions(
+        opening: TTSChapterDialogue?,
+        analysedThrough: Int,
+        droppingPrefix offset: Int,
+        text: String
+    ) -> [TTSSpeakerAnnotator.Attribution] {
+        let length = (text as NSString).length
+        let analysed = opening.map { ttsSpeakerAttributions(for: $0, droppingPrefix: offset, textLength: length) } ?? []
+        let boundary = max(0, analysedThrough - offset)
+        let rest = TTSSpeakerAnnotator.attributions(in: text, aliases: activeTTSRoleAliases())
+            .filter { $0.range.location >= boundary }
+        return analysed + rest
+    }
+
     /// Attaches the chapter's analysis when there is one, or says it must be awaited.
     func attachTTSDialogue(to narration: TTSNarrationUnit, chapterIndex: Int) -> TTSDialogueAttachment {
         guard let request = ttsDialogueRequest(chapterIndex: chapterIndex, text: narration.text) else {
             return .ready(narration)
         }
-        switch AIDialogueCastService.shared.readiness(request) {
+        let readiness = AIDialogueCastService.shared.readiness(request)
+        // FB-192: whether the prefetch got there first. `miss` or `inFlight` at a chapter
+        // boundary is the 「AI 正在分析本章角色與語氣…」 wait.
+        let found: String
+        switch readiness {
+        case .ready: found = "hit"
+        case .needsAnalysis: found = AIDialogueCastService.shared.state(of: request) == .analyzing ? "inFlight" : "miss"
+        case .unavailable: found = "unavailable"
+        }
+        AppLogger.render(
+            "⟐ [TTS][AI] cast lookup chapter=\(chapterIndex) \(found) key=\(request.key.prefix(8)) chars=\(narration.text.count)",
+            level: .notice
+        )
+        switch readiness {
         case let .ready(dialogue):
             var analysed = narration
             analysed.speakerAttributions = ttsSpeakerAttributions(
@@ -72,7 +115,11 @@ extension ReaderView {
         }
     }
 
-    /// Starts narration at a chapter once the AI has analysed it.
+    /// Starts narration at a chapter once the AI has analysed what is read first.
+    ///
+    /// Only the paragraphs from the start offset are waited for; the whole chapter is analysed
+    /// alongside and switched to when it lands. Waiting for the whole chapter cost one full
+    /// request before the first word — two to four minutes on a slow model (FB-192).
     ///
     /// The previous chapter is paused rather than left talking over the wait: when it ends
     /// during the analysis its own chapter advance would race this start.
@@ -90,17 +137,80 @@ extension ReaderView {
             ttsCoordinator.pause()
         }
         announceTTSPreparation()
-        ttsLog("[TTS][Reader] start waits for AI dialogue analysis chapter=\(chapterIndex)")
+        ttsLog("[TTS][Reader] start waits for AI dialogue analysis chapter=\(chapterIndex) offset=\(startCharOffset)")
         let aliases = activeTTSRoleAliases()
+        let started = SourcePerfTrace.now
         Task { @MainActor in
-            await runTTSDialogueAnalysis(request, knownAliases: aliases)
+            let dialogue: TTSStartDialogue
+            do {
+                switch try await AIDialogueCastService.shared.analyzeOpening(request, from: startCharOffset, knownAliases: aliases) {
+                case .chapter: dialogue = .lookUp
+                case let .opening(opening, analysedThrough): dialogue = .opening(opening, analysedThrough: analysedThrough)
+                case .nothingToAsk: dialogue = .withoutAnalysis
+                }
+            } catch is CancellationError {
+                dialogue = .opening(nil, analysedThrough: startCharOffset)
+            } catch {
+                // Not fatal to listening: the opening is read with the prose's speakers, and
+                // the whole chapter's analysis, already running, is switched to if it succeeds.
+                AppLogger.error(
+                    "[TTS] AI 多角色開頭分析失敗，先用敘述判斷說話人",
+                    error: error,
+                    context: ["chapter": chapterIndex],
+                    level: .warning
+                )
+                dialogue = .opening(nil, analysedThrough: startCharOffset)
+            }
+            ttsCoordinator.setPreparationNotice(nil)
+            // FB-192: how long the reader waited for the AI before the first word.
+            SourcePerfTrace.record(
+                "ai.dialogue.startWait",
+                "chapter=\(chapterIndex) offset=\(startCharOffset)",
+                since: started,
+                thresholdMs: 0,
+                mainThreadStallBreadcrumb: false
+            )
             guard ttsStartLayoutRequest == token else {
                 ttsLog("[TTS][Reader] start for chapter=\(chapterIndex) superseded during analysis")
                 return
             }
-            // Ready, or failed and now `.unavailable` for this text: either way the second
-            // pass speaks rather than waiting again.
-            startTTSChapter(chapterIndex, syncReader: syncReader, startCharOffset: startCharOffset, layoutAwaited: true)
+            startTTSChapter(
+                chapterIndex,
+                syncReader: syncReader,
+                startCharOffset: startCharOffset,
+                layoutAwaited: true,
+                dialogue: dialogue
+            )
+        }
+    }
+
+    /// A chapter started on its opening's analysis: once the whole chapter's lands, narration
+    /// restarts on it at the next sentence, so every later line gets the AI's speaker.
+    ///
+    /// Waits for the sentence being spoken to end — a restart then begins the sentence that
+    /// was about to start rather than repeating one. Paused narration switches once it resumes
+    /// and moves on a sentence. A stop, a new start or reaching the next chapter ends the wait.
+    func switchToWholeChapterAnalysis(_ request: AIDialogueCastService.Request, chapterIndex: Int) {
+        let aliases = activeTTSRoleAliases()
+        ttsWholeChapterSwitch = Task { @MainActor in
+            do {
+                try await AIDialogueCastService.shared.analyze(request, knownAliases: aliases)
+            } catch {
+                // Logged by the analysis' own caller (the prefetch); the opening's speakers and
+                // the prose's stay for the rest of the chapter.
+                return
+            }
+            for await _ in ttsCoordinator.$currentSegmentIndex.dropFirst().values {
+                guard !Task.isCancelled, ttsChapterIndex == chapterIndex else { return }
+                if ttsCoordinator.playbackState == .playing { break }
+            }
+            guard !Task.isCancelled, ttsChapterIndex == chapterIndex,
+                  ttsCoordinator.playbackState == .playing,
+                  ttsDialogueRequest(chapterIndex: chapterIndex, text: narrationForTTSChapter(chapterIndex).text)?.key == request.key
+            else { return }
+            ttsWholeChapterSwitch = nil
+            ttsLog("[TTS][Reader] whole-chapter analysis landed; switching chapter=\(chapterIndex)")
+            reapplyTTSRoleCast()
         }
     }
 
@@ -109,8 +219,17 @@ extension ReaderView {
     func awaitTTSDialogue(for target: Int, request: AIDialogueCastService.Request) {
         announceTTSPreparation()
         let aliases = activeTTSRoleAliases()
+        let started = SourcePerfTrace.now
         Task { @MainActor in
             await runTTSDialogueAnalysis(request, knownAliases: aliases)
+            // FB-192: how long narration stood still at the boundary for the AI.
+            SourcePerfTrace.record(
+                "ai.dialogue.boundaryWait",
+                "chapter=\(target) key=\(request.key.prefix(8))",
+                since: started,
+                thresholdMs: 0,
+                mainThreadStallBreadcrumb: false
+            )
             guard ttsPendingChapterIndex == target else { return }
             finishWaitingTTSChapter(target, narration: narrationForTTSChapter(target))
         }
@@ -145,7 +264,15 @@ extension ReaderView {
     /// Analyses a chapter ahead of narration reaching it.
     func prefetchTTSDialogue(for chapterIndex: Int) {
         let narration = narrationForTTSChapter(chapterIndex)
-        guard let request = ttsDialogueRequest(chapterIndex: chapterIndex, text: narration.text) else { return }
+        let request = ttsDialogueRequest(chapterIndex: chapterIndex, text: narration.text)
+        // FB-192: a `nil` request here means the next chapter is not analysed ahead of time.
+        AppLogger.render(
+            "⟐ [TTS][AI] prefetch chapter=\(chapterIndex) contentAvailable=\(isChapterContentAvailable(at: chapterIndex))"
+                + " chars=\(narration.text.count) request=\(request.map { String($0.key.prefix(8)) } ?? "nil")"
+                + " state=\(request.map { String(describing: AIDialogueCastService.shared.readiness($0)).prefix(20) } ?? "-")",
+            level: .notice
+        )
+        guard let request else { return }
         AIDialogueCastService.shared.prefetch(request, knownAliases: activeTTSRoleAliases())
     }
 

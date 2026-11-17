@@ -334,6 +334,9 @@ struct ReaderView: View {
     /// out in the scroll engine only). Non-nil only while that layout is in flight; clearing it
     /// cancels the start.
     @State var ttsStartLayoutRequest: UUID? = nil
+    /// A chapter started on its opening's analysis, waiting for the whole chapter's to switch
+    /// to it (`switchToWholeChapterAnalysis`). Any new start or a stop cancels it.
+    @State var ttsWholeChapterSwitch: Task<Void, Never>? = nil
     @State var showTTSJumpPrompt = false
     @State var ttsJumpPromptChapterIndex: Int? = nil
     @State var ttsPlaybackAnchor: CoreTextReadingPosition?
@@ -2419,6 +2422,8 @@ struct ReaderView: View {
                 ttsNarrationOffsets = nil
                 ttsPendingChapterIndex = nil
                 ttsStartLayoutRequest = nil
+                ttsWholeChapterSwitch?.cancel()
+                ttsWholeChapterSwitch = nil
                 ttsCoordinator.setPreparationNotice(nil)
                 ttsPlaybackAnchor = nil
                 showTTSJumpPrompt = false

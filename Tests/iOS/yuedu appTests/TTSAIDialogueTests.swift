@@ -371,22 +371,54 @@ struct AIDialogueCastServiceTests {
         func generate(_ request: LLMGenerationRequest, model: String?) async throws -> LLMRawResponse {
             calls += 1
             if failing { throw LLMError.networkError("fixture") }
-            let payload = request.messages.last?.content ?? ""
-            let ids = payload.matches(of: /【(q\d+)】/).map { String($0.1) }
-            var lines: [String: Any] = [:]
-            for (index, id) in ids.enumerated() {
-                lines[id] = [index.isMultiple(of: 2) ? "池瑤" : "張若塵", index == 0 ? "angry" : "neutral", 2]
-            }
-            let json = try JSONSerialization.data(withJSONObject: [
-                "lines": lines,
-                "characters": [["池瑤", "female", "young", "清冷"], ["張若塵", "male", "young", ""]],
-            ])
-            return .init(content: String(decoding: json, as: UTF8.self), provider: identifier, model: defaultModel, finishReason: "stop")
+            return try AIDialogueCastServiceTests.answer(request.messages.last?.content ?? "", provider: identifier, model: defaultModel)
         }
 
         nonisolated func stream(_ request: LLMGenerationRequest, model: String?) -> AsyncThrowingStream<String, Error> {
             AsyncThrowingStream { $0.finish() }
         }
+    }
+
+    /// Answers the opening at once and holds every request that covers the chapter's first
+    /// quote — the whole chapter — until `release()`.
+    private actor GatedProvider: LLMProviding {
+        let identifier = "dialogue-fixture"
+        let defaultModel = "fixture"
+        private(set) var payloads: [String] = []
+        private var held: [CheckedContinuation<Void, Never>] = []
+        private var released = false
+
+        func release() {
+            released = true
+            held.forEach { $0.resume() }
+            held = []
+        }
+
+        func generate(_ request: LLMGenerationRequest, model: String?) async throws -> LLMRawResponse {
+            let payload = request.messages.last?.content ?? ""
+            payloads.append(payload)
+            if payload.contains("【q1】"), !released {
+                await withCheckedContinuation { held.append($0) }
+            }
+            return try AIDialogueCastServiceTests.answer(payload, provider: identifier, model: defaultModel)
+        }
+
+        nonisolated func stream(_ request: LLMGenerationRequest, model: String?) -> AsyncThrowingStream<String, Error> {
+            AsyncThrowingStream { $0.finish() }
+        }
+    }
+
+    nonisolated fileprivate static func answer(_ payload: String, provider: String, model: String) throws -> LLMRawResponse {
+        let ids = payload.matches(of: /【(q\d+)】/).map { String($0.1) }
+        var lines: [String: Any] = [:]
+        for (index, id) in ids.enumerated() {
+            lines[id] = [index.isMultiple(of: 2) ? "池瑤" : "張若塵", index == 0 ? "angry" : "neutral", 2]
+        }
+        let json = try JSONSerialization.data(withJSONObject: [
+            "lines": lines,
+            "characters": [["池瑤", "female", "young", "清冷"], ["張若塵", "male", "young", ""]],
+        ])
+        return .init(content: String(decoding: json, as: UTF8.self), provider: provider, model: model, finishReason: "stop")
     }
 
     private static let text = "池瑤看著他。「你來了。」\n「我來了。」張若塵笑道。\n「坐。」"
@@ -426,6 +458,50 @@ struct AIDialogueCastServiceTests {
         #expect(reloaded == a)
         #expect(await provider.calls == 1)
         #expect(relaunched.roster(forBook: book).characters.count == 2)
+    }
+
+    @Test("a start waits only for the paragraphs it reads first; the whole chapter is analysed alongside (FB-192)")
+    func openingAnswersBeforeTheWholeChapter() async throws {
+        let (store, directory) = temporaryStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let provider = GatedProvider()
+        let service = AIDialogueCastService(store: store, provider: provider)
+        let book = UUID()
+        let paragraphs = (1...12).map { "第\($0)段，池瑤看著他，沉默了很久，窗外的雨一直下著，屋裡只有燭火在跳。「這是第\($0)句話。」張若塵說。" }
+        let text = paragraphs.joined(separator: "\n")
+        let offset = (text as NSString).range(of: paragraphs[6]).location
+        let request = AIDialogueCastService.Request(bookID: book, chapterIndex: 3, text: text, includeInstruct: false)
+
+        // The whole chapter is held; the opening still answers.
+        let opening = try await service.analyzeOpening(request, from: offset)
+        guard case let .opening(lines, analysedThrough) = opening else {
+            Issue.record("expected the opening's analysis, got \(opening)")
+            return
+        }
+        #expect(!lines.lines.isEmpty)
+        #expect(lines.lines.count < paragraphs.count)
+        #expect(lines.lines.allSatisfy { $0.location >= offset && $0.speaker != nil })
+        #expect(analysedThrough > offset)
+        #expect(analysedThrough - offset <= AIDialogueCastService.openingCharacters + paragraphs[0].utf16.count)
+        // A partial answer never stands for the chapter.
+        #expect(service.readiness(request) == .needsAnalysis)
+        let early = try #require(service.roster(forBook: book).character(named: "池瑤"))
+        #expect(early.lineCount == 0)
+        #expect(early.gender == .female)
+
+        await provider.release()
+        let whole = try await service.analyze(request)
+        #expect(whole.lines.count == paragraphs.count)
+        guard case .ready = service.readiness(request) else {
+            Issue.record("the whole chapter must be ready once analysed")
+            return
+        }
+        // Counted once, from the whole chapter: the opening added no lines of its own.
+        let counted = whole.lines.filter { $0.speaker == "池瑤" }.count
+        #expect(service.roster(forBook: book).character(named: "池瑤")?.lineCount == counted)
+        // What was stored is the whole chapter.
+        let relaunched = AIDialogueCastService(store: store, provider: ScriptedProvider(failing: true))
+        #expect(try await relaunched.analyze(request) == whole)
     }
 
     @Test("a failed analysis is remembered for that text, so playback does not wait on it again")

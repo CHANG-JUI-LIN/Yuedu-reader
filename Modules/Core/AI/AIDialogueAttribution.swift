@@ -28,6 +28,8 @@ enum AIDialogueAttribution {
         let lead: String
         /// Starts at the top of the chapter, where the previous chapter's ending is useful.
         let opensChapter: Bool
+        /// The paragraphs the window covers, in the chapter's text.
+        var range = NSRange(location: 0, length: 0)
     }
 
     struct KnownCharacter: Sendable, Equatable {
@@ -57,9 +59,12 @@ enum AIDialogueAttribution {
     }
 
     /// Whole paragraphs, up to `maxCharacters` each; only windows holding a quote are kept.
+    /// - Parameter offset: windows start at the paragraph holding this offset — where
+    ///   narration starts, for the opening a start analyses first.
     static func windows(
         text: String,
         quotes: [Quote],
+        from offset: Int = 0,
         maxCharacters: Int = 3_000,
         leadCharacters: Int = 240
     ) -> [Window] {
@@ -71,7 +76,7 @@ enum AIDialogueAttribution {
         }
         var groups: [NSRange] = []
         var current: NSRange?
-        for paragraph in paragraphs {
+        for paragraph in paragraphs where NSMaxRange(paragraph) > offset {
             if let open = current, NSMaxRange(paragraph) - open.location > maxCharacters {
                 groups.append(open)
                 current = paragraph
@@ -100,7 +105,8 @@ enum AIDialogueAttribution {
                 quotes: inside,
                 body: body.trimmingCharacters(in: .newlines),
                 lead: lead.trimmingCharacters(in: .whitespacesAndNewlines),
-                opensChapter: group.location == 0
+                opensChapter: group.location == 0,
+                range: group
             )
         }
     }

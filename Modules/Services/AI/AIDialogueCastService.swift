@@ -172,6 +172,91 @@ final class AIDialogueCastService {
         }
     }
 
+    // MARK: - Opening
+
+    /// What a start can speak with soonest.
+    enum Opening: Equatable {
+        /// The whole chapter, already analysed (in memory or on disk).
+        case chapter(TTSChapterDialogue)
+        /// Only the opening's lines, in the chapter's coordinates. Quotes from
+        /// `analysedThrough` on are not in it; the whole chapter is still being analysed.
+        case opening(TTSChapterDialogue, analysedThrough: Int)
+        /// No quote from the start offset on: nothing for the AI to say about what is read first.
+        case nothingToAsk
+    }
+
+    /// Paragraphs the opening covers: few quotes, so one request answers in a fraction of a
+    /// full window's time.
+    static let openingCharacters = 500
+
+    /// Analyses the paragraphs from `offset` on, on their own, and starts the whole chapter
+    /// alongside.
+    ///
+    /// A start used to wait for the whole chapter. A chapter is three windows answered at once,
+    /// so that wait is one full request — two to four minutes on a slow model before the first
+    /// word (FB-192). The opening is a request of its own, a few quotes long, and narration
+    /// starts as soon as it answers.
+    ///
+    /// The opening is never cached or stored under the chapter's key: that key means "the
+    /// whole chapter", and a partial answer there would stop the full analysis from running.
+    func analyzeOpening(_ request: Request, from offset: Int, knownAliases: [String: String] = [:]) async throws -> Opening {
+        let key = request.cacheKey
+        if let cached = chapters[key] { return .chapter(cached) }
+        let bookID = request.bookID
+        await loadRoster(forBook: bookID)
+        if let stored = try await store.chapter(book: bookID, key: request.key) {
+            remember(stored, key: key)
+            return .chapter(stored)
+        }
+        guard let roster = rosters[bookID] else { throw AIMemoryFailure.persistence }
+        prefetch(request, knownAliases: knownAliases)
+
+        let text = request.text
+        let limit = Self.openingCharacters
+        let (quotes, window) = await Task.detached(priority: .userInitiated) {
+            let quotes = AIDialogueAttribution.quotes(in: text)
+            return (quotes, AIDialogueAttribution.windows(text: text, quotes: quotes, from: offset, maxCharacters: limit).first)
+        }.value
+        guard let window else { return .nothingToAsk }
+
+        let provider = try resolveProvider()
+        let aliasMap = roster.aliasMap.merging(knownAliases) { current, _ in current }
+        let generation = try AIDialogueAttribution.request(
+            window: window,
+            known: Self.knownCharacters(roster: roster, aliases: knownAliases),
+            carry: roster.tails[request.chapterIndex - 1] ?? [],
+            includeInstruct: request.includeInstruct
+        )
+        let started = SourcePerfTrace.now
+        let raw = try await provider.generate(generation)
+        let parsed = try AIDialogueAttribution.parse(
+            raw, window: window, text: text, aliasMap: aliasMap, includeInstruct: request.includeInstruct
+        )
+        SourcePerfTrace.record(
+            "ai.dialogue.opening",
+            "chapter=\(request.chapterIndex) offset=\(offset) quotes=\(window.quotes.count) of=\(quotes.count) chars=\(window.range.length)",
+            since: started,
+            thresholdMs: 0
+        )
+        // The whole chapter may have answered first.
+        if let cached = chapters[key] { return .chapter(cached) }
+        let opening = AIDialogueAttribution.chapter(
+            key: request.key,
+            chapterIndex: request.chapterIndex,
+            quotes: window.quotes,
+            parsed: [parsed],
+            provider: raw.provider,
+            model: raw.model,
+            includeInstruct: request.includeInstruct
+        )
+        if var updated = rosters[bookID] {
+            updated.introduce(opening.speakers, characters: parsed.characters, chapterIndex: request.chapterIndex)
+            rosters[bookID] = updated
+            revisions[bookID, default: 0] += 1
+        }
+        return .opening(opening, analysedThrough: NSMaxRange(window.range))
+    }
+
     private func perform(_ request: Request, knownAliases: [String: String], force: Bool) async throws -> TTSChapterDialogue {
         let bookID = request.bookID
         await loadRoster(forBook: bookID)

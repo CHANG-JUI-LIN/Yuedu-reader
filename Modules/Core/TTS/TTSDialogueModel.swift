@@ -227,6 +227,28 @@ struct TTSDialogueRoster: Codable, Equatable, Sendable {
             for key in tails.keys.sorted().dropLast(maximumTails) { tails.removeValue(forKey: key) }
         }
     }
+
+    /// Speakers of a chapter's opening, analysed before the rest of it: listed so they get a
+    /// voice now, with no lines counted and no tail kept — the chapter's own `merge` does both
+    /// once the whole chapter is analysed, so nothing is counted twice.
+    mutating func introduce(
+        _ speakers: [String],
+        characters found: [TTSDialogueCharacter],
+        chapterIndex: Int
+    ) {
+        for name in speakers where !characters.contains(where: { $0.name == name }) {
+            let incoming = found.first { $0.name == name }
+            characters.append(TTSDialogueCharacter(
+                name: name,
+                aliases: incoming?.aliases.filter { $0 != name } ?? [],
+                gender: incoming?.gender ?? .unknown,
+                age: incoming?.age ?? .unknown,
+                voiceNote: incoming?.voiceNote,
+                lineCount: 0,
+                firstChapter: chapterIndex
+            ))
+        }
+    }
 }
 
 /// One chapter, as the AI attributed it.
