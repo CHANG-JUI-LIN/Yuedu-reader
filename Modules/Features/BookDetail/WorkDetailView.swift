@@ -224,7 +224,7 @@ struct WorkDetailView: View {
             }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
             .task(id: reviewsQuery) { await reviews.load(reviewsQuery) }
-            .task(id: reviewsQuery) { await related.load(reviewsQuery) }
+            .task(id: relatedQuery) { await related.load(relatedQuery) }
             .task(id: moduleRecord) { await moduleDetail.load(moduleRecord) }
             .task(id: genreVersions?.map(\.nodeKey)) { await shelfGenres.load(genreVersions, store: store) }
             .task(id: seriesLoad) {
@@ -634,14 +634,21 @@ struct WorkDetailView: View {
     }
 
     /// What 讀者評論 asks the modules about: the work as the page names it, and the ISBNs of the
-    /// versions this device knows. Once those are read, so a copy's ISBN is asked by; not on the
-    /// page a reader opened, which shows its book and nothing around it (decision 32).
+    /// versions this device knows. Once those are read, so a copy's ISBN is asked by. The page a
+    /// reader opened asks too (maintainer, 2026-11-17, #212: its readers' reviews must show).
     private var reviewsQuery: WorkReviewQuery? {
-        guard readerContext == nil, versionsLoaded else { return nil }
+        guard versionsLoaded else { return nil }
         let isbns = listed.flatMap { $0.record.identifiers.filter { $0.scheme == .isbn13 }.map(\.value) }
         return WorkReviewQuery(title: route.summary.title, authors: route.summary.authors, isbns: isbns,
                                contentKind: route.record.contentKind,
                                record: route.record.key.instance.type == .module ? route.record.key : nil)
+    }
+
+    /// What 同題材 asks the modules about: the same query as 讀者評論, but not on the page a reader
+    /// opened, which shows its book and nothing around it (decision 32).
+    private var relatedQuery: WorkReviewQuery? {
+        guard readerContext == nil else { return nil }
+        return reviewsQuery
     }
 
     /// Where 作者其他作品 reads from for the version shown: its library's record of the author,

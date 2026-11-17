@@ -472,11 +472,11 @@ struct OnlineBookView: View {
 
     // MARK: Genres and author
 
-    /// What 讀者評論 asks the modules about: the book as the source names it. Not on the page a
-    /// reader opened, which shows its book and nothing around it.
+    /// What 讀者評論 asks the modules about: the book as the source names it. The page a reader
+    /// opened asks too (maintainer, 2026-11-17, #212: its readers' reviews must show).
     private var reviewsQuery: WorkReviewQuery? {
         // A book the source gave no name is 「未知書名」 on the page: nothing to ask by.
-        guard onContinueReading == nil, displayName != localized("未知書名") else { return nil }
+        guard displayName != localized("未知書名") else { return nil }
         return WorkReviewQuery(title: displayName, authors: [displayAuthor], contentKind: .text)
     }
 
