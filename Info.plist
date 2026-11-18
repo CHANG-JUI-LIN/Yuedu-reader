@@ -113,6 +113,12 @@
 	<true/>
 	<key>UIPrefersShowingLanguageSettings</key>
 	<true/>
+	<!-- UIRequiresFullScreen (build setting) keeps iOS 17-26 full screen. From iOS 27 it is
+	     ignored: with it honoured, an unfolded iPhone Duo puts the app in app-specified
+	     orientation mode, where UIKit drops upside-down portrait on every iPhone without a
+	     Home button, so power-button-down portrait never rotated (FB-221). -->
+	<key>UIRequiresFullScreenIgnoredStartingWithVersion</key>
+	<string>27.0</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
