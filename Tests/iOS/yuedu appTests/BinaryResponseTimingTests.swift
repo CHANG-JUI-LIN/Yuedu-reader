@@ -130,7 +130,7 @@ struct BinaryResponseTimingTests {
 }
 
 /// Answers `binary-payload.test` with `payload`, as an audio file.
-private final class BinaryPayloadURLProtocol: URLProtocol, @unchecked Sendable {
+private final class BinaryPayloadURLProtocol: URLProtocol {
     static let host = "binary-payload.test"
     nonisolated(unsafe) static var payload = Data()
 

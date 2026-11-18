@@ -264,7 +264,7 @@ final class TTSChunkDecoder {
         return kAudioFileMP3Type
     }
 
-    private static func getProperty<T>(_ file: ExtAudioFileRef, _ id: ExtAudioFilePropertyID, _ value: inout T) -> OSStatus {
+    private static func getProperty<T: BitwiseCopyable>(_ file: ExtAudioFileRef, _ id: ExtAudioFilePropertyID, _ value: inout T) -> OSStatus {
         var size = UInt32(MemoryLayout<T>.size)
         return ExtAudioFileGetProperty(file, id, &size, &value)
     }

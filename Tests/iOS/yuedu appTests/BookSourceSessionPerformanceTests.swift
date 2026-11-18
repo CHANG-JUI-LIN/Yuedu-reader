@@ -430,12 +430,14 @@ private final class SessionPerfNetworkURLProtocol: URLProtocol {
             url: url, statusCode: 200, httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "text/html; charset=gbk"]
         )!
-        // Stands in for the network round trip.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard let self else { return }
-            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            self.client?.urlProtocol(self, didLoad: data)
-            self.client?.urlProtocolDidFinishLoading(self)
+        // Stands in for the network round trip. URLProtocol is not Sendable (Foundation marks
+        // the conformance unavailable), yet the delayed answer has to reach it from another
+        // thread; nothing else touches it meanwhile.
+        nonisolated(unsafe) let loader = self
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) {
+            loader.client?.urlProtocol(loader, didReceive: response, cacheStoragePolicy: .notAllowed)
+            loader.client?.urlProtocol(loader, didLoad: data)
+            loader.client?.urlProtocolDidFinishLoading(loader)
         }
     }
 

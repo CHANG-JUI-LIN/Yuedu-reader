@@ -101,9 +101,10 @@ struct AozoraScriptShiftProbeTests {
         /// (horizontal) or its right (vertical).
         func across(_ pixels: Pixels, _ kind: ((Int, Int, Int)) -> Bool) throws -> CGFloat {
             let blobs = pixels.blobs(kind)
-            try #require(!blobs.isEmpty)
-            let low = blobs.map { vertical ? $0.minX : -$0.maxY }.min()!
-            let high = blobs.map { vertical ? $0.maxX : -$0.minY }.max()!
+            // No ink of `kind` at all fails the test: the extremes exist only for a non-empty line.
+            struct NoInk: Error {}
+            guard let low = blobs.map({ vertical ? $0.minX : -$0.maxY }).min(),
+                  let high = blobs.map({ vertical ? $0.maxX : -$0.minY }).max() else { throw NoInk() }
             return CGFloat(low + high) / 2 / LegacyTextEmphasisDecorationTests.scale
         }
         let parent: CGFloat = 17

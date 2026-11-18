@@ -186,7 +186,7 @@ struct OversizedBridgeResponseTests {
 /// `/stream/…` sends 50 MB of chapter-like HTML in 1 MB chunks with no Content-Length, paced a
 /// few milliseconds apart so a cancelled load is seen to stop sending before the last chunk. `/declared/…` announces 50 MB up front.
 /// `/small/…` is an ordinary chapter page.
-private final class OversizedURLProtocol: URLProtocol, @unchecked Sendable {
+private final class OversizedURLProtocol: URLProtocol {
     static let host = "oversized-source.test"
     static let smallPage = Data(
         ("<html><body><div id=\"content\">"
@@ -246,15 +246,19 @@ private final class OversizedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private func send(remaining: Int) {
-        queue.asyncAfter(deadline: .now() + .milliseconds(5)) { [self] in
-            guard !stopped.withLock({ $0 }) else { return }
+        // URLProtocol is not Sendable (Foundation marks the conformance unavailable), yet the
+        // paced chunks have to reach it from `queue`; `stopped` is the only state both sides
+        // touch, and it is locked.
+        nonisolated(unsafe) let loader = self
+        queue.asyncAfter(deadline: .now() + .milliseconds(5)) {
+            guard !loader.stopped.withLock({ $0 }) else { return }
             guard remaining > 0 else {
-                client?.urlProtocolDidFinishLoading(self)
+                loader.client?.urlProtocolDidFinishLoading(loader)
                 return
             }
             Self.sent.withLock { $0 += 1 }
-            client?.urlProtocol(self, didLoad: Self.chunk)
-            send(remaining: remaining - 1)
+            loader.client?.urlProtocol(loader, didLoad: Self.chunk)
+            loader.send(remaining: remaining - 1)
         }
     }
 

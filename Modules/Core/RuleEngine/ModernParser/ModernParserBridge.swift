@@ -3714,7 +3714,7 @@ class ModernParserBridge {
         } else {
             scripts = [jsLib]
         }
-        _ = engine.withExecutionStage("jsLib") {
+        engine.withExecutionStage("jsLib") {
             for script in scripts { _ = engine.evaluate(script) }
         }
         if sourceRuleData.source.exploreUrl.contains("_csrfToken") {

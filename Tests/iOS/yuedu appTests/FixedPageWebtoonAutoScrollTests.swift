@@ -93,6 +93,7 @@ struct FixedPageWebtoonAutoScrollTests {
     }
 
     @Test("only a speed-only difference skips the reinstall")
+    @MainActor
     func speedOnlyDifference() {
         let base = FixedPageReaderConfiguration.recommendedDefault(for: .webtoon)
         var speed = base

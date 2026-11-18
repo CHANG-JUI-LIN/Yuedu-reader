@@ -303,7 +303,7 @@ struct VideoDetailView: View {
         VideoDetailHero(poster: poster, title: displayName, facts: facts(guide)) {
             // The card fetches the artwork, through the path every cover takes; what it
             // draws becomes the full-width poster.
-            cover.environment(\.coverImageObserver) { image in poster = image }
+            cover.environment(\.coverImageObserver, CoverImageBindingObserver(image: $poster))
         } actions: {
             heroActions(guide)
         } intro: {

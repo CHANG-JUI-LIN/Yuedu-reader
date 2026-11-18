@@ -58,12 +58,7 @@ struct HomeHeroCard: View {
                     HomeCardCover(cover: content.cover, title: content.title, author: content.author,
                                   size: CGSize(width: height * DSLayout.discoverCoverAspectRatio, height: height))
                         .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
-                        .environment(\.coverImageObserver, { image in
-                            Task {
-                                let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
-                                if color != coverColor { coverColor = color }
-                            }
-                        })
+                        .environment(\.coverImageObserver, CoverTintObserver(tint: $coverColor))
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                 }
             }

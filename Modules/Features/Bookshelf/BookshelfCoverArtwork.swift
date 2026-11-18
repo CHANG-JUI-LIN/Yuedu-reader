@@ -240,7 +240,21 @@ enum BookshelfDrawnCover: Equatable {
 extension EnvironmentValues {
     /// Told what each shelf cover slot below draws; nil everywhere but the bookshelf's
     /// own rows and cells, which hand it to the open-book transition.
-    @Entry var bookshelfDrawnCoverObserver: (@MainActor (BookshelfDrawnCover) -> Void)?
+    @Entry var bookshelfDrawnCoverObserver: BookshelfCoverReport?
+}
+
+/// Where a shelf card's cover reports what it draws: the card's frame box, for the open-book
+/// transition to lift. A value holding the box weakly, not a closure — SwiftUI compares
+/// environment values, and a closure never compares equal, so every slot re-rendered on each
+/// write. The box is the card's `@State`; the report must not keep it alive.
+struct BookshelfCoverReport: CoverImageObserver {
+    weak var box: BookshelfCoverFrameBox?
+
+    /// What the shelf's own slot (`BookshelfCoverArtwork`) draws.
+    @MainActor func callAsFunction(_ drawn: BookshelfDrawnCover) { box?.drawnCover = drawn }
+
+    /// The image a catalog cover (`BookCoverImage`) draws.
+    @MainActor func coverDrew(_ image: UIImage) { box?.catalogImage = image }
 }
 
 // MARK: - Plan

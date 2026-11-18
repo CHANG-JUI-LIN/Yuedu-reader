@@ -229,11 +229,13 @@ final class FirestoreSyncManager: ObservableObject {
         schedulePush("position-\(bookId)") { [weak self] in
             guard let self, let pending = self.pendingPositions[bookId] else { return }
             self.pendingPositions[bookId] = nil
-            try await self.writeReadingPosition(pending, for: bookId)
+            try self.writeReadingPosition(pending, for: bookId)
         }
     }
 
-    private func writeReadingPosition(_ position: SyncedReadingPosition, for bookId: String) async throws {
+    /// Synchronous on purpose: Firestore queues the write locally and sends it when it can.
+    /// Awaiting `setData`'s async form would wait for the server's ack, which offline never comes.
+    private func writeReadingPosition(_ position: SyncedReadingPosition, for bookId: String) throws {
         guard let uid = FirebaseAuthManager.shared.uid else { return }
         let envelope = SyncEnvelope(id: bookId, value: position.position, updatedAt: Date(), textVersion: position.textVersion)
         var payload = try Firestore.Encoder().encode(envelope)

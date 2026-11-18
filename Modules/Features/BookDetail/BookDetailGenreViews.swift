@@ -144,7 +144,7 @@ struct WorkDetailModuleTagPage: View {
 
     var body: some View {
         ModuleListPage(route: route)
-            .environment(\.explorePush) { pushed = $0 }
+            .environment(\.explorePush, .into($pushed))
             .navigationDestination(item: $pushed) { push in
                 switch push {
                 case .work(let work): WorkDetailView(route: work).environmentObject(store)

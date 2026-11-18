@@ -107,7 +107,10 @@ class LanWebServer: @MainActor ObservableObject {
                         &hostname, socklen_t(hostname.count),
                         nil, 0, NI_NUMERICHOST
                     )
-                    address = String(cString: hostname)
+                    address = String(
+                        decoding: hostname.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+                        as: UTF8.self
+                    )
                     break
                 }
             }

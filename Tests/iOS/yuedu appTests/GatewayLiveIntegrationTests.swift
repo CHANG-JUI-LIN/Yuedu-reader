@@ -184,7 +184,7 @@ struct GatewayLiveIntegrationTests {
 
         // --- Linking guards: email is already linked; the last provider cannot be removed ---
         do {
-            try await restoredProvider.linkEmail(email: email, password: password)
+            _ = try await restoredProvider.linkEmail(email: email, password: password)
             Issue.record("linking an already-linked email unexpectedly succeeded")
         } catch let error as GatewayAPIError {
             #expect(error.serverCode == "provider-already-linked")

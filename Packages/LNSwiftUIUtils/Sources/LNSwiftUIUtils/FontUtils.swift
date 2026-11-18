@@ -85,8 +85,8 @@ fileprivate extension UIFont {
 	
 	func with(featureType type: Int, selector: Int) -> UIFont? {
 		return with(feature: [
-			UIFontDescriptor.FeatureKey.featureIdentifier : type as Int,
-			UIFontDescriptor.FeatureKey.typeIdentifier : selector as Int
+			UIFontDescriptor.FeatureKey.type : type as Int,
+			UIFontDescriptor.FeatureKey.selector : selector as Int
 		])
 	}
 	

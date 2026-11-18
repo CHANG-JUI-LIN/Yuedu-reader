@@ -4184,10 +4184,12 @@ struct ModernParserBridgeExploreTests {
             )
         }
 
+        // The engine is the subject here: a header read on one thread while JS runs on another.
+        let sharedEngine = JSConfined(engine)
         let evaluationDone = DispatchGroup()
         evaluationDone.enter()
         DispatchQueue.global().async {
-            _ = engine.evaluate("java.ajax('https://example.com/blocked')")
+            _ = sharedEngine.value.evaluate("java.ajax('https://example.com/blocked')")
             evaluationDone.leave()
         }
         #expect(networkStarted.wait(timeout: .now() + 1) == .success)
@@ -4195,7 +4197,7 @@ struct ModernParserBridgeExploreTests {
         let headerRead = DispatchGroup()
         headerRead.enter()
         DispatchQueue.global().async {
-            _ = engine.resolvedSourceHeaders()
+            _ = sharedEngine.value.resolvedSourceHeaders()
             headerRead.leave()
         }
         let readFinishedWithoutWaitingForJS = headerRead.wait(timeout: .now() + 0.2) == .success

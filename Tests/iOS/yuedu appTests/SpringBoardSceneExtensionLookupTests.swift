@@ -13,7 +13,7 @@ struct SpringBoardSceneExtensionLookupTests {
             // The premise: an app process does not load the framework that defines it.
             #expect(!SpringBoardSceneExtensionLookup.frameworkIsLoaded(absent.framework))
             let name = UnsafeRawPointer(absent.name.utf8Start).assumingMemoryBound(to: CChar.self)
-            let (answered, found) = lookUp(name)
+            let (answered, found): (Bool, AnyClass?) = lookUp(name)
             #expect(!answered)
             #expect(found == nil)
         }
@@ -22,7 +22,7 @@ struct SpringBoardSceneExtensionLookupTests {
     @Test("any other name goes on to the Swift runtime")
     func otherNamesReachSwiftRuntime() {
         // The mangled name Objective-C would ask with; the Swift runtime's hook resolves it.
-        let (answered, found) = lookUp(class_getName(RSSAppNotificationDelegate.self))
+        let (answered, found): (Bool, AnyClass?) = lookUp(class_getName(RSSAppNotificationDelegate.self))
         #expect(answered)
         #expect(found.map(ObjectIdentifier.init) == ObjectIdentifier(RSSAppNotificationDelegate.self))
     }

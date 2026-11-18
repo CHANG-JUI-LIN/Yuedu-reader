@@ -210,8 +210,8 @@ private extension View {
             box.frame = frame
             onChange?(frame)
         }
-        .environment(\.bookshelfDrawnCoverObserver) { [weak box] drawn in box?.drawnCover = drawn }
-        .environment(\.coverImageObserver) { [weak box] image in box?.catalogImage = image }
+        .environment(\.bookshelfDrawnCoverObserver, BookshelfCoverReport(box: box))
+        .environment(\.coverImageObserver, BookshelfCoverReport(box: box))
     }
 }
 

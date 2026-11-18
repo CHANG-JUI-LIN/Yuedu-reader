@@ -23,14 +23,15 @@ final class SwipeActionAccentContrastUITests: XCTestCase {
 
     private var originalAppearance: XCUIDevice.Appearance = .light
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         // Every site × accent × appearance is measured, whichever falls short.
         continueAfterFailure = true
-        originalAppearance = XCUIDevice.shared.appearance
+        originalAppearance = await MainActor.run { XCUIDevice.shared.appearance }
     }
 
-    override func tearDownWithError() throws {
-        XCUIDevice.shared.appearance = originalAppearance
+    override func tearDown() async throws {
+        let appearance = originalAppearance
+        await MainActor.run { XCUIDevice.shared.appearance = appearance }
     }
 
     // MARK: - Sites

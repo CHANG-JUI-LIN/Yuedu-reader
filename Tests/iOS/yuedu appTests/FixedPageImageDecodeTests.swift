@@ -58,8 +58,9 @@ struct FixedPageImageDecodeTests {
         var source = BookSource(bookSourceUrl: "https://imagedecode-key-\(UUID().uuidString).test", bookSourceName: "imageDecode key")
         source.ruleContent.imageDecode = "@js:\"\(picture.base64EncodedString())\""
         let raw = FixedPage(id: 0, imageURL: "https://cdn.example.test/key/0.png", headers: [:], localURL: url)
+        let decoder = try #require(FixedPageImageDecoder(source: source))
         var decoded = raw
-        decoded.imageDecoder = try #require(FixedPageImageDecoder(source: source))
+        decoded.imageDecoder = decoder
 
         let rawLoad = await FixedPageImageLoader.loadImage(for: raw, targetWidth: 0, renderScale: 1)
         let rawImage = try #require(rawLoad)
@@ -84,8 +85,9 @@ struct FixedPageImageDecodeTests {
 
         var source = BookSource(bookSourceUrl: "https://imagedecode-large-\(UUID().uuidString).test", bookSourceName: "imageDecode large")
         source.ruleContent.imageDecode = "@js:result"
+        let decoder = try #require(FixedPageImageDecoder(source: source))
         var page = FixedPage(id: 0, imageURL: "https://cdn.example.test/large/\(name)", headers: [:], localURL: url)
-        page.imageDecoder = try #require(FixedPageImageDecoder(source: source))
+        page.imageDecoder = decoder
 
         let before = Set(DiagnosticLog.shared.snapshot().map(\.id))
         let load = await FixedPageImageLoader.loadImage(for: page, targetWidth: 0, renderScale: 1)

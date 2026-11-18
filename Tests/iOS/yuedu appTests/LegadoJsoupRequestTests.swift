@@ -92,7 +92,7 @@ struct LegadoJsoupRequestTests {
 
 /// `/form/<id>` answers 302 to `/result/<id>` with a `Set-Cookie`; `/page/<id>` answers 200
 /// `page <id>`. Every request is recorded under its id.
-private final class JsoupURLProtocol: URLProtocol, @unchecked Sendable {
+private final class JsoupURLProtocol: URLProtocol {
     static let host = "jsoup-source.test"
     private static let sent = OSAllocatedUnfairLock<[String: [URLRequest]]>(initialState: [:])
 

@@ -91,7 +91,7 @@ struct AnalyzeUrlResponseScriptTests {
 
 /// `/s/<id>` answers one search row; `/echo/<id>` answers `ok`; `/limited/<id>` answers 429.
 /// Every request is recorded under its id.
-private final class ResponseScopeURLProtocol: URLProtocol, @unchecked Sendable {
+private final class ResponseScopeURLProtocol: URLProtocol {
     static let host = "response-scope.test"
     private static let sent = OSAllocatedUnfairLock<[String: [URLRequest]]>(initialState: [:])
 

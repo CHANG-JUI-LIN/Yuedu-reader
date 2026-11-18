@@ -500,6 +500,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("WebView 導入按鈕解析 yuedu://booksource/importonline")
+    @MainActor
     func parseWebImportSourceURL() throws {
         let url = try #require(URL(
             string: "yuedu://booksource/importonline?src=https%3A%2F%2Fsy.gyks.cf%2Fdownload%2F%E5%85%89%E9%81%87%E8%81%9A%E5%90%88.json"
@@ -512,6 +513,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("WebView 導入按鈕解析 Legado legado://import/auto")
+    @MainActor
     func parseLegadoImportDeepLink() throws {
         // 更新書源 頁面的下載按鈕發出的 Legado 導入連結（src 內含二次編碼的中文檔名）。
         let url = try #require(URL(

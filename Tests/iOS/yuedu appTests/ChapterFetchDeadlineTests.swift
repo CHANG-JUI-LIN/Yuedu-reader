@@ -69,7 +69,7 @@ struct ChapterFetchDeadlineTests {
 }
 
 /// `/after/<seconds>/<id>` answers with a chapter page after that many seconds.
-private final class SlowChapterURLProtocol: URLProtocol, @unchecked Sendable {
+private final class SlowChapterURLProtocol: URLProtocol {
     static let host = "slow-chapter.test"
     private static let loading = OSAllocatedUnfairLock<Set<String>>(initialState: [])
     private static let stoppedIDs = OSAllocatedUnfairLock<Set<String>>(initialState: [])
@@ -98,16 +98,20 @@ private final class SlowChapterURLProtocol: URLProtocol, @unchecked Sendable {
         let seconds = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
         let id = self.id
         Self.loading.withLock { _ = $0.insert(id) }
-        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds)) { [self] in
-            guard !stopped.withLock({ $0 }) else { return }
+        // URLProtocol is not Sendable (Foundation marks the conformance unavailable), yet a
+        // delayed answer has to reach it from another thread; `stopped` is the only state both
+        // sides touch, and it is locked.
+        nonisolated(unsafe) let loader = self
+        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds)) {
+            guard !loader.stopped.withLock({ $0 }) else { return }
             let response = HTTPURLResponse(
                 url: url, statusCode: 200, httpVersion: "HTTP/1.1",
                 headerFields: ["Content-Type": "text/html; charset=utf-8"]
             )!
             let page = "<html><body><div id=\"content\"><p>慢慢送来的正文，第一段。</p><p>第二段。</p></div></body></html>"
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: Data(page.utf8))
-            client?.urlProtocolDidFinishLoading(self)
+            loader.client?.urlProtocol(loader, didReceive: response, cacheStoragePolicy: .notAllowed)
+            loader.client?.urlProtocol(loader, didLoad: Data(page.utf8))
+            loader.client?.urlProtocolDidFinishLoading(loader)
         }
     }
 

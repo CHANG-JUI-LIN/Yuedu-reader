@@ -94,7 +94,8 @@ struct ViewportRetainedGeometryTests {
                     document.items(in: rect).draw(in: context.cgContext)
                 }.pngData()
             }
-            #expect(try #require(pixels(actual)) == pixels(reference), "retained paint must be pixel-identical at y=\(y)")
+            let drawn = try #require(pixels(actual))
+            #expect(drawn == pixels(reference), "retained paint must be pixel-identical at y=\(y)")
         }
         #expect(session.geometryPassCount == passes)
     }

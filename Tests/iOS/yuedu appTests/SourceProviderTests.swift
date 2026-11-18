@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -281,9 +282,9 @@ struct AozoraProviderTests {
     @Test("the root lists four ways in; works page by offset; not ready and region are reported")
     func browse() async throws {
         let index = AozoraCatalogIndex(catalog: try AozoraCatalog.decode(AozoraCatalogTests.fixture))
-        var ready = true
+        let ready = OSAllocatedUnfairLock(initialState: true)
         let availability = PublicLibraryAvailability(defaults: UserDefaults(suiteName: "aozora-provider-\(UUID().uuidString)")!)
-        let provider = AozoraProvider(catalog: { ready ? index : nil }, availability: availability)
+        let provider = AozoraProvider(catalog: { ready.withLock { $0 } ? index : nil }, availability: availability)
 
         let root = try await provider.browse(nil, after: nil)
         #expect(root.entries.map { entry -> String in
@@ -304,7 +305,7 @@ struct AozoraProviderTests {
         #expect(authors.entries.count == index.authorGroups.count)
 
         #expect(provider.availability == .available)
-        ready = false
+        ready.withLock { $0 = false }
         #expect(provider.availability == .catalogNotReady)
         await #expect(throws: SourceFailure.self) { _ = try await provider.browse(nil, after: nil) }
         availability.receive(countryCode: "CHN")

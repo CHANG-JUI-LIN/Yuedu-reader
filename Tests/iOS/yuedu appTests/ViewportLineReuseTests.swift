@@ -46,7 +46,8 @@ struct ViewportLineReuseTests {
                     }.pngData()
                 }
                 let expected = try #require(pixels(reference))
-                #expect(try #require(pixels(actual)) == expected,
+                let drawn = try #require(pixels(actual))
+                #expect(drawn == expected,
                         "publication font, fallback CJK, emoji and kern must keep the same pixels: \(name) \(spacing)")
             }
         }

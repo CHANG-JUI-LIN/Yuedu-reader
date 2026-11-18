@@ -134,10 +134,38 @@ enum CoverTint {
     }
 }
 
+/// Told the image a cover view below draws.
+///
+/// A value, not a closure: SwiftUI compares environment values to decide what to update, and a
+/// closure never compares equal, so every view reading the key re-rendered on each write. A
+/// conformer keeps only comparable fields (bindings, references).
+protocol CoverImageObserver {
+    @MainActor func coverDrew(_ image: UIImage)
+}
+
 extension EnvironmentValues {
     /// Told the image each cover view below draws; nil (the default) everywhere but where a
     /// surface takes its colour from the cover.
-    @Entry var coverImageObserver: (@MainActor (UIImage) -> Void)?
+    @Entry var coverImageObserver: (any CoverImageObserver)?
+}
+
+/// Takes the average colour of the image the cover draws, off the main thread, into `tint`.
+struct CoverTintObserver: CoverImageObserver {
+    let tint: Binding<CoverTint.RGB?>
+
+    @MainActor func coverDrew(_ image: UIImage) {
+        Task {
+            let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
+            if color != tint.wrappedValue { tint.wrappedValue = color }
+        }
+    }
+}
+
+/// Keeps the image the cover draws in `image`.
+struct CoverImageBindingObserver: CoverImageObserver {
+    let image: Binding<UIImage?>
+
+    @MainActor func coverDrew(_ drawn: UIImage) { image.wrappedValue = drawn }
 }
 
 extension View {
@@ -153,7 +181,7 @@ private struct CoverImageReport: ViewModifier {
 
     func body(content: Content) -> some View {
         content.onChange(of: image.map(ObjectIdentifier.init), initial: true) {
-            if let image, let observer { observer(image) }
+            if let image, let observer { observer.coverDrew(image) }
         }
     }
 }

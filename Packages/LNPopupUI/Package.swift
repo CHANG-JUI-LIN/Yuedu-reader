@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "LNPopupUI",
 	platforms: [
-		.iOS(.v14),
+		.iOS(.v15),
 		.macCatalyst(.v14)
 	],
     products: [

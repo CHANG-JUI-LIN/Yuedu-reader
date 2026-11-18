@@ -144,7 +144,7 @@ struct LegadoRequestRetryTests {
 /// `Set-Cookie` does through `HTTPCookieStorage`) until a request carries it, then 200 with
 /// `home <id>`. `/busy/<id>` answers 503 `busy <n>` to its n-th request. `/refused/<id>` fails
 /// without an answer. Every request's `Cookie` header is recorded under its id.
-private final class RetryURLProtocol: URLProtocol, @unchecked Sendable {
+private final class RetryURLProtocol: URLProtocol {
     static let host = "retry-source.test"
     private static let sent = OSAllocatedUnfairLock<[String: [String]]>(initialState: [:])
 

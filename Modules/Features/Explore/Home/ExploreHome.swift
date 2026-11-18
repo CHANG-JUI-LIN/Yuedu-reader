@@ -204,7 +204,7 @@ private struct ExploreHomeRoot: View {
         .environment(\.openPublicLibraryBooks) { selection in
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
-        .environment(\.explorePush) { $0.open(in: &path, store: store) }
+        .environment(\.explorePush, .onto($path, store: store))
         .environment(\.exploreZoom, ExploreZoomContext(transitions: zoomTransitions, namespace: zoomNamespace))
         .environment(\.homeDefaults, defaultsContext)
         .task(id: syncKey) {

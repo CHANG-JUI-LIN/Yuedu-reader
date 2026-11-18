@@ -761,7 +761,7 @@ struct BookDetailHero<Cover: View>: View {
     private var artwork: some View {
         let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
         return cover
-            .environment(\.coverImageObserver, Self.observer(reportingTo: $coverColor))
+            .environment(\.coverImageObserver, CoverTintObserver(tint: $coverColor))
             .frame(width: artworkSize.width, height: artworkSize.height)
             .clipShape(shape)
             .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
@@ -775,16 +775,6 @@ struct BookDetailHero<Cover: View>: View {
             }
             // The title below names the book; the artwork would only repeat it.
             .accessibilityHidden(true)
-    }
-
-    /// Takes the average colour of the image the cover draws, off the main thread.
-    private static func observer(reportingTo color: Binding<CoverTint.RGB?>) -> @MainActor (UIImage) -> Void {
-        { image in
-            Task {
-                let found = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
-                if found != color.wrappedValue { color.wrappedValue = found }
-            }
-        }
     }
 
     /// The series the book belongs to, the link `series` among `links`.

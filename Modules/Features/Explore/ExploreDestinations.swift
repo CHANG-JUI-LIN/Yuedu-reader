@@ -203,7 +203,38 @@ enum ExplorePush: Hashable {
 extension EnvironmentValues {
     /// Pushes onto the stack that shows the page: 探索's or 資源庫's, each of which sets it to
     /// append to its own path.
-    @Entry var explorePush: ((ExplorePush) -> Void)? = nil
+    @Entry var explorePush: ExplorePushAction? = nil
+}
+
+/// What `explorePush` does with a push: a value, not a closure — SwiftUI compares environment
+/// values, and a closure never compares equal, so every page reading the key re-rendered on
+/// each write. Holds only bindings and the store, which compare by identity.
+struct ExplorePushAction {
+    private enum Destination {
+        /// A tab root's stack: 探索's or 資源庫's path (`ExplorePush.open`).
+        case path(Binding<NavigationPath>, BookStore)
+        /// A page that shows the push itself, through `navigationDestination(item:)`.
+        case item(Binding<ExplorePush?>)
+    }
+
+    private let destination: Destination
+
+    /// Opens each push on `path`, as a tab root does.
+    static func onto(_ path: Binding<NavigationPath>, store: BookStore) -> Self {
+        Self(destination: .path(path, store))
+    }
+
+    /// Hands each push to `item`.
+    static func into(_ item: Binding<ExplorePush?>) -> Self {
+        Self(destination: .item(item))
+    }
+
+    @MainActor func callAsFunction(_ push: ExplorePush) {
+        switch destination {
+        case .path(let path, let store): push.open(in: &path.wrappedValue, store: store)
+        case .item(let item): item.wrappedValue = push
+        }
+    }
 }
 
 /// The pages 範圍, the home's row headers and its chips open: each the page its source already

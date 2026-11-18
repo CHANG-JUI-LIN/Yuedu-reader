@@ -146,7 +146,7 @@ struct LibraryTabRoot: View {
         .environment(\.openPublicLibraryBooks) { selection in
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
-        .environment(\.explorePush) { $0.open(in: &path, store: store) }
+        .environment(\.explorePush, .onto($path, store: store))
     }
 
     // MARK: •••

@@ -787,7 +787,7 @@ final class CoreTextPaginator: Sendable {
             } else if let rawFont = attrs[.font] {
                 let rawObject = rawFont as AnyObject
                 if CFGetTypeID(rawObject) == CTFontGetTypeID() {
-                    let font = unsafeBitCast(rawObject, to: CTFont.self)
+                    let font = unsafeDowncast(rawObject, to: CTFont.self)
                     hasher.combine(CTFontCopyPostScriptName(font) as String)
                     hasher.combine(Double(CTFontGetSize(font)))
                 } else {

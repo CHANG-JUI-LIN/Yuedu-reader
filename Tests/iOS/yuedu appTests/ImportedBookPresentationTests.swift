@@ -157,6 +157,7 @@ struct CoversFullScreenTests {
 private extension ScenePhase {
     /// Not always active: a fresh simulator holds the test host inactive behind RSS's
     /// notification-permission alert.
+    @MainActor
     init(of scene: UIWindowScene) {
         self = switch scene.activationState {
         case .foregroundActive: .active

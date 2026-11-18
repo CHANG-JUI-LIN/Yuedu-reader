@@ -94,12 +94,11 @@ final class LoopbackPageServer: @unchecked Sendable {
         case .never:
             return
         case .body(let body, let type, let delay):
-            let send = {
+            queue.asyncAfter(deadline: .now() + delay) {
                 var head = Data("HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n".utf8)
                 head.append(body)
                 connection.send(content: head, completion: .contentProcessed { _ in connection.cancel() })
             }
-            queue.asyncAfter(deadline: .now() + delay, execute: send)
         case .answer(let status, let headers, let body):
             var lines = ["HTTP/1.1 \(status) Status"]
             lines += headers.map { "\($0.key): \($0.value)" }

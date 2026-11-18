@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -14,27 +15,27 @@ struct MetadataFillCoordinatorTests {
         store.saveReadingBook(book("三體"))
         let provider = CountingProvider()
         let network = StubNetwork(allowed: false)
-        var enabled = true
-        var lowPower = false
+        let enabled = OSAllocatedUnfairLock(initialState: true)
+        let lowPower = OSAllocatedUnfairLock(initialState: false)
         let coordinator = MetadataFillCoordinator(store: store, makeProviders: { [provider] }, network: network,
-                                                  isEnabled: { enabled }, isLowPower: { lowPower })
+                                                  isEnabled: { enabled.withLock { $0 } }, isLowPower: { lowPower.withLock { $0 } })
 
         coordinator.setActive(true)
         await coordinator.waitUntilIdleForTesting()
         #expect(provider.titles.isEmpty, "not on Wi-Fi")
 
-        enabled = false
+        enabled.withLock { $0 = false }
         network.allowed = true
         await coordinator.waitUntilIdleForTesting()
         #expect(provider.titles.isEmpty, "setting off")
 
-        enabled = true
-        lowPower = true
+        enabled.withLock { $0 = true }
+        lowPower.withLock { $0 = true }
         coordinator.conditionsChanged()
         await coordinator.waitUntilIdleForTesting()
         #expect(provider.titles.isEmpty, "Low Power Mode")
 
-        lowPower = false
+        lowPower.withLock { $0 = false }
         coordinator.conditionsChanged()
         await coordinator.waitUntilIdleForTesting()
         #expect(provider.titles == ["三體"])

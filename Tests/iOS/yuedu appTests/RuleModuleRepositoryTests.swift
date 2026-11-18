@@ -55,7 +55,7 @@ struct RuleModuleRepositoryTests {
                 _ = try RuleModuleRepositoryIndex.parse(data, from: Self.base)
                 return nil
             } catch {
-                return error as? RuleModuleRepositoryError
+                return error
             }
         }
         #expect(refusal(Data("[1]".utf8)) == .notAnIndex)

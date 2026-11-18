@@ -261,8 +261,9 @@ struct BookSyncDeviceLocalStateTests {
         #expect(migrated.left == 1)
         #expect(migrated.shadow == oldShadow)
         let now = lastSync.addingTimeInterval(60)
+        let existing = try #require(migrated.shadow[key])
         #expect(ICloudSyncManager.updatedShadowEntry(
-            existing: try #require(migrated.shadow[key]), currentHash: hash(edited), fallbackUpdatedAt: lastSync, now: now
+            existing: existing, currentHash: hash(edited), fallbackUpdatedAt: lastSync, now: now
         )?.updatedAt == now)
     }
 

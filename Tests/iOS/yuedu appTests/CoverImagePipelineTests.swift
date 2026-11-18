@@ -693,13 +693,13 @@ struct BookshelfCoverArtworkTests {
         plan: BookshelfCoverPlan,
         pipeline: CoverImagePipeline,
         size: CGSize,
-        onDrawn: (@MainActor (BookshelfDrawnCover) -> Void)? = nil
+        report: BookshelfCoverReport? = nil
     ) throws -> UIImage {
         let renderer = ImageRenderer(
             content: BookshelfCoverArtwork(book: book, plan: plan, displaySize: size)
                 .frame(width: size.width, height: size.height)
                 .environment(\.coverImagePipeline, pipeline)
-                .environment(\.bookshelfDrawnCoverObserver, onDrawn)
+                .environment(\.bookshelfDrawnCoverObserver, report)
                 .environment(\.displayScale, 2)
         )
         renderer.scale = 2
@@ -837,9 +837,10 @@ struct BookshelfCoverArtworkTests {
         _ = await fixture.pipeline.image(for: CoverImageRequest(source: source, size: size))
         let plan = BookshelfCoverPlan.shelf(for: book, colorScheme: .light, forcesDefaultCover: false)
 
-        var reports: [BookshelfDrawnCover] = []
-        _ = try render(book, plan: plan, pipeline: fixture.pipeline, size: slot) { reports.append($0) }
-        let drawn = try #require(reports.last)
+        // The shelf's card box, which the slot reports into.
+        let box = BookshelfCoverFrameBox()
+        _ = try render(book, plan: plan, pipeline: fixture.pipeline, size: slot, report: BookshelfCoverReport(box: box))
+        let drawn = try #require(box.drawnCover)
         guard case .bitmap(let held, let reportedSource) = drawn else {
             Issue.record("expected a bitmap report, got \(drawn)")
             return

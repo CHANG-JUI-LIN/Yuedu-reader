@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -25,8 +26,8 @@ struct PublicLibraryAvailabilityTests {
         let suite = "PublicLibraryAvailabilityTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        var storefront: String? = "USA"
-        let availability = PublicLibraryAvailability(defaults: defaults) { storefront }
+        let storefront = OSAllocatedUnfairLock<String?>(initialState: "USA")
+        let availability = PublicLibraryAvailability(defaults: defaults) { storefront.withLock { $0 } }
         // A country pinned before `start()` (UI tests' `-debug-storefront-country`)
         // survives the app becoming active.
         availability.receive(countryCode: "CHN")
@@ -36,10 +37,10 @@ struct PublicLibraryAvailabilityTests {
         availability.start()
         await availability.refresh()
         #expect(availability.countryCode == "USA")
-        storefront = "CHN" // Changed in Settings while the app was away.
+        storefront.withLock { $0 = "CHN" } // Changed in Settings while the app was away.
         await availability.refresh()
         #expect(!availability.isAvailable)
-        storefront = nil // A transient missing answer keeps the last known country.
+        storefront.withLock { $0 = nil } // A transient missing answer keeps the last known country.
         await availability.refresh()
         #expect(availability.countryCode == "CHN")
     }

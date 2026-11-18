@@ -617,6 +617,8 @@ struct BookSourceFormLoginView: View {
         }
 
         isLoading = true
+        // Read the @State once on the main actor; the script thread works on this snapshot.
+        let source = source
         Task.detached(priority: .userInitiated) {
             // The login script runs on `SourceScriptThread`: a page it opens with
             // `java.startBrowserAwait` can stay up for minutes.
@@ -687,6 +689,8 @@ struct BookSourceFormLoginView: View {
         // Captured before leaving the main actor so a label refresh after the action can
         // run on the same engine; the source decides the display text, we only resolve it.
         let dynamicLabelFields = fields.filter(\.hasDynamicViewName)
+        // Read the @State once on the main actor; the script thread works on this snapshot.
+        let source = source
 
         // The menu action runs on `SourceScriptThread`: a page it opens with
         // `java.startBrowserAwait` can stay up for minutes.

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -143,18 +144,18 @@ struct AuthorWorksModelTests {
     @Test("a failed feed says so, and 重試 reads it again")
     func failureRetries() async {
         var calls = 0
-        var fails = true
+        let fails = OSAllocatedUnfairLock(initialState: true)
         let other = CollectionEntry.bundledGutenberg(GutenbergBook(id: 158, title: "Emma", author: "Austen, Jane"))
         let model = AuthorWorksModel(loadGutenberg: { _ in
             calls += 1
-            if fails { throw FeedFailed() }
+            if fails.withLock({ $0 }) { throw FeedFailed() }
             return [other]
         }, loadShelf: { _, _ in [] })
         let request = AuthorWorksRequest.gutenberg(author, excluding: shown)
         let store = BookStore()
         await model.load(request, store: store)
         if case .failed = model.state {} else { Issue.record("expected a failure, got \(model.state)") }
-        fails = false
+        fails.withLock { $0 = false }
         await model.retry(request, store: store)
         #expect(model.state == .loaded([other]))
         #expect(calls == 2)
@@ -433,13 +434,13 @@ struct AuthorWorksModelTests {
         source.bookSourceUrl = "https://example.com"
         source.bookSourceName = "測試來源"
         var asked: [String] = []
-        var outcome: Result<[OnlineBook]?, FeedFailed> = .success([
+        let outcome = OSAllocatedUnfairLock<Result<[OnlineBook]?, FeedFailed>>(initialState: .success([
             Self.online("凡人修仙傳", "忘語", "https://example.com/b/1", source: id),
             Self.online("魔天記", "忘語", "https://example.com/b/5", source: id),
-        ])
+        ]))
         let model = AuthorWorksModel(loadGutenberg: { _ in [] }, loadShelf: { _, _ in [] }, searchSource: { _, keyword in
             asked.append(keyword)
-            return try outcome.get().map { (source, $0) }
+            return try outcome.withLock { $0 }.get().map { (source, $0) }
         }, loadModules: { _ in [] })
         let store = BookStore()
         let request = AuthorWorksRequest.source(sourceID: id, author: "忘語", title: "凡人修仙傳", bookURL: "https://example.com/b/1")
@@ -451,10 +452,10 @@ struct AuthorWorksModelTests {
         #expect(entries.count == 1 && record.title == "魔天記" && frozen.book.bookUrl == "https://example.com/b/5")
         #expect(asked == ["忘語"])
 
-        outcome = .failure(FeedFailed())
+        outcome.withLock { $0 = .failure(FeedFailed()) }
         await model.load(.source(sourceID: id, author: "別人", title: "書", bookURL: ""), store: store)
         #expect(model.state == .hidden, "a failed search is no row, not a retry block the page never had")
-        outcome = .success(nil)
+        outcome.withLock { $0 = .success(nil) }
         await model.load(.source(sourceID: id, author: "第三人", title: "書", bookURL: ""), store: store)
         #expect(model.state == .hidden)
     }

@@ -194,7 +194,7 @@ struct HomeSectionCards: View {
                 button(index, in: cards) {
                     HomeCoverCard(content: cards[index], size: CGSize(width: width * scale, height: height * scale))
                 }
-                .environment(\.coverImageObserver, index == 0 ? Self.observer(reportingTo: cover) : nil)
+                .environment(\.coverImageObserver, index == 0 ? CoverTintObserver(tint: cover) : nil)
                 .offset(x: width * DSLayout.homeFanStep * CGFloat(index))
                 .zIndex(Double(count - index))
             }
@@ -204,16 +204,6 @@ struct HomeSectionCards: View {
         .clipped()
         .padding(.horizontal, DSSpacing.lg)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fanWidth = $0 }
-    }
-
-    /// Takes the average colour of the image a cover draws, off the main thread.
-    private static func observer(reportingTo cover: Binding<CoverTint.RGB?>) -> @MainActor (UIImage) -> Void {
-        { image in
-            Task {
-                let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
-                if color != cover.wrappedValue { cover.wrappedValue = color }
-            }
-        }
     }
 
     // MARK: 一大四小
@@ -618,12 +608,7 @@ struct HomeFeaturedCard: View {
         layout {
             HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: coverSize)
                 .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
-                .environment(\.coverImageObserver, { image in
-                    Task {
-                        let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
-                        if color != coverColor { coverColor = color }
-                    }
-                })
+                .environment(\.coverImageObserver, CoverTintObserver(tint: $coverColor))
             text
         }
         .padding(DSSpacing.lg)
@@ -779,12 +764,7 @@ struct HomeCompactReadingCard: View {
         layout {
             HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: coverSize)
                 .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
-                .environment(\.coverImageObserver, { image in
-                    Task {
-                        let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
-                        if color != coverColor { coverColor = color }
-                    }
-                })
+                .environment(\.coverImageObserver, CoverTintObserver(tint: $coverColor))
                 // The cover and its inset set the card's height; the text centres against it
                 // and may run into the inset, as Apple Books' four lines do.
                 .padding(.vertical, stacksVertically ? 0 : inset)

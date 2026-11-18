@@ -84,9 +84,11 @@ extension JSCoreEngineTimeoutResetTests {
         // A job queued on the old queue behind the hanging script: refresh.all queues many.
         let staleResult = Box<String?>()
         let staleDone = DispatchSemaphore(value: 0)
+        // The engine is the subject here: its own queue orders the two threads' calls.
+        let sharedEngine = JSConfined(engine)
         DispatchQueue.global().async {
             started.wait()
-            staleResult.value = engine.evaluate("source.put('stale', '1'); 'stale-ran'")
+            staleResult.value = sharedEngine.value.evaluate("source.put('stale', '1'); 'stale-ran'")
             staleDone.signal()
         }
 

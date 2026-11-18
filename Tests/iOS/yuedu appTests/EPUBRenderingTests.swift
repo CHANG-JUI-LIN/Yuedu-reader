@@ -2004,7 +2004,7 @@ struct EPUBRenderingTests {
             resourceProvider: ReadiumBookResourceAdapter(session: session)
         )
         #expect(viewport == CGSize(width: 600, height: 800))
-        let fixedPageRefs = await FixedLayoutEPUBPageProvider.chapterRefs(from: session)
+        let fixedPageRefs = FixedLayoutEPUBPageProvider.chapterRefs(from: session)
         #expect(fixedPageRefs.map(\.title) == ["Page 1", "Page 2"])
         #expect(fixedPageRefs.map(\.url) == ["OEBPS/page1.xhtml", "OEBPS/page2.xhtml"])
 
