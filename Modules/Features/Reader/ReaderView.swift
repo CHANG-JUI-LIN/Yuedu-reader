@@ -2368,6 +2368,14 @@ struct ReaderView: View {
                 guard let screen = window.windowScene?.screen else { return }
                 applyReaderBrightness(on: screen)
             }
+            // The safe-area preference can arrive before the reader is in a window (a reader
+            // pushed by UIKit appears before its view joins one), while `windowSafeBottom`
+            // still reads 0 — and the full-screen page reports no bottom inset of its own, so
+            // nothing would correct it: the footer sat on the home indicator (since the move
+            // to the reader's own window for iPhone Duo). Fold the window's inset in once known.
+            readerWindow.withWindow { window in
+                readerSafeAreaBottom = max(readerSafeAreaBottom, window.safeAreaInsets.bottom)
+            }
             volumeHandler.onPageTurn = { dir in
                 switch dir {
                 case .prev: goToPrevPage()
