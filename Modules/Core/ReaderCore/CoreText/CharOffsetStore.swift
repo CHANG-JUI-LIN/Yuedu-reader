@@ -24,10 +24,6 @@ final class CharOffsetStore: Sendable {
     private let pending = OSAllocatedUnfairLock(initialState: PendingState())
     private let debounceInterval: TimeInterval
 
-    private func log(_ message: String) {
-        print("[ProgressTrace][CharOffsetStore] \(message)")
-    }
-
     init(directoryURL: URL, debounceInterval: TimeInterval = 1.0) {
         self.directoryURL = directoryURL
         self.debounceInterval = debounceInterval
@@ -56,7 +52,6 @@ final class CharOffsetStore: Sendable {
                 }
                 if let due { self.write(due) }
             }
-            self.log("saveQueued bookId=\(record.bookId) spine=\(record.spineIndex) charOffset=\(record.charOffset) debounce=\(self.debounceInterval)")
         }
     }
 
@@ -64,9 +59,6 @@ final class CharOffsetStore: Sendable {
         if DispatchQueue.getSpecific(key: queueKey) != nil {
             if let r = takePending() {
                 write(r)
-                log("flushSync(inQueue) wrotePending bookId=\(r.bookId) spine=\(r.spineIndex) charOffset=\(r.charOffset)")
-            } else {
-                log("flushSync(inQueue) noPending")
             }
             return
         }
@@ -74,9 +66,6 @@ final class CharOffsetStore: Sendable {
         queue.sync {
             if let r = self.takePending() {
                 self.write(r)
-                self.log("flushSync wrotePending bookId=\(r.bookId) spine=\(r.spineIndex) charOffset=\(r.charOffset)")
-            } else {
-                self.log("flushSync noPending")
             }
         }
     }
@@ -97,18 +86,11 @@ final class CharOffsetStore: Sendable {
             let url = self.fileURL(for: bookId)
             guard FileManager.default.fileExists(atPath: url.path),
                   let data = try? Data(contentsOf: url) else {
-                self.log("load miss bookId=\(bookId)")
                 return nil
             }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            if let decoded = try? decoder.decode(CharOffsetRecord.self, from: data) {
-                self.log("load hit bookId=\(bookId) spine=\(decoded.spineIndex) charOffset=\(decoded.charOffset)")
-                return decoded
-            } else {
-                self.log("load decodeFailed bookId=\(bookId)")
-                return nil
-            }
+            return try? decoder.decode(CharOffsetRecord.self, from: data)
         }
     }
 
@@ -119,10 +101,8 @@ final class CharOffsetStore: Sendable {
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
             try data.write(to: fileURL(for: record.bookId), options: .atomic)
-            log("write success bookId=\(record.bookId) spine=\(record.spineIndex) charOffset=\(record.charOffset)")
         } catch {
-            // Silent failure is hard to diagnose; log for production debugging.
-            print("[CharOffsetStore] write failed for bookId \(record.bookId): \(error)")
+            AppLogger.cache("CharOffsetStore write failed", error: error, context: ["bookId": record.bookId])
         }
     }
 

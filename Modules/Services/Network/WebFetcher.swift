@@ -5,7 +5,6 @@ struct FetchedPage {
     let request: URLRequest
     let data: Data
     let response: URLResponse
-    let latencyMs: Int
 
     var statusCode: Int { (response as? HTTPURLResponse)?.statusCode ?? 200 }
 }
@@ -137,7 +136,7 @@ actor WebFetcher {
         do {
             if !(200...299).contains(page.statusCode) {
                 if throwsOnErrorStatus {
-                    throw nonSuccessStatus(page.statusCode, url: url, latencyMs: page.latencyMs)
+                    throw nonSuccessStatus(page.statusCode, url: url)
                 }
                 AppLogger.network("page answered an error status; its body goes to the rules", context: [
                     "url": String(url.absoluteString.prefix(120)),
@@ -155,15 +154,6 @@ actor WebFetcher {
                 url: url.absoluteString,
                 statusCode: page.statusCode,
                 htmlBody: html
-            )
-            ReaderTelemetry.shared.log(
-                "fetch_done",
-                attributes: [
-                    "url": String(url.absoluteString.prefix(120)),
-                    "statusCode": "\(page.statusCode)",
-                    "bytes": "\((page.response as? HTTPURLResponse)?.expectedContentLength ?? Int64(html.utf8.count))",
-                    "latencyMs": "\(page.latencyMs)",
-                ]
             )
             return (html, page.response.url ?? url, page.statusCode)
         } catch {
@@ -200,15 +190,6 @@ actor WebFetcher {
         )
 
         let host = url.host ?? "default"
-        let fetchStart = CFAbsoluteTimeGetCurrent()
-        ReaderTelemetry.shared.log(
-            "fetch_start",
-            attributes: [
-                "url": String(url.absoluteString.prefix(120)),
-                "host": host,
-                "method": method,
-            ]
-        )
 
         do {
             let (data, response) = try await PerHostSemaphore.shared.withLock(host: host) {
@@ -217,8 +198,7 @@ actor WebFetcher {
                     savesCookies: cookieJar
                 )
             }
-            let latencyMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
-            return FetchedPage(request: request, data: data, response: response, latencyMs: latencyMs)
+            return FetchedPage(request: request, data: data, response: response)
         } catch {
             WebCrawlerDebugger.logError(error, url: url.absoluteString)
             throw error
@@ -235,15 +215,6 @@ actor WebFetcher {
                 "url": String(url.absoluteString.prefix(160)),
                 "bytes": bytes,
                 "limit": limit,
-                "transport": transport,
-            ]
-        )
-        ReaderTelemetry.shared.log(
-            "fetch_error",
-            attributes: [
-                "url": String(url.absoluteString.prefix(120)),
-                "reason": "responseTooLarge",
-                "bytes": "\(bytes)",
                 "transport": transport,
             ]
         )
@@ -325,17 +296,9 @@ actor WebFetcher {
     }
 
     /// A non-2xx response, logged and turned into `FetchError.httpError`.
-    nonisolated private func nonSuccessStatus(_ statusCode: Int, url: URL, latencyMs: Int) -> FetchError {
+    nonisolated private func nonSuccessStatus(_ statusCode: Int, url: URL) -> FetchError {
         let err = FetchError.httpError(statusCode)
         WebCrawlerDebugger.logError(err, url: url.absoluteString)
-        ReaderTelemetry.shared.log(
-            "fetch_error",
-            attributes: [
-                "url": String(url.absoluteString.prefix(120)),
-                "statusCode": "\(statusCode)",
-                "latencyMs": "\(latencyMs)",
-            ]
-        )
         return err
     }
 

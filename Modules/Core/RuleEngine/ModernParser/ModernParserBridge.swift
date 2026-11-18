@@ -461,13 +461,6 @@ class ModernParserBridge {
                     key: key
                 ) ?? "")
                 : localValue
-            if self.sourceRuleData.source.bookSourceName.contains("书山聚合"),
-               key == "yunpara" {
-                NSLog(
-                    "❖SHUSHAN TRACE❖ stage=variable.get key=yunpara value=%@",
-                    value.isEmpty ? "<empty>" : value
-                )
-            }
             return value
         }
         engine.putData = { [weak self] key, value in
@@ -488,13 +481,6 @@ class ModernParserBridge {
                 for: self.sourceRuleData.source.bookSourceUrl,
                 key: key
             )
-            if self.sourceRuleData.source.bookSourceName.contains("书山聚合"),
-               key == "yunpara" {
-                NSLog(
-                    "❖SHUSHAN TRACE❖ stage=variable.put key=yunpara value=%@",
-                    value
-                )
-            }
         }
 
         // ── Source Bridge Wiring ──
@@ -767,16 +753,6 @@ class ModernParserBridge {
                 timedOut: timedOut,
                 body: result
             )
-            if self?.sourceRuleData.source.bookSourceName.contains("书山聚合") == true {
-                NSLog(
-                    "❖SHUSHAN TRACE❖ stage=js.network path=%@ status=%d timedOut=%@ bodyLen=%d bodyHead=%@",
-                    request.url?.path ?? "nil",
-                    statusCode ?? -1,
-                    timedOut ? "true" : "false",
-                    result?.count ?? -1,
-                    String((result ?? "nil").prefix(180)).replacingOccurrences(of: "\n", with: " ")
-                )
-            }
             // Every `java.*` request takes this path — a plain `java.ajax(url)` (书山聚合 fetches
             // chapter *content* here) and the AnalyzeUrl handler's `url,{…}` requests — and the
             // transport error used to be discarded outright, so a failed chapter left no trace
@@ -1611,82 +1587,10 @@ class ModernParserBridge {
         let paraState = BookSourceRuntimeStateStore.shared.sourceVariableJSON(
             for: source.bookSourceUrl
         )
-        if source.bookSourceName.contains("书山聚合") {
-            let yunpara = sourceRuleData.getVariable(key: "yunpara")
-            NSLog(
-                "❖SHUSHAN TRACE❖ stage=content.begin title=%@ yunpara=%@ runtimeKeys=%@ inputLen=%d baseHost=%@",
-                chapterRef?.title ?? "",
-                yunpara.isEmpty ? "<empty>" : yunpara,
-                sourceRuleData.variableMap.keys.sorted().joined(separator: ","),
-                html.count,
-                URL(string: baseURL)?.host ?? "nil"
-            )
-        }
         AppLogger.parse("⟐ contentJS start", context: [
             "title": chapterRef?.title ?? "",
             "vars": Self.sourceVariableLogSummary(paraState)
         ])
-        // Source-scoped diagnostic probe for 同人小说网. It observes the source's own existing
-        // getComments boundary without changing its arguments or return value, and is restored
-        // immediately after this one content-rule evaluation. This distinguishes duplicate
-        // bubbles already present in `/novel/chap` content from duplicates introduced by
-        // getComments itself. Only semantic IDs/counts are logged — never chapter prose or token.
-        let shouldProbeTongrenReviews =
-            source.bookSourceName.contains("同人小说网")
-            || source.bookSourceName.contains("同人小說網")
-        if shouldProbeTongrenReviews {
-            _ = jsEngine.evaluate(
-                """
-                (function () {
-                    if (typeof getComments !== 'function' || getComments.__ydReviewFlowWrapped) {
-                        return 'false';
-                    }
-                    var original = getComments;
-                    function reviewFlowDiagnostic(stage, value, fallbackBookId, fallbackChapterId) {
-                        var text = String(value || '');
-                        var tags = text.match(/<img\\b[^>]*>/gi) || [];
-                        var sequence = [];
-                        var counts = Object.create(null);
-                        for (var i = 0; i < tags.length; i++) {
-                            var match = tags[i].match(
-                                /(?:showCmt|androidshowCmt|createSvg)\\s*\\(\\s*['"]?(-?\\d+)['"]?\\s*,\\s*['"]?(-?\\d+)['"]?\\s*,\\s*['"]?(-?\\d+)/i
-                            );
-                            if (!match) continue;
-                            var key = match[1] + '/' + match[2] + '/' + match[3];
-                            sequence.push(key);
-                            counts[key] = (counts[key] || 0) + 1;
-                        }
-                        var duplicates = [];
-                        var duplicateInstances = 0;
-                        Object.keys(counts).sort().forEach(function (key) {
-                            if (counts[key] <= 1) return;
-                            duplicates.push(key + '×' + counts[key]);
-                            duplicateInstances += counts[key] - 1;
-                        });
-                        java.log(
-                            'reviewFlow stage=' + stage
-                            + ' bookId=' + String(fallbackBookId || '')
-                            + ' chapterId=' + String(fallbackChapterId || '')
-                            + ' markers=' + sequence.length
-                            + ' duplicateInstances=' + duplicateInstances
-                            + ' duplicateTargets=' + (duplicates.slice(0, 16).join(',') || '-')
-                            + ' targetSequence=' + (sequence.slice(0, 32).join(',') || '-')
-                        );
-                    }
-                    var wrapped = function (content, bookId, chapterId) {
-                        reviewFlowDiagnostic('getCommentsInput', content, bookId, chapterId);
-                        var output = original.apply(this, arguments);
-                        reviewFlowDiagnostic('getCommentsOutput', output, bookId, chapterId);
-                        return output;
-                    };
-                    wrapped.__ydReviewFlowWrapped = true;
-                    wrapped.__ydReviewFlowOriginal = original;
-                    getComments = wrapped;
-                    return 'true';
-                })()
-                """
-            )
-        }
         // 段评样式: content JS 的段评注入函数在 iOS 上（deviceType=='苹果'）会走「iOS 变体」，
         // 产出 <comment count onPress> → app 原生 .commentBadge，完全忽略书源「段评样式」SVG
         // 设置（起点对话框等）。为忠实还原书源样式，在 content 规则执行前把「iOS 变体」别名成
@@ -1749,16 +1653,6 @@ class ModernParserBridge {
                     deviceType = globalThis.__ydOriginalCommentDeviceType;
                     delete globalThis.__ydOriginalCommentDeviceType;
                 }
-                if (typeof getComments === 'function'
-                    && getComments.__ydReviewFlowWrapped
-                    && typeof getComments.__ydReviewFlowOriginal === 'function') {
-                    getComments = getComments.__ydReviewFlowOriginal;
-                }
-                if (typeof getCommentsios === 'function'
-                    && getCommentsios.__ydReviewFlowWrapped
-                    && typeof getCommentsios.__ydReviewFlowOriginal === 'function') {
-                    getCommentsios = getCommentsios.__ydReviewFlowOriginal;
-                }
             })()
             """
         )
@@ -1820,26 +1714,6 @@ class ModernParserBridge {
             "jsError": contentRuleError ?? "none",
             "head": String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
         ])
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "ruleOutput",
-            html: content,
-            sourceName: source.bookSourceName,
-            context: [
-                "title": chapterRef?.title ?? "",
-                "chapterIndex": chapterRef?.index ?? -1,
-            ]
-        )
-        if source.bookSourceName.contains("书山聚合") {
-            NSLog(
-                "❖SHUSHAN TRACE❖ stage=content.end len=%d bubbles=%d commentTags=%d showCmt=%d jsNetMs=%d jsError=%@",
-                content.count,
-                bubbleCount,
-                content.countMarkers("<comment", ignoringCase: true),
-                content.countMarkers("showcmt", ignoringCase: true),
-                Int(_jsNetMs),
-                contentRuleError ?? "none"
-            )
-        }
         // An empty chapter is almost always the source's own HTTP call coming back
         // with something its JS couldn't use. The exchange is recorded (not logged)
         // per request, and only dumped here — otherwise every 段評 `ajaxAll` call
@@ -2001,21 +1875,6 @@ class ModernParserBridge {
         let (body, finalUrl) = try await fetch(
             ruleUrl: source.searchUrl, key: keyword, page: page, pageScope: pageScope, on: host
         )
-        // #region agent log
-        if source.bookSourceName.contains("企点") {
-            NSLog("[企點診斷] searchBooks fetch URL → %@", finalUrl)
-            NSLog("[企點診斷] searchBooks response(前200字) → %@", String(body.prefix(200)))
-        }
-        _dbgLog("聚合/JS 搜尋", data: [
-            "source": source.bookSourceName,
-            "变量": Self.sourceVariableLogSummary(
-                BookSourceRuntimeStateStore.shared.sourceVariableJSON(
-                    for: source.bookSourceUrl
-                )
-            ),
-            "搜索参数": Self.searchParamsPreview(from: finalUrl),
-        ], hyp: "S1")
-        // #endregion
         return try parseSearchResults(
             html: body, baseURL: finalUrl, source: source, pageVariables: pageScope.variableMap
         )
@@ -2034,17 +1893,6 @@ class ModernParserBridge {
         let (body, finalUrl) = try await fetch(
             ruleUrl: source.searchUrl, key: keyword, page: page, pageScope: pageScope, on: host
         )
-        // #region agent log
-        _dbgLog("聚合/JS 搜尋", data: [
-            "source": source.bookSourceName,
-            "变量": Self.sourceVariableLogSummary(
-                BookSourceRuntimeStateStore.shared.sourceVariableJSON(
-                    for: source.bookSourceUrl
-                )
-            ),
-            "搜索参数": Self.searchParamsPreview(from: finalUrl),
-        ], hyp: "S1")
-        // #endregion
 
         let pageVariables = pageScope.variableMap
         if let plan = aggregateSearchPlan(fromHexBody: body) {
@@ -2280,22 +2128,6 @@ class ModernParserBridge {
         return LegadoJSBridge.hexString(data)
     }
 
-    /// For logging: if `url` is the aggregate sources' `data:;base64,…` pseudo-URL,
-    /// decode it so the resolved search params (e.g. `sourcesKey`/`server`) are
-    /// visible on-device. Returns a short prefix of the URL otherwise.
-    private static func searchParamsPreview(from url: String) -> String {
-        guard url.hasPrefix("data:"),
-              let range = url.range(of: ";base64,") else {
-            return String(url.prefix(120))
-        }
-        let payload = String(url[range.upperBound...])
-        guard let data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters),
-              let json = String(data: data, encoding: .utf8) else {
-            return String(url.prefix(120))
-        }
-        return String(json.prefix(200))
-    }
-
     func getBookInfo(url: String, on host: isolated SourceScriptHost<ModernParserBridge>) async throws -> OnlineBook {
         let source = sourceRuleData.source
         let (body, finalUrl) = try await fetch(ruleUrl: url, on: host)
@@ -2409,29 +2241,6 @@ class ModernParserBridge {
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawExploreUrl.isEmpty else { return [] }
-        let traceShushanDiscover = source.bookSourceName.contains("书山聚合")
-        if traceShushanDiscover {
-            let variable = runtimeStateStore.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
-            NSLog(
-                "❖SHUSHAN TRACE❖ stage=explore.begin page=%d jsLibLen=%d sourceVariableLen=%d engineGen=%llu",
-                page,
-                source.jsLib.count,
-                variable.count,
-                jsEngine.generation
-            )
-        }
-        let traceQidianDiscover = rawExploreUrl.contains("_csrfToken")
-        if traceQidianDiscover {
-            let variable = runtimeStateStore.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=explore.begin page=%d jsLibLen=%d variableLen=%d engineGen=%llu",
-                source.bookSourceName,
-                page,
-                source.jsLib.count,
-                variable.count,
-                jsEngine.generation
-            )
-        }
 
         var ruleStr = rawExploreUrl
         let isJS = Self.isJSExploreRule(rawExploreUrl)
@@ -2448,23 +2257,6 @@ class ModernParserBridge {
             // Snapshot now: any later `jsEngine.evaluate` clears `lastError`, so
             // reading it at log time would report "none" for a rule that threw.
             exploreJSError = jsEngine.lastError
-        }
-        if traceShushanDiscover {
-            NSLog(
-                "❖SHUSHAN TRACE❖ stage=explore.evaluated payloadLen=%d jsError=%@ payloadHead=%@",
-                ruleStr.count,
-                exploreJSError ?? "none",
-                String(ruleStr.prefix(180)).replacingOccurrences(of: "\n", with: " ")
-            )
-        }
-        if traceQidianDiscover {
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=explore.evaluated isJS=%@ payloadLen=%d jsError=%@",
-                source.bookSourceName,
-                isJS ? "true" : "false",
-                ruleStr.count,
-                exploreJSError ?? "none"
-            )
         }
 
         let result: [DiscoverItem]
@@ -2515,23 +2307,6 @@ class ModernParserBridge {
             "selects": result.filter { ($0.type ?? "") == "select" }.count,
             "head": String(ruleStr.prefix(240)).replacingOccurrences(of: "\n", with: " ")
         ])
-        if traceQidianDiscover {
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=explore.decoded items=%d filters=%d navigable=%d",
-                source.bookSourceName,
-                result.count,
-                result.filter { ($0.type ?? "") == "select" }.count,
-                result.filter { !($0.url ?? "").isEmpty }.count
-            )
-        }
-        if traceShushanDiscover {
-            NSLog(
-                "❖SHUSHAN TRACE❖ stage=explore.decoded items=%d filters=%d navigable=%d",
-                result.count,
-                result.filter { ($0.type ?? "") == "select" }.count,
-                result.filter { !($0.url ?? "").isEmpty }.count
-            )
-        }
 
         // Only a rule that threw *and* produced nothing: a script that recovered from its own
         // error and still answered has a usable payload, already decoded above.
@@ -2976,13 +2751,6 @@ class ModernParserBridge {
         let searchUrl = source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !searchUrl.isEmpty else { return }
         let cookieHost = "https://qidian.com"
-        let before = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
-        NSLog(
-            "❖DISC TRACE❖ source=%@ stage=csrf.prime.begin tokenBefore=%d searchRuleLen=%d",
-            source.bookSourceName,
-            before.count,
-            searchUrl.count
-        )
         // 同人小說網 can mint a random `_csrfToken` for its review API. 起點's
         // ranking API instead requires a token issued by the current web session.
         // Merely loading the search page while the random token is present does not
@@ -2996,25 +2764,13 @@ class ModernParserBridge {
         )
         do {
             // A search request like any other: its URL's puts go to a page nothing reads.
-            let (body, finalURL) = try await fetch(
+            _ = try await fetch(
                 ruleUrl: searchUrl, key: "1", page: 1, pageScope: RuleData(), on: host
             )
-            let after = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=csrf.prime.end tokenAfter=%d bodyLen=%d finalHost=%@",
-                source.bookSourceName,
-                after.count,
-                body.count,
-                URL(string: finalURL)?.host ?? "nil"
-            )
         } catch {
-            let after = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=csrf.prime.error tokenAfter=%d error=%@",
-                source.bookSourceName,
-                after.count,
-                error.localizedDescription
-            )
+            AppLogger.network("⟐ csrf prime failed", error: error, context: [
+                "source": source.bookSourceName
+            ])
         }
     }
 
@@ -3374,13 +3130,6 @@ class ModernParserBridge {
             throw ModernParserBridgeError.invalidURL(ruleUrl)
         }
 
-        if sourceRuleData.source.bookSourceName.contains("企点") {
-            NSLog("[企點診斷] fetch 請求 URL → %@", request.url?.absoluteString ?? "nil")
-            NSLog("[企點診斷] fetch 請求 method → %@ body → %@",
-                  request.httpMethod ?? "GET",
-                  request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? "nil")
-        }
-
         applySourceAuthentication(to: &request, sourceHeaders: sourceHeaders)
         // What okhttp adds on the way out (`LegadoOutgoingHeaders`), before the log line so it
         // shows what is sent. A `webView` page is loaded with the request's own headers, as
@@ -3432,18 +3181,6 @@ class ModernParserBridge {
         let checkedResponse = applyLoginCheck(to: sourceResponse, java: analyzeUrl.scriptView)
         let body = checkedResponse.body()
         let finalUrl = checkedResponse.url()
-        if sourceRuleData.source.exploreUrl.contains("_csrfToken"),
-           let path = request.url?.path,
-           path.contains("/majax/") {
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=section.response path=%@ status=%d bodyLen=%d bodyHead=%@",
-                sourceRuleData.source.bookSourceName,
-                path,
-                (response as? HTTPURLResponse)?.statusCode ?? -1,
-                body.count,
-                String(body.prefix(160)).replacingOccurrences(of: "\n", with: " ")
-            )
-        }
 
         // The status is otherwise dropped here: a 403 error envelope reaches the rule
         // engine as an ordinary body, matches no rule, and search/TOC just come back
@@ -3716,15 +3453,6 @@ class ModernParserBridge {
         }
         engine.withExecutionStage("jsLib") {
             for script in scripts { _ = engine.evaluate(script) }
-        }
-        if sourceRuleData.source.exploreUrl.contains("_csrfToken") {
-            NSLog(
-                "❖DISC TRACE❖ source=%@ stage=jsLib.evaluated jsLibLen=%d engineGen=%llu jsError=%@",
-                sourceRuleData.source.bookSourceName,
-                jsLib.count,
-                engine.generation,
-                engine.lastError ?? "none"
-            )
         }
         evaluatedJsLibHash = newHash
     }

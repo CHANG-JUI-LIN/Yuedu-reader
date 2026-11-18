@@ -44,7 +44,6 @@ final class JSSandbox {
         timeout: TimeInterval = defaultTimeout
     ) -> JSValue? {
         guard sanitize(script) else {
-            logSecurity("Script rejected by sanitization (length: \(script.count))")
             return nil
         }
 
@@ -58,7 +57,6 @@ final class JSSandbox {
         }
 
         guard let evaluated = result.wait(timeout: .now() + timeout) else {
-            logSecurity("Script execution timed out after \(timeout)s")
             return nil
         }
         return evaluated.value
@@ -160,12 +158,10 @@ final class JSSandbox {
         """)
     }
 
-    /// Attach a global exception handler that logs JS errors.
+    /// Attach a global exception handler, so an uncaught exception does not stay set as
+    /// `context.exception` (JavaScriptCore's default handler).
     private static func installExceptionHandler(_ context: JSContext) {
-        context.exceptionHandler = { _, exception in
-            guard let exception = exception else { return }
-            logSecurity("JS exception: \(exception)")
-        }
+        context.exceptionHandler = { _, _ in }
     }
 
     // MARK: - Sanitization
@@ -174,7 +170,6 @@ final class JSSandbox {
     /// Returns `true` if the script is acceptable.
     static func sanitize(_ script: String) -> Bool {
         if script.count > maxScriptLength {
-            logSecurity("Script too large: \(script.count) chars (max \(maxScriptLength))")
             return false
         }
         return true
@@ -193,25 +188,10 @@ final class JSSandbox {
         }
         guard let components = URLComponents(string: url),
               let host = components.host?.lowercased() else {
-            logSecurity("URL rejected (invalid): \(url)")
             return false
         }
-        let allowed = allowedDomains.contains { suffix in
+        return allowedDomains.contains { suffix in
             host == suffix || host.hasSuffix(".\(suffix)")
         }
-        if !allowed {
-            logSecurity("URL rejected (domain not whitelisted): \(url)")
-        }
-        return allowed
-    }
-
-    // MARK: - Logging
-
-    private static func logSecurity(_ message: String) {
-        #if DEBUG
-        print("[JSSandbox] \(message)")
-        #endif
-        // In release builds the message is silently dropped.
-        // Integrate with your analytics / logging system as needed.
     }
 }

@@ -2041,9 +2041,6 @@ struct LegadoHTTPResult {
     /// evaluation (a detail page's 簡介 button) restores the previous one as soon as the
     /// script returns, usually before this delivery.
     func toast(_ msg: String) {
-        #if DEBUG
-        print("[JSBridge toast] \(msg)")
-        #endif
         let handler = toastHandler
         DispatchQueue.main.async { handler?(msg) }
     }
@@ -2107,11 +2104,7 @@ struct LegadoHTTPResult {
         return msg
     }
 
-    func logType(_ msg: String) {
-        #if DEBUG
-        print("[JSBridge logType] \(type(of: msg)): \(msg)")
-        #endif
-    }
+    func logType(_ msg: String) {}
 
     func setResponseBase64(_ data: String, _ mimeType: String) {
         guard let decoded = Data(base64Encoded: data, options: .ignoreUnknownCharacters) else {
@@ -2894,38 +2887,22 @@ struct LegadoHTTPResult {
     // MARK: - Action Stubs (Legado UI actions)
 
     func refreshExplore() {
-        #if DEBUG
-        print("[JSBridge] refreshExplore() called")
-        #endif
         refreshExploreHandler?()
     }
 
     func reLoginView() {
-        #if DEBUG
-        print("[JSBridge] reLoginView() called")
-        #endif
         reLoginViewHandler?()
     }
 
     func refreshBookInfo() {
-        #if DEBUG
-        print("[JSBridge] refreshBookInfo() called")
-        #endif
         refreshBookInfoHandler?()
     }
 
     func refreshBookToc() {
-        #if DEBUG
-        print("[JSBridge] refreshBookToc() called")
-        #endif
         refreshBookTocHandler?()
     }
 
-    func refreshContent() {
-        #if DEBUG
-        print("[JSBridge] refreshContent() called")
-        #endif
-    }
+    func refreshContent() {}
 
     /// Opens a URL in browser without returning body. Only a runtime that presents its own
     /// pages (段評 capture) shows it; it does not fall back to `sharedBrowserPresenter`.
@@ -3044,9 +3021,6 @@ struct LegadoHTTPResult {
     /// (read back by source menus via `source.getLoginInfoMap()` / `getConfigValue`). Used by
     /// custom setting menus (起点/光遇 段评颜色·气泡模版) to persist their values.
     func upLoginData(_ data: JSValue) {
-        #if DEBUG
-        print("[JSBridge] upLoginData() called")
-        #endif
         upLoginDataHandler?(data)
     }
 
@@ -3060,11 +3034,7 @@ struct LegadoHTTPResult {
 
     /// Legado `java.qread()` — no-op stub (kept on purpose; see note in LegadoJSBridgeExports).
     /// Lets 起点 content JS set `dev='android-轻阅读'` → createSvg uses the 轻阅读 段评 bubble variant.
-    func qread() {
-        #if DEBUG
-        print("[JSBridge] qread() called")
-        #endif
-    }
+    func qread() {}
 
     // MARK: Headless WebView (Legado java.webView)
 

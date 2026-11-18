@@ -493,17 +493,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let built: (result: AttributedChapterBuildResult, titleBlockLength: Int)
         switch payload.body {
         case .html(let rawHTML):
-            ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-                stage: "rendererInput",
-                html: rawHTML,
-                context: [
-                    "chapterIndex": index,
-                    "title": payload.title,
-                ],
-                category: { message, context in
-                    AppLogger.render(message, context: context)
-                }
-            )
             AppLogger.render("⟐ ccsCard", context: [
                 "chapter": index,
                 "hasCard": rawHTML.containsMarker("androidshowChapterComments"),
@@ -528,27 +517,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         }
 
         let result = built.result
-        var renderedReviewAnchors: [String] = []
-        result.attributedString.enumerateAttribute(
-            HTMLAttributedStringBuilder.internalLinkAttribute,
-            in: NSRange(location: 0, length: result.attributedString.length)
-        ) { value, _, _ in
-            guard let href = value as? String,
-                  ReaderHTMLUtilities.decodeReviewHref(href, includingActionContext: false) != nil
-            else { return }
-            renderedReviewAnchors.append(#"<a href="\#(href)"></a>"#)
-        }
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "rendererOutput",
-            html: renderedReviewAnchors.joined(),
-            context: [
-                "chapterIndex": index,
-                "title": payload.title,
-            ],
-            category: { message, context in
-                AppLogger.render(message, context: context)
-            }
-        )
 
         let rules = ReplaceRuleStore.rules(for: replaceRuleScopeURL)
         let replaced = rules.isEmpty ? result : await applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)
@@ -778,14 +746,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         } else {
             attributedString = bodyAttributed
         }
-        // ⟐ 段評 format probe (Release-visible): paragraph structure + first paragraph styles.
-        // Splits the search space for the "indent+spacing gone with 段評 on" report — if the
-        // probes already show indent=0/spacing=0 (or paragraphs joined by \u{2028}), the content
-        // or IR conversion is at fault; if they look right, the paginator/display side is.
-        AppLogger.render(
-            "⟐ onlineChapter format idx=\(payload.index)",
-            context: Self.chapterFormatProbe(nodes: renderNodes, attributed: attributedString)
-        )
         let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
         let pageBackgroundColor = builder.pageBackgroundColor(from: ast)
         let darkPageBackgroundColor = builder.pageBackgroundDarkColor(from: ast)
@@ -861,81 +821,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             at: insertionIndex
         )
         title.insert(accessory, at: insertionIndex + 1)
-    }
-
-    /// Diagnostic payload for the ⟐ onlineChapter format probe: IR node shape (descending into
-    /// a single `<article>`/`<body>` container), paragraph count, "\n" vs U+2028 break counts,
-    /// and the first four paragraphs' indent/spacing/line-height with a text preview.
-    private static func chapterFormatProbe(
-        nodes: [RenderableNode],
-        attributed: NSAttributedString
-    ) -> [String: Any] {
-        func kind(_ node: RenderableNode) -> String {
-            switch node {
-            case .paragraph: return "p"
-            case .block(let tag, _, _): return "block(\(tag))"
-            case .heading(_, let level, _): return "h\(level)"
-            case .text(let s): return s.trimmingCharacters(in: .whitespaces).isEmpty ? "ws" : "text"
-            case .inline(let tag, _, _): return "inline(\(tag))"
-            case .image: return "img"
-            case .lineBreak: return "br"
-            case .anchor: return "a"
-            case .commentBadge: return "badge"
-            case .table: return "table"
-            default: return "?"
-            }
-        }
-        var shape = nodes.map(kind)
-        if nodes.count == 1 {
-            if case .block(let tag, let children, _) = nodes[0] {
-                shape = ["\(tag)>"] + children.prefix(14).map(kind)
-                if children.count > 14 { shape.append("+\(children.count - 14)") }
-            } else if case .paragraph(let children, _) = nodes[0] {
-                shape = ["p>"] + children.prefix(14).map(kind)
-                if children.count > 14 { shape.append("+\(children.count - 14)") }
-            }
-        }
-
-        let ns = attributed.string as NSString
-        var probes: [String] = []
-        var paragraphCount = 0
-        var location = 0
-        while location < ns.length {
-            let range = ns.paragraphRange(for: NSRange(location: location, length: 0))
-            location = max(NSMaxRange(range), location + 1)
-            guard range.length > 0 else { continue }
-            paragraphCount += 1
-            guard probes.count < 4 else { continue }
-            let para = attributed.attribute(
-                .paragraphStyle, at: range.location, effectiveRange: nil
-            ) as? NSParagraphStyle
-            let preview = ns.substring(with: range)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .prefix(8)
-            probes.append(
-                "indent=\(Int(para?.firstLineHeadIndent ?? -1))"
-                    + " spacing=\(Int(para?.paragraphSpacing ?? -1))"
-                    + " lh=\(Int(para?.minimumLineHeight ?? -1))«\(preview)»"
-            )
-        }
-
-        var newlines = 0
-        var lineSeparators = 0
-        for scalar in attributed.string.unicodeScalars {
-            if scalar.value == 0x0A { newlines += 1 }
-            if scalar.value == 0x2028 { lineSeparators += 1 }
-        }
-
-        var context: [String: Any] = [
-            "nodes": shape.joined(separator: ","),
-            "paras": paragraphCount,
-            "nl": newlines,
-            "ls": lineSeparators,
-        ]
-        for (index, probe) in probes.enumerated() {
-            context["p\(index)"] = probe
-        }
-        return context
     }
 
     private func buildPlainTextChapter(

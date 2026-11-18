@@ -1,15 +1,6 @@
 import Foundation
 import WebKit
 
-// #region agent log
-private func _dbgLog(location: String, message: String, data: [String: Any], hypothesisId: String) {
-    _ = location
-    _ = message
-    _ = data
-    _ = hypothesisId
-}
-// #endregion
-
 // MARK: - JS Security Validator
 // Blacklists dangerous patterns in JavaScript from book sources (untrusted user-imported sources).
 // This is defense-in-depth, not a guarantee; the primary goal is blocking obvious malicious operations.
@@ -57,7 +48,7 @@ private enum JSSecurityValidator {
 // JSRuleEngineRunner.shared.parseSearchResults(...) etc.
 
 @MainActor
-final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
+final class JSRuleEngineRunner: NSObject {
     static let shared = JSRuleEngineRunner()
 
     struct ChapterPayload: Decodable {
@@ -264,9 +255,6 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
               let ruleEnc = String(data: ruleData, encoding: .utf8)
         else { throw NSError(domain: "JSRuleEngineRunner", code: -3, userInfo: [NSLocalizedDescriptionKey: "Rule serialization failed"]) }
         let js = "window.BookSourceEngine.parseSearchResults(\(htmlEnc), \(baseEnc), \(ruleEnc), \(runtimeEnc))"
-        // #region agent log
-        _dbgLog(location: "JSRuleEngineRunner.swift:parseSearchResults", message: "about to evaluate JS", data: ["source": source.bookSourceName, "htmlLen": String(html.count)], hypothesisId: "H5")
-        // #endregion
         let result = try await evaluateJSONString(on: wv, js: js, timeout: 10)
         struct SearchBookPayload: Decodable {
             let name: String?
@@ -367,15 +355,6 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
         try await ensureScriptLoaded()
         guard let wv = webView else { throw NSError(domain: "JSRuleEngineRunner", code: -2, userInfo: nil) }
         let ruleDict = ruleTocToDict(source.ruleToc)
-        // #region agent log
-        _dbgLog(location: "JSRuleEngineRunner.swift:parseTOC", message: "rule passed to JS", data: [
-            "source": source.bookSourceName,
-            "htmlLen": String(html.count),
-            "chapterList": String((ruleDict["chapterList"] ?? "").prefix(120)),
-            "chapterName": String((ruleDict["chapterName"] ?? "").prefix(80)),
-            "chapterUrl": String((ruleDict["chapterUrl"] ?? "").prefix(80))
-        ], hypothesisId: "H1")
-        // #endregion
         let htmlEnc = jsonEncodeString(html)
         let baseEnc = jsonEncodeString(baseURL)
         let runtimeEnc: String
@@ -401,11 +380,7 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
             let runtimeVariables: [String: String]?
         }
         guard let arr = try? JSONDecoder().decode([Chap].self, from: Data(result.utf8)) else {
-            _dbgLog(location: "JSRuleEngineRunner.swift:parseTOC", message: "decode failed or empty", data: ["resultPreview": String(result.prefix(200)), "source": source.bookSourceName], hypothesisId: "T1")
             return []
-        }
-        if arr.isEmpty {
-            _dbgLog(location: "JSRuleEngineRunner.swift:parseTOC", message: "JS returned empty array", data: ["source": source.bookSourceName], hypothesisId: "T1")
         }
         return arr.enumerated().map { i, c in
             OnlineChapterRef(
@@ -478,19 +453,6 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
         let js = "window.BookSourceEngine.routeExtractValue(\(htmlEnc), \(baseEnc), \(ruleEnc), null, null, \(runtimeEnc))"
         return try await evaluateString(on: wv, js: js, timeout: 5)
     }
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "logging", let body = message.body as? String else { return }
-        if let data = body.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let loc = json["location"] as? String ?? "JS_Console"
-            let msg = json["message"] as? String ?? body
-            let d = json["data"] as? [String: Any] ?? [:]
-            let hid = json["hypothesisId"] as? String ?? "JS"
-            _dbgLog(location: loc, message: msg, data: d, hypothesisId: hid)
-        } else {
-            _dbgLog(location: "JS_Console", message: body, data: [:], hypothesisId: "JS_Console")
-        }
-    }
 }
 
 extension JSRuleEngineRunner: WKNavigationDelegate {
@@ -502,11 +464,8 @@ extension JSRuleEngineRunner: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // #region agent log
-        _dbgLog(location: "JSRuleEngineRunner.swift:didFinish", message: "didFinish fired", data: [:], hypothesisId: "H3")
         let scriptToInject = cachedScriptContent ?? ""
         guard !scriptToInject.isEmpty else {
-            _dbgLog(location: "JSRuleEngineRunner.swift:didFinish", message: "no script to inject", data: [:], hypothesisId: "H8")
             loadContinuation?.resume(throwing: NSError(domain: "JSRuleEngineRunner", code: -10, userInfo: [NSLocalizedDescriptionKey: "BookSourceEngine not ready: no cached script"]))
             loadContinuation = nil
             return
@@ -560,14 +519,6 @@ extension JSRuleEngineRunner: WKNavigationDelegate {
             webView.evaluateJavaScript(scriptToInject, in: nil, in: world) { [weak self] injectRes in
                 switch injectRes {
                 case .failure(let e):
-                    let nsErr = e as NSError
-                    var errData: [String: Any] = ["err": e.localizedDescription]
-                    if let msg = nsErr.userInfo["WKJavaScriptExceptionMessage"] as? String { errData["jsMsg"] = msg }
-                    if let line = nsErr.userInfo["WKJavaScriptExceptionLineNumber"] as? Int { errData["line"] = line }
-                    if let col = nsErr.userInfo["WKJavaScriptExceptionColumnNumber"] as? Int { errData["col"] = col }
-                    errData["domain"] = nsErr.domain
-                    errData["code"] = nsErr.code
-                    _dbgLog(location: "JSRuleEngineRunner.swift:didFinish:inject", message: "script inject failed", data: errData, hypothesisId: "H8")
                     self?.loadContinuation?.resume(throwing: NSError(domain: "JSRuleEngineRunner", code: -10, userInfo: [NSLocalizedDescriptionKey: "BookSourceEngine injection failed: \(e.localizedDescription)"]))
                     self?.loadContinuation = nil
                     return
@@ -582,9 +533,7 @@ extension JSRuleEngineRunner: WKNavigationDelegate {
                     case .success(let v): typeStr = (v as? String) ?? "nil"; errStr = ""
                     case .failure(let e): typeStr = "nil"; errStr = e.localizedDescription
                     }
-                    _dbgLog(location: "JSRuleEngineRunner.swift:didFinish:verify", message: "BookSourceEngine check", data: ["typeof": typeStr, "err": errStr], hypothesisId: "H2")
                     let ok = (typeStr == "object" || typeStr == "function")
-                    _dbgLog(location: "JSRuleEngineRunner.swift:didFinish:resume", message: "resume decision", data: ["ok": ok, "typeof": typeStr], hypothesisId: "H4")
                     if ok {
                         self?.loadContinuation?.resume()
                     } else {
@@ -594,7 +543,6 @@ extension JSRuleEngineRunner: WKNavigationDelegate {
                 }
             }
         }
-        // #endregion
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         loadContinuation?.resume(throwing: error)

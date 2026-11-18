@@ -453,17 +453,7 @@ actor ChapterFetchManager {
             runtime["book.durChapterIndex"] = String(chapterIndex)
             ref.runtimeVariables = runtime
         }
-        let startedAt = CFAbsoluteTimeGetCurrent()
         let bookId = book.id
-        ReaderTelemetry.shared.log(
-            "chapter_fetch_start",
-            attributes: [
-                "bookId": book.id.uuidString,
-                "chapterIndex": "\(chapterIndex)",
-                "pipelineKind": book.isOnline ? "online" : "txt",
-                "priority": "\(priority.rawValue)",
-            ]
-        )
 
         let moduleReader = moduleReader
         let readAheadGate = Self.readAheadGateKey(bookId: bookId, priority: priority)
@@ -617,20 +607,9 @@ actor ChapterFetchManager {
                 }
                 // Success: reset failure counter
                 bookFailureCounts[bookId] = 0
-                ReaderTelemetry.shared.log(
-                    "chapter_fetch_end",
-                    attributes: [
-                        "bookId": book.id.uuidString,
-                        "chapterIndex": "\(chapterIndex)",
-                        "pipelineKind": book.isOnline ? "online" : "txt",
-                        "durationMs": "\(Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000))ms",
-                        "result": "success",
-                    ]
-                )
             } else {
                 await handleFetchFailure(
-                    bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
-                    reason: "empty", pipelineKind: book.isOnline ? "online" : "txt")
+                    bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store)
             }
             clearRequestTracking(for: taskKey, token: myToken)
             return package
@@ -657,8 +636,7 @@ actor ChapterFetchManager {
             }
             clearRequestTracking(for: taskKey, token: myToken)
             await handleFetchFailure(
-                bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
-                reason: "error", pipelineKind: book.isOnline ? "online" : "txt")
+                bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store)
             throw error
         }
     }
@@ -767,10 +745,7 @@ actor ChapterFetchManager {
         chapterIndex: Int,
         sourceURL: String?,
         tocTitle: String?,
-        store: BookStore?,
-        startedAt: CFAbsoluteTime,
-        reason: String,
-        pipelineKind: String
+        store: BookStore?
     ) async {
         // Invalidate what was cached for this chapter — and stop there. Writing a
         // `.failed` marker used to be the way this was expressed, but the marker bought
@@ -788,27 +763,8 @@ actor ChapterFetchManager {
         let failCount = (bookFailureCounts[bookId] ?? 0) + 1
         bookFailureCounts[bookId] = failCount
 
-        ReaderTelemetry.shared.log(
-            "chapter_fetch_end",
-            attributes: [
-                "bookId": bookId.uuidString,
-                "chapterIndex": "\(chapterIndex)",
-                "pipelineKind": pipelineKind,
-                "durationMs": "\(Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000))ms",
-                "result": reason,
-                "bookFailCount": "\(failCount)",
-            ]
-        )
-
         // Exceeds quarantine threshold: auto-mark the entire book
         if failCount >= quarantineThreshold {
-            ReaderTelemetry.shared.log(
-                "book_quarantined",
-                attributes: [
-                    "bookId": bookId.uuidString,
-                    "failCount": "\(failCount)",
-                ]
-            )
             await MainActor.run {
                 store?.setCompatibilityState(bookId: bookId, state: .quarantined)
             }

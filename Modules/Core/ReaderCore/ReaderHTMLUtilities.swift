@@ -765,30 +765,10 @@ enum ReaderHTMLUtilities {
         }
     }
 
-    /// Structural counts used to trace paragraph-review duplication across the online pipeline.
-    /// Targets deliberately exclude the review count and timestamp: two bubbles pointing at the
-    /// same `(bookId, chapterId, paragraphId)` are semantically the same marker even when their
-    /// source-generated SVG/action payloads differ.
-    struct ReviewMarkupDiagnostics: Equatable {
-        let markerCount: Int
-        let rawReviewImageCount: Int
-        let reviewAnchorCount: Int
-        let commentTagCount: Int
-        let duplicateInstanceCount: Int
-        let duplicateTargets: [String]
-        let targetSequence: [String]
-    }
-
     /// Custom URL scheme used internally to carry a paragraph-review action through the
     /// existing link/attachment pipeline. Never reaches a real network request.
     static let reviewURLScheme = "ydreview"
 
-    /// Produces a content-free diagnostic fingerprint for paragraph-review markup.
-    ///
-    /// The source output uses raw Legado image click configs, while later stages carry encoded
-    /// `ydreview://` anchors. Reading both representations lets a single log schema identify the
-    /// exact stage where a duplicate semantic target first appears without logging prose, tokens,
-    /// SVG payloads, or full review URLs.
     /// Whether a chapter shows paragraph-review bubbles — what 閱讀設定 › 段評氣泡 styles,
     /// and so whether that entry is shown. Four forms, the four the renderer draws:
     /// a review link, a `<comment>` marker, a raw `showCmt(` call, and a bubble SVG with
@@ -826,117 +806,12 @@ enum ReaderHTMLUtilities {
     // makes hundreds of KB; compiling them per call was a measurable share of that.
     private static let imageTagRegex = try! NSRegularExpression(pattern: #"<img\b[^>]*>"#, options: [.caseInsensitive])
     private static let commentTagRegex = try! NSRegularExpression(pattern: #"<comment\b[^>]*>"#, options: [.caseInsensitive])
-    private static let reviewHrefRegex = try! NSRegularExpression(
-        pattern: #"href\s*=\s*["'](ydreview://[^"']+)["']"#, options: [.caseInsensitive]
-    )
     /// A Legado `,{json}` click-config suffix ending at an attribute boundary.
     private static let clickConfigSuffixRegex = try! NSRegularExpression(
         pattern: #",\{(?:[^{}]|\{[^{}]*\})*\}(?=["'>\s])"#
     )
     private static let useHTMLTagRegex = try! NSRegularExpression(pattern: #"</?usehtml\b[^>]*>"#, options: [.caseInsensitive])
     private static let base64PayloadRegex = try! NSRegularExpression(pattern: #";base64,([A-Za-z0-9+/=]{64,})"#)
-
-    static func reviewMarkupDiagnostics(in html: String) -> ReviewMarkupDiagnostics {
-        var targetSequence: [String] = []
-        var rawReviewImageCount = 0
-        var reviewAnchorCount = 0
-
-        if html.containsMarker("<img", ignoringCase: true) {
-            let ns = html as NSString
-            for match in imageTagRegex.matches(
-                in: html,
-                range: NSRange(location: 0, length: ns.length)
-            ) {
-                let tag = ns.substring(with: match.range)
-                guard let config = legadoClickConfigMatch(in: tag) else { continue }
-                let suffix = (tag as NSString).substring(with: config.range)
-                guard let action = legadoClickAction(fromConfigSuffix: suffix) else { continue }
-                rawReviewImageCount += 1
-                if let key = reviewDiagnosticTargetKey(fromAction: action) {
-                    targetSequence.append(key)
-                }
-            }
-        }
-
-        if html.containsMarker("\(reviewURLScheme)://", ignoringCase: true) {
-            let ns = html as NSString
-            for match in reviewHrefRegex.matches(
-                in: html,
-                range: NSRange(location: 0, length: ns.length)
-            ) where match.numberOfRanges >= 2 {
-                let href = ns.substring(with: match.range(at: 1))
-                guard let marker = decodeReviewHref(href, includingActionContext: false) else { continue }
-                reviewAnchorCount += 1
-                if let key = reviewDiagnosticTargetKey(from: marker) {
-                    targetSequence.append(key)
-                }
-            }
-        }
-
-        let commentTagCount: Int
-        if html.containsMarker("<comment", ignoringCase: true) {
-            let ns = html as NSString
-            commentTagCount = commentTagRegex.numberOfMatches(
-                in: html,
-                range: NSRange(location: 0, length: ns.length)
-            )
-        } else {
-            commentTagCount = 0
-        }
-
-        let counts = targetSequence.reduce(into: [String: Int]()) { result, key in
-            result[key, default: 0] += 1
-        }
-        let duplicateTargets = counts
-            .filter { $0.value > 1 }
-            .map { "\($0.key)×\($0.value)" }
-            .sorted()
-        let duplicateInstanceCount = counts.values.reduce(0) {
-            $0 + max(0, $1 - 1)
-        }
-
-        return ReviewMarkupDiagnostics(
-            markerCount: rawReviewImageCount + reviewAnchorCount + commentTagCount,
-            rawReviewImageCount: rawReviewImageCount,
-            reviewAnchorCount: reviewAnchorCount,
-            commentTagCount: commentTagCount,
-            duplicateInstanceCount: duplicateInstanceCount,
-            duplicateTargets: Array(duplicateTargets.prefix(16)),
-            targetSequence: Array(targetSequence.prefix(32))
-        )
-    }
-
-    /// Emits one stable `reviewFlow` event per pipeline boundary. The target source is logged even
-    /// when the marker count is zero, because disappearance is itself the evidence we need.
-    static func logReviewMarkupDiagnostics(
-        stage: String,
-        html: String,
-        sourceName: String = "",
-        context: [String: Any] = [:],
-        category: (String, [String: Any]) -> Void = { message, context in
-            AppLogger.parse(message, context: context)
-        }
-    ) {
-        let diagnostics = reviewMarkupDiagnostics(in: html)
-        let isTargetSource = sourceName.contains("同人小说网") || sourceName.contains("同人小說網")
-        guard isTargetSource || diagnostics.markerCount > 0 else { return }
-
-        var logContext = context
-        logContext["stage"] = stage
-        logContext["source"] = sourceName
-        logContext["markers"] = diagnostics.markerCount
-        logContext["rawImages"] = diagnostics.rawReviewImageCount
-        logContext["anchors"] = diagnostics.reviewAnchorCount
-        logContext["comments"] = diagnostics.commentTagCount
-        logContext["duplicateInstances"] = diagnostics.duplicateInstanceCount
-        logContext["duplicateTargets"] = diagnostics.duplicateTargets.isEmpty
-            ? "-"
-            : diagnostics.duplicateTargets.joined(separator: ",")
-        logContext["targetSequence"] = diagnostics.targetSequence.isEmpty
-            ? "-"
-            : diagnostics.targetSequence.joined(separator: ",")
-        category("⟐ reviewFlow", logContext)
-    }
 
     /// Rewrites Legado iOS paragraph-review markers into plain anchors the renderer can carry.
     ///
@@ -1180,10 +1055,7 @@ enum ReaderHTMLUtilities {
     }
 
     /// Decodes a `ydreview://` href back into its comment count, review URL, and title.
-    /// - Parameter includingActionContext: the action context is the bulk of the payload and
-    ///   the only part that needs `JSONDecoder`; the diagnostics that fingerprint every anchor
-    ///   of a chapter several times over read only the target, so they pass `false`.
-    static func decodeReviewHref(_ href: String, includingActionContext: Bool = true) -> ReviewMarker? {
+    static func decodeReviewHref(_ href: String) -> ReviewMarker? {
         guard href.hasPrefix("\(reviewURLScheme)://") else { return nil }
         guard let dRange = href.range(of: "d=") else { return nil }
         let encoded = String(href[dRange.upperBound...])
@@ -1192,7 +1064,7 @@ enum ReaderHTMLUtilities {
         else { return nil }
         let url = obj["u"] ?? ""
         let sourceJS = obj["j"] ?? ""
-        let actionContext: LegadoSourceActionContext? = !includingActionContext ? nil : obj["x"].flatMap { encoded in
+        let actionContext: LegadoSourceActionContext? = obj["x"].flatMap { encoded in
             guard let contextData = base64URLDecode(encoded) else { return nil }
             return try? JSONDecoder().decode(LegadoSourceActionContext.self, from: contextData)
         }
@@ -1938,13 +1810,6 @@ enum ReaderHTMLUtilities {
                     URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? "")
                 ] : [])
             )
-            logQidianReviewTarget(
-                endpoint: "shazi",
-                kind: kind,
-                context: context,
-                url: url,
-                appendedToken: false
-            )
             return ReviewTarget(
                 url: url,
                 title: kind == .paragraph ? "起點段評" : "本章討論"
@@ -1966,13 +1831,6 @@ enum ReaderHTMLUtilities {
                 items.append(URLQueryItem(name: "paragraphId", value: cleanParagraphId ?? ""))
             }
             let url = buildURL(base: sourceURL, path: path, queryItems: items)
-            logQidianReviewTarget(
-                endpoint: "sourceURL",
-                kind: kind,
-                context: context,
-                url: url,
-                appendedToken: false
-            )
             return ReviewTarget(
                 url: url,
                 title: kind == .paragraph ? "起點段評" : "本章討論"
@@ -1991,72 +1849,9 @@ enum ReaderHTMLUtilities {
             items.append(URLQueryItem(name: "token", value: token))
         }
         let url = buildURL(base: "https://api-x.shrtxs.cn/qidth", path: "/", queryItems: items)
-        logQidianReviewTarget(
-            endpoint: "api-x",
-            kind: kind,
-            context: context,
-            url: url,
-            appendedToken: token?.isEmpty == false
-        )
         return ReviewTarget(
             url: url,
             title: kind == .paragraph ? "起點段評" : "本章討論"
-        )
-    }
-
-    private static func logQidianReviewTarget(
-        endpoint: String,
-        kind: QidianReviewKind,
-        context: LegadoReviewContext?,
-        url: String,
-        appendedToken: Bool
-    ) {
-        let summary = sourceVariableLogSummary(context: context)
-        AppLogger.parse("⟐ qidianReviewTarget", context: [
-            "endpoint": endpoint,
-            "kind": kind == .paragraph ? "paragraph" : "chapter",
-            "source": context?.sourceName ?? "",
-            "sourceURL": String((context?.sourceURL ?? "").prefix(120)),
-            "appendedToken": appendedToken,
-            "hasTokenInURL": url.range(of: "token=", options: .caseInsensitive) != nil,
-            "url": redactedReviewLogSnippet(url),
-            "sourceVariableJSONLen": summary.sourceVariableJSONLen,
-            "sourceVariableKeys": summary.sourceVariableKeys.joined(separator: ","),
-            "sourceVariableTokenLen": summary.sourceVariableTokenLen,
-            "runtimeKeys": summary.runtimeKeys.joined(separator: ","),
-            "runtimeTokenLen": summary.runtimeTokenLen,
-            "sourceVariableHead": summary.sourceVariableHead
-        ])
-    }
-
-    private static func sourceVariableLogSummary(
-        context: LegadoReviewContext?
-    ) -> (
-        sourceVariableJSONLen: Int,
-        sourceVariableKeys: [String],
-        sourceVariableTokenLen: Int,
-        runtimeKeys: [String],
-        runtimeTokenLen: Int,
-        sourceVariableHead: String
-    ) {
-        let sourceVariableJSON = context?.sourceVariableJSON ?? ""
-        let runtimeVariables = context?.runtimeVariables ?? [:]
-        var keys: [String] = []
-        var tokenLen = 0
-        if let data = sourceVariableJSON.data(using: .utf8),
-           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            keys = object.keys.sorted()
-            if let token = object["token"] {
-                tokenLen = "\(token)".count
-            }
-        }
-        return (
-            sourceVariableJSONLen: sourceVariableJSON.count,
-            sourceVariableKeys: keys,
-            sourceVariableTokenLen: tokenLen,
-            runtimeKeys: runtimeVariables.keys.sorted(),
-            runtimeTokenLen: runtimeVariables["token"]?.count ?? 0,
-            sourceVariableHead: String(redactedReviewLogSnippet(sourceVariableJSON).prefix(180))
         )
     }
 
@@ -2217,22 +2012,6 @@ enum ReaderHTMLUtilities {
               let encoded = base64URLEncode(data)
         else { return nil }
         return "\(reviewURLScheme)://r?d=\(encoded)"
-    }
-
-    private static func reviewDiagnosticTargetKey(from marker: ReviewMarker) -> String? {
-        if let key = reviewDiagnosticTargetKey(fromAction: marker.sourceJS) {
-            return key
-        }
-        guard let components = URLComponents(string: marker.url) else { return nil }
-        let query = (components.queryItems ?? []).reduce(into: [String: String]()) { result, item in
-            guard let value = item.value, !value.isEmpty else { return }
-            result[item.name.lowercased()] = value
-        }
-        let bookID = query["bookid"] ?? query["book_id"] ?? query["bid"]
-        let chapterID = query["chapterid"] ?? query["chapter_id"] ?? query["cid"]
-        let paragraphID = query["paragraphid"] ?? query["paragraph_id"] ?? query["pid"]
-        guard let bookID, let chapterID, let paragraphID else { return nil }
-        return "\(bookID)/\(chapterID)/\(paragraphID)"
     }
 
     private static func reviewDiagnosticTargetKey(fromAction action: String) -> String? {

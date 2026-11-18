@@ -617,14 +617,6 @@ final class ReaderViewModel: ObservableObject {
                     // Aggregation sources serve manga under a text (type-0) source; once the
                     // first chapter comes back as an image list, flip the book to the manga
                     // reader. `BookReaderView` swaps reactively.
-                    #if DEBUG
-                    if book.isOnline {
-                        let imgs = MangaChapterParser.imageURLs(from: package.content)
-                        let head = package.content.prefix(600)
-                            .replacingOccurrences(of: "\n", with: "⏎")
-                        print("[MangaDetect] ch=\(chapterIndex) len=\(package.content.count) imgURLs=\(imgs.count) looksManga=\(MangaChapterParser.looksLikeMangaContent(package.content)) looksAudio=\(DirectChapterAudioResolver.looksLikeAudioContent(package.content)) audioURL=\(DirectChapterAudioResolver.request(from: package.content)?.url?.absoluteString ?? "nil") head=\(head)")
-                    }
-                    #endif
                     if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex) {
                         store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
                     }

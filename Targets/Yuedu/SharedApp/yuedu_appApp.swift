@@ -37,7 +37,7 @@ struct yuedu_appApp: App {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = filename.hasPrefix("/") ? URL(fileURLWithPath: filename) : docs.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: url.path) else {
-            print("AUTO-IMPORT file missing: \(url.path)")
+            AppLogger.error("AUTO-IMPORT file missing", context: ["path": url.path])
             return
         }
         // Skip if already imported (same filename) to keep the shelf stable.
@@ -49,11 +49,10 @@ struct yuedu_appApp: App {
             // The generic importer, not importEpub: the same flag has to seed
             // .cbz manga and .pdf for the screenshot harness, and it already
             // dispatches on the extension.
-            let book = try await LocalBookImportService.importBook(
+            _ = try await LocalBookImportService.importBook(
                 at: url, title: autoImportTitle, author: autoImportAuthor, store: bookStore)
-            print("AUTO-IMPORT ok: \(book.title)")
         } catch {
-            print("AUTO-IMPORT failed: \(error)")
+            AppLogger.error("AUTO-IMPORT failed", error: error)
         }
     }
 

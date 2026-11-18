@@ -1450,13 +1450,6 @@ final class CoreTextPaginator: Sendable {
         )
         debugVerticalLog("EPUBFLOW paginator.extracted spine=\(spineIndex) inlineImages=\(inlineAttachmentCount) inlineAnnotations=\(inlineAnnotationCount) blockImages=\(blockAttachmentCount) blockRenderables=\(blockRenderableCount)")
 
-        logLayoutFormatProbe(
-            spineIndex: spineIndex,
-            attrStr: attrStr,
-            pageArtifacts: pageArtifacts,
-            writingMode: writingMode
-        )
-
         // A capped run that stopped before consuming the whole string is a
         // partial layout; extrapolate its total page count from the character
         // density of the pages it did lay out.
@@ -1521,77 +1514,6 @@ final class CoreTextPaginator: Sendable {
             combinedUprightCells: uprightCells,
             bottomJustifiedPages: bottomJustifiedPages
         )
-    }
-
-    /// ⟐ layout-time format probe (Release-visible): for the first pages, logs each frame line's
-    /// ABSOLUTE string location, origin.x, and the HEX of the character before the line start,
-    /// plus each paragraph's terminator hex. Identifies which separator character CoreText saw
-    /// (LF re-indents; U+2028/U+0085 only line-break → indent+spacing vanish). Horizontal only;
-    /// throttled per process. Remove once the 段評 indent/spacing regression is fixed.
-    private nonisolated(unsafe) static var layoutFormatProbeCount = 0
-    private static func logLayoutFormatProbe(
-        spineIndex: Int,
-        attrStr: NSAttributedString,
-        pageArtifacts: [PageLayoutArtifact],
-        writingMode: ReaderWritingMode
-    ) {
-        guard !writingMode.isVertical,
-              layoutFormatProbeCount < 6,
-              let artifact = pageArtifacts.first
-        else { return }
-        layoutFormatProbeCount += 1
-
-        let ns = attrStr.string as NSString
-        let pageRange = artifact.range
-        // Paragraph walk: style + terminator hex for the first 4 paragraphs.
-        var paragraphInfo: [String] = []
-        var location = 0
-        while location < ns.length, paragraphInfo.count < 4 {
-            let paraRange = ns.paragraphRange(for: NSRange(location: location, length: 0))
-            location = max(NSMaxRange(paraRange), location + 1)
-            guard paraRange.length > 0 else { continue }
-            let para = attrStr.attribute(
-                .paragraphStyle, at: paraRange.location, effectiveRange: nil
-            ) as? NSParagraphStyle
-            let terminator = ns.character(at: NSMaxRange(paraRange) - 1)
-            let preview = ns.substring(with: paraRange)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .prefix(5)
-            paragraphInfo.append(
-                "@\(paraRange.location)+\(paraRange.length)"
-                    + " indent=\(Int(para?.firstLineHeadIndent ?? -1))"
-                    + " spacing=\(Int(para?.paragraphSpacing ?? -1))"
-                    + " end=\(String(format: "U+%04X", terminator))«\(preview)»"
-            )
-        }
-
-        let frame = artifact.frame
-        let lines = CTFrameGetLines(frame) as! [CTLine]
-        let origins = artifact.lineOrigins
-        var lineInfo: [String] = []
-        for (index, line) in lines.enumerated() where index < 6 {
-            let lineRange = CTLineGetStringRange(line)
-            let start = lineRange.location
-            let previousHex: String
-            if start > 0, start - 1 < ns.length {
-                previousHex = String(format: "U+%04X", ns.character(at: start - 1))
-            } else {
-                previousHex = start == 0 ? "BOF" : "OOB"
-            }
-            let previewLength = min(3, max(0, ns.length - start))
-            let preview = previewLength > 0
-                ? ns.substring(with: NSRange(location: start, length: previewLength))
-                    .replacingOccurrences(of: "\n", with: "\\n")
-                : ""
-            lineInfo.append("@\(start)+\(lineRange.length) x=\(Int(origins[index].x)) prev=\(previousHex)«\(preview)»")
-        }
-
-        AppLogger.render("⟐ layout format spine=\(spineIndex)", context: [
-            "len": ns.length,
-            "page0": "\(pageRange.location)+\(pageRange.length)",
-            "paras": paragraphInfo.joined(separator: " | "),
-            "lines": lineInfo.joined(separator: " | "),
-        ])
     }
 
     private static func forcedPageBreakRanges(in attrStr: NSAttributedString) -> [NSRange] {
@@ -2826,20 +2748,6 @@ final class CoreTextPaginator: Sendable {
             )]
             kinds[0] = .image
         }
-
-        let reviewAttachmentAnchors = (Array(inlineAttachments.values) + Array(blockAttachments.values))
-            .flatMap { $0 }
-            .compactMap(\.linkHref)
-            .filter { ReaderHTMLUtilities.decodeReviewHref($0) != nil }
-            .map { #"<a href="\#($0)"></a>"# }
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "paginatorAttachments",
-            html: reviewAttachmentAnchors.joined(),
-            context: ["pages": pageArtifacts.count],
-            category: { message, context in
-                AppLogger.render(message, context: context)
-            }
-        )
 
         return (inlineAttachments, blockAttachments, kinds)
     }

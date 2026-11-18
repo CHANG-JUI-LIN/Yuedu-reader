@@ -1285,14 +1285,6 @@ final class ReaderFeatureFlags: Sendable {
     }
 }
 
-final class ReaderTelemetry: Sendable {
-    static let shared = ReaderTelemetry()
-
-    private init() {}
-
-    func log(_ event: String, attributes: [String: String] = [:]) {}
-}
-
 // MARK: - Bookshelf Sort
 
 enum BookSortOrder: String {

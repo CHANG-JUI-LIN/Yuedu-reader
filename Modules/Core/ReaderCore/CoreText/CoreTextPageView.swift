@@ -2125,9 +2125,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         }
 
         let rects = selectionRects(for: range, in: context)
-        #if DEBUG
-        AppLogger.render("[ANNOT-DIAG] SELECTION range=\(range) rects=\(rects)")
-        #endif
         interactionOverlay.selectionRects = rects
         interactionOverlay.startHandlePoint = rects.first.map { CGPoint(x: $0.minX, y: $0.minY) }
         interactionOverlay.endHandlePoint = rects.last.map { CGPoint(x: $0.maxX, y: $0.maxY) }
@@ -2160,11 +2157,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             layoutHeight: context.layoutSize.height,
             writingMode: context.writingMode
         )
-
-        #if DEBUG
-        let annRanges = textAnnotations.filter { $0.spineIndex == layout.spineIndex }.map { $0.range }
-        AppLogger.render("[ANNOT-DIAG] ANNOTATION pageRange=\(pageRange) annRanges=\(annRanges) layerRects=\(layers.map { $0.rects })")
-        #endif
 
         // Scale rects to view coordinates
         let scaledLayers = layers.map { layer -> CoreTextAnnotationRenderer.Layer in

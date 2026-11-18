@@ -981,9 +981,6 @@ class JSCoreEngine {
                 "error": msg
             ])
             self.errorHandler?(msg, "js exception")
-            #if DEBUG
-            print("[JSCoreEngine] JS Error: \(msg)")
-            #endif
         }
 
         // Inject the `java` bridge object
@@ -1134,12 +1131,9 @@ class JSCoreEngine {
             })();
             """)
 
-        // Inject a top-level `print` that delegates to java.log
-        let printBlock: @convention(block) (String) -> Void = { msg in
-            #if DEBUG
-            print("[JS] \(msg)")
-            #endif
-        }
+        // A top-level `print` so scripts that call it don't throw; its output is discarded
+        // (`java.log` is what reaches the diagnostics log).
+        let printBlock: @convention(block) (String) -> Void = { _ in }
         ctx.setObject(printBlock, forKeyedSubscript: "print" as NSString)
 
         // Note: eval() is intentionally LEFT ENABLED. The sandbox boundary for book

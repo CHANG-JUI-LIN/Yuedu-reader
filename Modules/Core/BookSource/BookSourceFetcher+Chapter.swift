@@ -112,26 +112,6 @@ extension BookSourceFetcher {
         }
         let requestHeadersSnapshot = requestHeaders
 
-        // #region agent log
-        let baseForReferer = effectiveReferer
-        _dbgLog(
-            "fetchChapter 進入",
-            data: [
-                "refUrl": String(ref.url.prefix(120)),
-                "cleanUrl": String(cleanUrl.prefix(120)),
-                "useWebView": useWebView,
-                "needsWebView": source.needsWebView,
-                "hasWebJs": hasWebJs,
-                "urlWantsWebView": urlWantsWebView,
-                "baseURL": String(baseForReferer.prefix(100)),
-                "chapterReferer": chapterReferer ?? "",
-                "bookSourceUrl": String(source.bookSourceUrl.prefix(80)),
-                "source": source.bookSourceName,
-                "index": ref.index,
-                "shouldAttemptHTTPFirst": shouldAttemptHTTPFirst,
-            ], hyp: "H1")
-        // #endregion
-
         let effectiveWebViewDelay = requestSpec.webViewDelayMs > 0 ? TimeInterval(requestSpec.webViewDelayMs) / 1000.0 : nil
         // `checksLogin`: the chapter's first page — Legado runs `loginCheckJs` on that
         // response (`fetchStageHTML`), a WebView-rendered one included, and not on next pages.
@@ -281,13 +261,6 @@ extension BookSourceFetcher {
             rawHTML: buildResult.rawHTML,
             normalizedHTML: buildResult.normalizedHTML
         )
-        // #region agent log
-        _dbgLog(
-            "fetchChapter 成功",
-            data: [
-                "index": ref.index, "contentLen": buildResult.package.content.count, "source": source.bookSourceName,
-            ], hyp: "A")
-        // #endregion
         let reloaded = loadChapterPackageSync(
             bookId: bookId,
             chapterIndex: ref.index,

@@ -744,26 +744,7 @@ struct BookSourceFormLoginView: View {
                     "baseUrl": source.bookSourceUrl
                 ]
                 SourceAPIErrorLog.shared.clear(for: source.bookSourceUrl)
-                if source.bookSourceName.contains("书山聚合") {
-                    let before = engine.evaluate("java.get('yunpara')") ?? "<nil>"
-                    NSLog(
-                        "❖SHUSHAN TRACE❖ stage=menu.before action=%@ yunpara=%@ jsError=%@",
-                        action,
-                        before.isEmpty ? "<empty>" : before,
-                        engine.lastError ?? "none"
-                    )
-                }
                 _ = engine.evaluate(combined, bindings: bindings)
-                if source.bookSourceName.contains("书山聚合") {
-                    let actionError = engine.lastError
-                    let after = engine.evaluate("java.get('yunpara')") ?? "<nil>"
-                    NSLog(
-                        "❖SHUSHAN TRACE❖ stage=menu.after action=%@ yunpara=%@ actionError=%@",
-                        action,
-                        after.isEmpty ? "<empty>" : after,
-                        actionError ?? "none"
-                    )
-                }
 
                 // Legado refreshes the menu's labels after an action (`upUiData`); a source's
                 // dynamic viewNames (e.g. 起点's 段评 state) can change because of it. Resolve

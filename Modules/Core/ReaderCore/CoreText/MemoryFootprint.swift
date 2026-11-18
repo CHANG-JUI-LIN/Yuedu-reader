@@ -1,14 +1,11 @@
 import Foundation
 import Darwin
 
-/// DEBUG-only process footprint helper for memory diagnostics.
+/// Process footprint helper for memory measurements.
 ///
 /// Reads `task_vm_info.phys_footprint` — the number of bytes the system counts
-/// against this process's memory budget (the same number jetsam uses). Used to
-/// measure the memory effects of cache-budget changes: log before/after a
-/// memory warning, or after a reading burst, and compare numbers.
-///
-/// All entry points are no-ops in release builds.
+/// against this process's memory budget (the same number jetsam uses). Used by
+/// tests to measure the memory effects of cache-budget changes.
 enum MemoryFootprint {
     /// Physical footprint of this process in bytes.
     /// Returns -1 when the kernel call fails (never throws, never crashes).
@@ -24,17 +21,5 @@ enum MemoryFootprint {
         }
         guard kr == KERN_SUCCESS else { return -1 }
         return Int64(info.phys_footprint)
-    }
-
-    /// Logs footprint in MB via the AppLogger render channel, e.g.
-    /// `⟐ MEM warning-before footprint=312.4MB`. DEBUG builds only.
-    static func log(_ context: String) {
-        #if DEBUG
-        let bytes = current()
-        guard bytes >= 0 else { return }
-        AppLogger.render(
-            "⟐ MEM \(context) footprint=\(String(format: "%.1f", Double(bytes) / 1_000_000))MB"
-        )
-        #endif
     }
 }

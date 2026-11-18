@@ -1251,10 +1251,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 DispatchQueue.main.async {
                     guard let self, let pageViewController else { return }
                     guard self.callbackEngineIdentifier == identifier else { return }
-                    let line =
+                    AppLogger.render(
                         "[StartupTrace][ReaderView.Coordinator] onChapterReady spine=\(spineIndex.map(String.init) ?? "all") currentPage=\(self.currentPage) enginePage=\(engine.currentPage) totalPages=\(engine.totalPages)"
-                    AppLogger.render(line)
-                    NSLog("%@", line)
+                    )
                     if let spineIndex { self.unresolvedChapters.removeValue(forKey: spineIndex) }
                     let chapterReadyTrace = self.pageTurnTrace.beginChapterReady(spine: spineIndex)
                     self.handleChapterReady(spineIndex, on: pageViewController)
@@ -1601,10 +1600,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 targetPage = fallbackPage
                 freshVC = displayViewController(at: targetPage)
             }
-            let prepareLine =
+            AppLogger.render(
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady targetPage=\(targetPage) fallbackPage=\(fallbackPage)"
-            AppLogger.render(prepareLine)
-            NSLog("%@", prepareLine)
+            )
 
             var direction: UIPageViewController.NavigationDirection
             if let first = readingPage(of: pageViewController) as? (any PageIndexProviding & UIViewController) {
@@ -1615,10 +1613,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if isRTL { direction = direction == .forward ? .reverse : .forward }
 
             let resolved = setPage(freshVC, on: pageViewController, direction: direction, notifyFallback: false)
-            let resolvedLine =
+            AppLogger.render(
                 "[StartupTrace][ReaderView.Coordinator] handleChapterReady syncedPage=\(resolved ?? -1)"
-            AppLogger.render(resolvedLine)
-            NSLog("%@", resolvedLine)
+            )
             if let target = externalTargetPosition,
                let resolved,
                currentEngine.pageIndex(for: target) == resolved {

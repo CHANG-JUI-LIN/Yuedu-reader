@@ -182,7 +182,9 @@ final class UserFontStorageManager: Sendable {
         var processError: Unmanaged<CFError>?
         if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &processError) {
             if let error = processError?.takeRetainedValue() ?? persistentError?.takeRetainedValue() {
-                print("[UserFontStorage] register font failed: \(error)")
+                AppLogger.error("UserFontStorage: register font failed", error: error, context: [
+                    "file": url.lastPathComponent
+                ])
             }
         }
     }

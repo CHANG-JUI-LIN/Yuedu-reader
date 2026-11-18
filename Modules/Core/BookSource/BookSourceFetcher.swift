@@ -24,21 +24,6 @@ final class RuntimeVariableBox: @unchecked Sendable {
     }
 }
 
-// #region agent log
-func _dbgLog(
-    _ msg: @autoclosure () -> String,
-    data: @autoclosure () -> [String: Any] = [:],
-    hyp: String = "A"
-) {
-    #if DEBUG
-    let m = msg()
-    let d = data()
-    let prefix = d.isEmpty ? "" : " | \(d)"
-    print("[BSF][\(hyp)] \(m)\(prefix)")
-    #endif
-}
-// #endregion
-
 /// Safely creates a request URL, as OkHttp reads it (`AnalyzeUrl.requestURL`).
 /// Also filters dangerous schemes (file://, javascript:, etc.) and private IPs to prevent book source SSRF.
 func safeURL(string raw: String) -> URL? {
@@ -106,11 +91,6 @@ private func isPrivateIPv6(_ addr: in6_addr) -> Bool {
 /// context stays on each source's `BookSourceSession` host, which serializes only
 /// calls belonging to the same source.
 final class BookSourceFetcher: @unchecked Sendable {
-    /// Debug log for external callers (log pipeline verification)
-    static func debugLog(_ msg: String, data: [String: Any] = [:]) {
-        _ = msg
-        _ = data
-    }
     static let shared = BookSourceFetcher()
     nonisolated static let chapterCacheRepository = ChapterCacheRepository()
     let pipeline = BookSourceParsingPipeline()

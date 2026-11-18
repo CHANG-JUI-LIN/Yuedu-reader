@@ -46,11 +46,6 @@ extension BookSourceFetcher {
         if usesCache, let cached = loadBookInfoPackageSync(url: url, source: source) {
             return cached.merging(searchResult: knownBook, canReName: canReName)
         }
-        // #region agent log
-        _dbgLog(
-            "fetchBookInfo 進入",
-            data: ["url": String(url.prefix(80)), "source": source.bookSourceName], hyp: "A")
-        // #endregion
 
         // Legado `WebBook.getBookInfoAwait`: a book whose search or discover page was its own
         // page carries that page (`infoHtml`), and the detail rules read it rather than a second
@@ -117,20 +112,11 @@ extension BookSourceFetcher {
                 runtimeVariables: runtimeVariables
             )
         }
-        let package = finishBookInfoPackage(
+        return finishBookInfoPackage(
             info: info,
             source: source,
             usesCache: usesCache
         ).merging(searchResult: knownBook, canReName: canReName)
-        // #region agent log
-        _dbgLog(
-            "fetchBookInfo 結果",
-            data: [
-                "source": source.bookSourceName, "author": package.author,
-                "name": String(package.name.prefix(30)), "tocUrlEmpty": package.tocUrl.isEmpty,
-            ], hyp: "A")
-        // #endregion
-        return package
     }
 
     /// Both transports end here, so `usesCache` holds for each of them.

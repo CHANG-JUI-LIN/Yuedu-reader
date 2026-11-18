@@ -393,8 +393,6 @@ struct ReaderView: View {
     @State var showTXTIndexFailure = false
     /// Set when a local EPUB fails to open; cleared when the next load starts.
     @State var bookOpenFailure: BookOpenFailure?
-    @State private var curlStartupStartedAt: CFAbsoluteTime?
-    @State private var hasLoggedCurlInteractiveReady = false
     @State private var hasPerformedInitialLoad = false
     @State var activeFixedLayoutOrientationRequest: FixedLayoutOrientation?
 
@@ -955,10 +953,6 @@ struct ReaderView: View {
             ),
             loadState: readerViewModel.chapterState(for: currentChapterIndex)
         )
-    }
-
-    var telemetryPipelineKind: String {
-        book?.resolvedPipelineKind.rawValue ?? "epub"
     }
 
     func progressTrace(_ message: String) {
@@ -1986,7 +1980,6 @@ struct ReaderView: View {
                 .transition(.opacity.animation(DSAnimation.standard))
                 .animation(DSAnimation.standard, value: epubRenderer.scrollEngineReady)
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
-                let _ = { print("[ReaderView] Using CoreText engine") }()
                 CoreTextPageEngineView(
                     engine: ctEngine,
                     pageTurnStyle: effectivePageTurnStyle,
@@ -2351,15 +2344,6 @@ struct ReaderView: View {
                 chapterFetcher: dependencies.chapterFetcher,
                 offlineDownloadManager: dependencies.offlineDownloadManager
             )
-            ReaderTelemetry.shared.log(
-                "reader_load_start",
-                attributes: [
-                    "bookId": bookId.uuidString,
-                    "pipelineKind": telemetryPipelineKind,
-                    "turnStyle": settings.pageTurnStyle.rawValue,
-                    "scrollMode": effectiveScrollMode ? "1" : "0",
-                ]
-            )
             readerConfig.syncFromGlobalSettings()
             alignReaderModeWithDevice()
             syncActiveThemePreset()
@@ -2699,14 +2683,6 @@ struct ReaderView: View {
         )
         let positionObservationLayers = AnyView(
             selectionObservationLayers
-        .onChanged(of: settings.pageTurnStyle) { _ in
-            if settings.pageTurnStyle == .curl {
-                beginCurlStartupTrace(reason: "style_changed")
-            } else {
-                curlStartupStartedAt = nil
-                hasLoggedCurlInteractiveReady = false
-            }
-        }
         .onChanged(of: settings.scrollMode) { enabled in
             handleScrollModeChanged(enabled)
         }
@@ -3506,41 +3482,6 @@ struct ReaderView: View {
         isRestoringPosition = false
         alignToAdoptedNarration()
         openAtOpeningTOCTarget(restoredSpine: restoredSpine)
-    }
-
-    func beginCurlStartupTrace(reason: String) {
-        guard settings.pageTurnStyle == .curl else { return }
-        curlStartupStartedAt = CFAbsoluteTimeGetCurrent()
-        hasLoggedCurlInteractiveReady = false
-        ReaderTelemetry.shared.log(
-            "curl_startup_begin",
-            attributes: [
-                "bookId": bookId.uuidString,
-                "pipelineKind": telemetryPipelineKind,
-                "reason": reason,
-            ]
-        )
-    }
-
-    func logCurlInteractiveReadyIfNeeded(source: String) {
-        guard !hasLoggedCurlInteractiveReady else { return }
-        hasLoggedCurlInteractiveReady = true
-        let durationMs: String
-        if let startedAt = curlStartupStartedAt {
-            durationMs = "\((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)"
-        } else {
-            durationMs = "0"
-        }
-        ReaderTelemetry.shared.log(
-            "curl_interactive_ready",
-            attributes: [
-                "bookId": bookId.uuidString,
-                "pipelineKind": telemetryPipelineKind,
-                "source": source,
-                "pageIndex": "\(currentPage)",
-                "durationMs": durationMs,
-            ]
-        )
     }
 
     func handleScrollModeChanged(_ enabled: Bool) {

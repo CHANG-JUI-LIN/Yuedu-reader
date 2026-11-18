@@ -498,17 +498,6 @@ final class EPUBPageRenderer: ObservableObject {
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
 
-    private func logProgress(_ message: String) {
-        let line = "[ProgressTrace][EPUBPageRenderer] \(message)"
-        print(line)
-        NSLog("%@", line)
-    }
-
-    private func elapsedMs(since start: TimeInterval) -> String {
-        let value = (ProcessInfo.processInfo.systemUptime - start) * 1000
-        return String(format: "%.1f", value)
-    }
-
     // MARK: - Load
 
     /// EPUB path — creates the legacy delegate and a BrowserAuto adapter backed by YueduCoreText.
@@ -544,7 +533,6 @@ final class EPUBPageRenderer: ObservableObject {
                 // Same deferral as the reflowable path below: `notifyViewportSize` starts it.
                 isCoreTextReady = false
                 pendingStartBookId = bookIdentifier
-                logProgress("load deferred bookId=\(bookIdentifier) reason=invalidRenderSize fixedLayout size=\(renderSize)")
                 return
             }
             isCoreTextReady = true
@@ -597,18 +585,12 @@ final class EPUBPageRenderer: ObservableObject {
         isCoreTextReady = false
 
         if effectiveSize.width > 0 {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            logProgress("load start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
                 await self.engine?.start(renderSize: effectiveSize, bookId: bookIdentifier)
                 self.isCoreTextReady = true
-                self.logProgress(
-                    "load ready bookId=\(bookIdentifier) totalPages=\(self.engine?.totalPages ?? 0) elapsedMs=\(self.elapsedMs(since: startUptime))"
-                )
             }
         } else {
             pendingStartBookId = bookIdentifier
-            logProgress("load deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
     }
 
@@ -701,19 +683,13 @@ final class EPUBPageRenderer: ObservableObject {
             // The scroll engine can build a chapter before the page engine's start tells the
             // builder its column, so the builder is told here too.
             (attributedBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(effectiveSize)
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            logProgress("loadTXT start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
                 await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
                 guard self.engine === newEngine else { return }
                 self.isCoreTextReady = true
-                self.logProgress(
-                    "loadTXT ready bookId=\(bookIdentifier) totalPages=\(newEngine.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"
-                )
             }
         } else {
             pendingStartBookId = bookIdentifier
-            logProgress("loadTXT deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
     }
 
@@ -772,18 +748,12 @@ final class EPUBPageRenderer: ObservableObject {
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
         if effectiveSize.width > 0 {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            logProgress("loadWithProvider start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
                 await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
                 self.isCoreTextReady = true
-                self.logProgress(
-                    "loadWithProvider ready bookId=\(bookIdentifier) totalPages=\(newEngine.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"
-                )
             }
         } else {
             pendingStartBookId = bookIdentifier
-            logProgress("loadWithProvider deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
     }
 
@@ -827,14 +797,9 @@ final class EPUBPageRenderer: ObservableObject {
         (contentBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(size)
         guard let bookId = pendingStartBookId, let eng = engine else { return }
         pendingStartBookId = nil
-        let startUptime = ProcessInfo.processInfo.systemUptime
-        logProgress("notifyViewportSize start deferred bookId=\(bookId) size=\(size)")
         Task {
             await eng.start(renderSize: size, bookId: bookId)
             self.isCoreTextReady = true
-            self.logProgress(
-                "notifyViewportSize ready deferred bookId=\(bookId) totalPages=\(eng.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"
-            )
         }
     }
 
@@ -844,8 +809,6 @@ final class EPUBPageRenderer: ObservableObject {
     /// Position persistence is owned by ReaderNavigator/ReadingPositionStore.
     func updateCurrentPosition(globalPage: Int, engine eng: any PageRenderingProvider) {
         currentEpubPage = globalPage
-        let (spine, offset) = eng.charOffset(forPage: globalPage)
-        logProgress("updateCurrentPosition globalPage=\(globalPage) spine=\(spine) charOffset=\(offset)")
     }
 
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? {

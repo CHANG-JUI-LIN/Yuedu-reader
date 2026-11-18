@@ -768,21 +768,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     ///   when the reader adds it (a 青空文庫 work read from its 作品詳情).
     nonisolated func importEpub(url: URL, title: String? = nil, author: String? = nil, requireValidPublication: Bool = false,
                     isInBookshelf: Bool = true) async throws -> ReadingBook {
-        let importStartUptime = ProcessInfo.processInfo.systemUptime
-        func importTrace(_ message: String) {
-            let line = "[ImportTrace][BookStore.importEpub] \(message)"
-            print(line)
-            NSLog("%@", line)
-        }
-
         let uuid = UUID().uuidString
         let filename = "\(uuid).epub"
         let destURL = documentsURL(for: filename)
         var coverFilename: String? = nil
-        let sourceSizeBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        importTrace(
-            "begin source=\(url.lastPathComponent) sourceSizeBytes=\(sourceSizeBytes) dest=\(filename)"
-        )
 
         func cleanupImportedFiles() {
             if FileManager.default.fileExists(atPath: destURL.path) {
@@ -808,18 +797,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             try Task.checkCancellation()
 
             // 1. Copy EPUB to Documents
-            let copyStart = ProcessInfo.processInfo.systemUptime
             if FileManager.default.fileExists(atPath: destURL.path) {
                 try FileManager.default.removeItem(at: destURL)
             }
             try BookFileProtection.copy(from: url, to: destURL)
-            importTrace(
-                "stage=copy done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - copyStart) * 1000))"
-            )
             try Task.checkCancellation()
 
             // 2. Extract cover and metadata (merged to avoid redundant EPUB ZIP/XML parsing)
-            let metadataStart = ProcessInfo.processInfo.systemUptime
             let session: PublicationSession?
             if requireValidPublication {
                 // A received file must be readable before the transfer is
@@ -838,12 +822,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             } else {
                 session = try? await PublicationSession.open(sourceURL: destURL)
             }
-            importTrace(
-                "stage=metadataOpen done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1000)) chapters=\(session?.chapters.count ?? 0)"
-            )
             try Task.checkCancellation()
 
-            let coverStart = ProcessInfo.processInfo.systemUptime
             if let coverResult = await session?.publication.cover(), case .success(let optionalImage) = coverResult, let coverImage = optionalImage {
                 let coverName = "\(uuid)_cover.jpg"
                 let coverURL = StorageLocations.coverFile(coverName)
@@ -857,9 +837,6 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                     }
                 }
             }
-            importTrace(
-                "stage=coverExtract done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - coverStart) * 1000)) hasCover=\(coverFilename != nil)"
-            )
             try Task.checkCancellation()
 
             // 3. Build book model
@@ -877,9 +854,6 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if let session, session.layoutMode == .prePaginated {
                 book.contentPipelineKind = .fixedPage
                 book.onlineChapters = FixedLayoutEPUBPageProvider.chapterRefs(from: session)
-                importTrace(
-                    "stage=fixedLayoutDetected pipeline=fixedPage pages=\(session.chapters.count)"
-                )
             } else {
                 book.contentPipelineKind = .epub
             }
@@ -888,7 +862,6 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             let finalBook = book
 
             try Task.checkCancellation()
-            let persistStart = ProcessInfo.processInfo.systemUptime
             if let session {
                 // Unified library 1b: what the OPF says beyond title and author, beside the copy.
                 // Queued before the copy joins the shelf, so anything the shelf change sets off
@@ -914,12 +887,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                 self.records.insert(finalBook, at: 0)
                 self.saveMeta()
             }
-            importTrace(
-                "stage=persist done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - persistStart) * 1000)) totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))"
-            )
             return finalBook
         } catch is CancellationError {
-            importTrace("cancelled totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))")
             cleanupImportedFiles()
             throw CancellationError()
         } catch {
@@ -1730,10 +1699,6 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         records[idx].mangaChapterIndex = chapterIndex
         records[idx].mangaPage = 0
         saveMeta()
-        ReaderTelemetry.shared.log(
-            "manga_autodetect",
-            attributes: ["bookId": bookId.uuidString]
-        )
         return true
     }
 
@@ -1755,10 +1720,6 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         records[idx].audioChapterIndex = chapterIndex
         records[idx].audioTimeSeconds = 0
         saveMeta()
-        ReaderTelemetry.shared.log(
-            "audio_autodetect",
-            attributes: ["bookId": bookId.uuidString]
-        )
         return true
     }
 

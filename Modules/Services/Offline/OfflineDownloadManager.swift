@@ -655,11 +655,6 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         pendingProgress[bookId, default: PendingProgress()].completed.insert(index)
         pendingProgress[bookId]?.failed.removeValue(forKey: index)
         scheduleProgressPublish(bookId: bookId, store: store)
-        ReaderTelemetry.shared.log("book_download_progress", attributes: [
-            "bookId": bookId.uuidString,
-            "chapterIndex": "\(index)",
-            "result": "success",
-        ])
     }
 
     private func markFailed(
@@ -681,12 +676,6 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         pendingProgress[bookId]?.completed.remove(index)
         scheduleProgressPublish(bookId: bookId, store: store)
         AppLogger.error("Offline chapter download failed [\(category.rawValue)] index=\(index)", error: error)
-        ReaderTelemetry.shared.log("book_download_progress", attributes: [
-            "bookId": bookId.uuidString,
-            "chapterIndex": "\(index)",
-            "result": "failed",
-            "category": category.rawValue,
-        ])
     }
 
     private func removeInvalidIndex(_ index: Int, bookId: UUID, store: BookStore) {

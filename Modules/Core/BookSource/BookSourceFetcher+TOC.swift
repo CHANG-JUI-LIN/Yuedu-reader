@@ -123,24 +123,6 @@ extension BookSourceFetcher {
         if !forceRefresh, let cached = cachedTOCPackage(tocUrl: tocUrl, source: source) {
             return cached
         }
-        // #region agent log
-        _dbgLog(
-            "fetchTOC 進入",
-            data: [
-                "tocUrl": String(tocUrl.prefix(80)),
-                "source": source.bookSourceName,
-                "chapterList": String(source.ruleToc.chapterList.prefix(80)),
-                "chapterUrl": String(source.ruleToc.chapterUrl.prefix(40)),
-                "chapterName": String(source.ruleToc.chapterName.prefix(40)),
-                "needsWebView": source.needsWebView,
-                "hasPreUpdateJs": !source.ruleToc.preUpdateJs.isEmpty,
-            ], hyp: "T1")
-        // #endregion
-        // #region agent log
-        if source.ruleToc.chapterList.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            _dbgLog("fetchTOC chapterList 為空", data: ["source": source.bookSourceName], hyp: "H1")
-        }
-        // #endregion
 
         var effectiveTOCURL = tocUrl
         var effectiveRuntimeVariables = runtimeVariables
@@ -232,14 +214,12 @@ extension BookSourceFetcher {
             throw FetchError.invalidURL(effectiveTOCURL)
         }
         let html: String
-        var usedWebView = false
         let baseForReferer = effectiveTOCURL
         let tocNetworkStart = ProcessInfo.processInfo.systemUptime
         let headers = await source.resolvedHeaders()
         if source.needsWebView {
             let rendered = try await Self.fetchViaWebView(url: url, headers: headers)
             html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
-            usedWebView = true
         } else {
             html = try await fetchStageHTML(
                 url: url, method: "GET", body: nil,
@@ -248,15 +228,6 @@ extension BookSourceFetcher {
                 source: source)
         }
         SourcePerfTrace.record("toc.network", source.bookSourceName, since: tocNetworkStart)
-        // #region agent log
-        _dbgLog(
-            "fetchTOC 已取得 HTML",
-            data: [
-                "source": source.bookSourceName,
-                "htmlLen": html.count,
-                "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
-            ], hyp: "H2")
-        // #endregion
         let firstPage = try await SourcePerfTrace.spanAsync("toc.parse", source.bookSourceName) {
             try await self.pipeline.parseTOCPage(
                 html: html,
@@ -266,17 +237,6 @@ extension BookSourceFetcher {
                 runtimeVariables: effectiveRuntimeVariables
             )
         }
-        // #region agent log
-        _dbgLog(
-            "fetchTOC 初次解析結果",
-            data: [
-                "source": source.bookSourceName,
-                "chaptersCount": firstPage.chapters.count,
-                "htmlLen": html.count,
-                "usedWebView": usedWebView,
-                "htmlPreview": String(html.prefix(300)).replacingOccurrences(of: "\n", with: " "),
-            ], hyp: "T1")
-        // #endregion
 
         // Empty means the configured rule/transport produced no chapters. Legado
         // does not silently switch an ordinary HTTP source to WebView here; WebView

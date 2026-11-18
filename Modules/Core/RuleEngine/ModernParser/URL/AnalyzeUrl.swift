@@ -483,11 +483,7 @@ class AnalyzeUrl {
             // Try JS evaluator for arbitrary expressions
             if let evaluator = jsEvaluator {
                 let bindings = buildJsBindings()
-                let result = evaluator(trimmed, bindings)
-                if let result, result != trimmed {
-                    NSLog("[企點診斷] AnalyzeUrl 模板 「%@」→「%@」", trimmed, result)
-                }
-                return result
+                return evaluator(trimmed, bindings)
             }
             // Fallback: try RuleData variable
             let v = getVariable(trimmed)

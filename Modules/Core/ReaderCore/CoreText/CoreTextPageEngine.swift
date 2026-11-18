@@ -374,7 +374,6 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                     "⟐ memory warning — dropping every cached layout and snapshot",
                     level: .warning
                 )
-                MemoryFootprint.log("warning-before")
                 self?.invalidateSnapshots()
                 self?.prerenderer.purgeCaches()
                 self?._layouts.trim(keeping: 0)
@@ -382,7 +381,6 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 self?.paginationManager.invalidate(reason: .memoryWarning)
                 self?.cancelPreloadTasks()
                 self?.chapterDocumentStore.invalidateAll()
-                MemoryFootprint.log("warning-after")
             }
         }
 
@@ -407,9 +405,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
     }
 
     private func startupTrace(_ message: String) {
-        let line = "[StartupTrace][CoreTextPageEngine][+\(startupElapsedMs())ms] \(message)"
-        AppLogger.render(line)
-        NSLog("%@", line)
+        AppLogger.render("[StartupTrace][CoreTextPageEngine][+\(startupElapsedMs())ms] \(message)")
     }
 
     init(

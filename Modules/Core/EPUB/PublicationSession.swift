@@ -726,9 +726,6 @@ final class PublicationSession: Sendable {
         let packageResources = opened.resources
         let opfMetadata = parseOPFMetadataXML(packageResources.opfXML, opfPath: packageResources.opfPath)
         let epubWritingMode = opfMetadata.writingMode
-        let rtlBidiVerify = "[RTLVerify] file=\(sourceURL.lastPathComponent) lang=\(opfMetadata.language ?? "nil") pageProgression=\(opfMetadata.pageProgressionDirection.rawValue) writingMode=\(epubWritingMode.rawValue) → \(epubWritingMode == .verticalRL ? "VERTICAL" : "HORIZONTAL")"
-        print(rtlBidiVerify)
-        NSLog("%@", rtlBidiVerify)
         let tocEntries = flattenTableOfContents(publication.manifest.tableOfContents)
 
         let chapters: [PublicationChapterDescriptor]
@@ -908,30 +905,19 @@ final class PublicationSession: Sendable {
     }
 
     static func extractCoverImage(sourceURL: URL) async -> UIImage? {
-        let startUptime = ProcessInfo.processInfo.systemUptime
-        func coverTrace(_ message: String) {
-            let line = "[ImportTrace][PublicationSession.cover] \(message)"
-            print(line)
-            NSLog("%@", line)
-        }
-        coverTrace("begin file=\(sourceURL.lastPathComponent)")
-        guard let publication = try? await openPublication(sourceURL: sourceURL) else {
-            coverTrace("openPublication failed")
+        let publication: Publication
+        do {
+            publication = try await openPublication(sourceURL: sourceURL)
+        } catch {
+            AppLogger.parse("EPUB cover: openPublication failed", error: error, context: [
+                "file": sourceURL.lastPathComponent
+            ])
             return nil
         }
-        coverTrace(
-            "openPublication done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000))"
-        )
         switch await publication.cover() {
         case .success(let image):
-            coverTrace(
-                "cover success elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000))"
-            )
             return image
         case .failure:
-            coverTrace(
-                "cover missing elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000))"
-            )
             return nil
         }
     }

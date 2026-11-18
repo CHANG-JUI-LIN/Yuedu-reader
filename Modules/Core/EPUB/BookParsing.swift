@@ -70,22 +70,10 @@ enum BookParserRegistry {
     }
 
     static func parse(url: URL) async throws -> ParsedBookDocument {
-        let startUptime = ProcessInfo.processInfo.systemUptime
-        func parseTrace(_ message: String) {
-            let line = "[ImportTrace][BookParserRegistry] \(message)"
-            print(line)
-            NSLog("%@", line)
-        }
         guard let parser = await parser(for: url) else {
-            parseTrace("unsupported file=\(url.lastPathComponent)")
             throw BookParserRegistryError.unsupportedFormat
         }
-        parseTrace("begin file=\(url.lastPathComponent) parser=\(String(describing: type(of: parser)))")
-        let parsed = try await parser.parse(url: url)
-        parseTrace(
-            "done file=\(url.lastPathComponent) parser=\(String(describing: type(of: parser))) chapters=\(parsed.chapters.count) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000))"
-        )
-        return parsed
+        return try await parser.parse(url: url)
     }
 
     private static func parserByMagicNumber(for fileURL: URL) async -> (any BookParser)? {

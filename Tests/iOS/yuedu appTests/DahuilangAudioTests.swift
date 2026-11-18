@@ -218,7 +218,7 @@ struct DahuilangAudioTests {
     func missingAudioErrorIncludesContentPreview() {
         // The error is thrown by OnlineChapterAudioProvider.audio() when
         // DirectChapterAudioResolver.request(from:) returns nil. The assoc
-        // values are logged in ReaderTelemetry, not displayed to the user.
+        // values are for diagnosis, not displayed to the user.
         let error = ChapterAudioProviderError.missingAudio(
             contentLength: 42,
             preview: "第一章 江流儿"

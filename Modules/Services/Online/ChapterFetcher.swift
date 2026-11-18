@@ -70,24 +70,12 @@ struct ChapterFetcher {
         rawHTMLContent: String?,
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil
     ) async -> String {
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "fetcherInput",
-            html: rawHTMLContent ?? "",
-            sourceName: reviewContext?.sourceName ?? "",
-            context: ["title": title]
-        )
         // Images whose real URL is produced by the source's own JS (Legado `UrlOption.js`) have to
         // be resolved HERE, while the session that just parsed this chapter still holds the
         // per-image state the source set during parsing — see `LegadoImageSourceResolver`.
         let raw = await LegadoImageSourceResolver.resolveDeferredSources(
             in: rawHTMLContent ?? "",
             reviewContext: reviewContext
-        )
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "deferredImageResolved",
-            html: raw,
-            sourceName: reviewContext?.sourceName ?? "",
-            context: ["title": title]
         )
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let looksHTML = !rawTrimmed.isEmpty && Self.containsLikelyHTMLTags(raw)
@@ -137,12 +125,6 @@ struct ChapterFetcher {
         let cleanedRawHTML = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
             originalRawHTML,
             reviewContext: reviewContext
-        )
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "sanitized",
-            html: cleanedRawHTML,
-            sourceName: reviewContext?.sourceName ?? "",
-            context: ["title": title]
         )
 
         // ⟐ sanitizeClickConfig — show whether the `,{json}` click-config suffix is actually
@@ -295,13 +277,6 @@ struct ChapterFetcher {
                 "title": title,
             ])
         }
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "swiftSoupBody",
-            html: bodyHTML + (leadingTitleBubbleHTML ?? ""),
-            sourceName: reviewContext?.sourceName ?? "",
-            context: ["title": title]
-        )
-
         guard !bodyHTML.isEmpty || leadingTitleBubbleHTML != nil else {
             return buildNormalizedHTML(
                 title: trimmedTitle,
@@ -337,12 +312,6 @@ struct ChapterFetcher {
         </body>
         </html>
         """
-        ReaderHTMLUtilities.logReviewMarkupDiagnostics(
-            stage: "normalizedOutput",
-            html: normalizedHTML,
-            sourceName: reviewContext?.sourceName ?? "",
-            context: ["title": title]
-        )
         return normalizedHTML
     }
 
@@ -675,16 +644,6 @@ struct ChapterFetcher {
         extractNextURLs: @escaping @Sendable (_ html: String, _ pageURL: String, _ ruleURL: String) async -> [String],
         fetchNextPageHTML: @escaping @Sendable (_ link: String) async throws -> String
     ) async throws -> ChapterBuildResult {
-        let parseStart = CFAbsoluteTimeGetCurrent()
-        ReaderTelemetry.shared.log(
-            "chapter_parse_start",
-            attributes: [
-                "bookId": bookId.uuidString,
-                "chapterIndex": "\(chapterIndex)",
-                "sourceURL": String(sourceURL.prefix(120)),
-            ]
-        )
-
         let paginated = try await fetchPaginatedContent(
             initialHTML: initialHTML,
             initialURL: initialURL,
@@ -720,18 +679,6 @@ struct ChapterFetcher {
         }.joined()
         let savedAt = Date()
 
-        ReaderTelemetry.shared.log(
-            "chapter_parse_end",
-            attributes: [
-                "bookId": bookId.uuidString,
-                "chapterIndex": "\(chapterIndex)",
-                "durationMs": "\(Int((CFAbsoluteTimeGetCurrent() - parseStart) * 1000))",
-                "rawPageCount": "\(paginated.rawHTMLPages.count)",
-                "contentLength": "\(content.count)",
-                "sourceMatched": parsed.sourceMatched ? "true" : "false",
-            ]
-        )
-
         let package = ChapterPackage(
             bookId: bookId,
             chapterIndex: chapterIndex,
@@ -745,15 +692,6 @@ struct ChapterFetcher {
             savedAt: savedAt,
             state: .cached,
             failureReason: nil
-        )
-        ReaderTelemetry.shared.log(
-            "chapter_package_ready",
-            attributes: [
-                "bookId": bookId.uuidString,
-                "chapterIndex": "\(chapterIndex)",
-                "title": String(package.renderTitle.prefix(80)),
-                "contentLength": "\(content.count)",
-            ]
         )
         return ChapterBuildResult(package: package, rawHTML: rawHTML, normalizedHTML: normalizedHTML)
     }

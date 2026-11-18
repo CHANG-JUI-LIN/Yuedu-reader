@@ -9,9 +9,6 @@ extension ReaderView {
         priority: ChapterFetchPriority = .immediate
     ) {
         guard let currentBook = book else { return }
-        #if DEBUG
-        AppLogger.render("[StateDebug] ensureChapterReady ch=\(chapterIndex) priority=\(priority) currentCh=\(currentChapterIndex)")
-        #endif
         // The neighbour window advances on the current chapter's `.ready` transition
         // (`handleChapterStateChanges`). A chapter the window already prefetched is `.ready`
         // before the reader enters it, so entering publishes no transition — without this the
@@ -41,9 +38,6 @@ extension ReaderView {
 
 
         for (chapterIndex, newState) in states where previousStates[chapterIndex] != newState {
-            #if DEBUG
-            AppLogger.render("[StateDebug] chapterStates[\(chapterIndex)] \(String(describing: previousStates[chapterIndex])) → \(newState) currentChapter=\(currentChapterIndex) usesCoreText=\(usesCoreTextEPUB) isCoreTextReady=\(epubRenderer.isCoreTextReady)")
-            #endif
             // Narration stalled at a chapter boundary waits on exactly this signal.
             handleTTSChapterWaitStateChange(newState, at: chapterIndex)
             if newState == .ready {
@@ -169,9 +163,6 @@ extension ReaderView {
                 }
             }
         }
-        #if DEBUG
-        AppLogger.render("[StateDebug] applyRefreshAction ch=\(chapterIndex) newState=\(newState) contentAvailable=\(contentAvailable) currentCh=\(currentChapterIndex)")
-        #endif
 
         guard newState == .ready, contentAvailable else { return }
         guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else {
