@@ -4,8 +4,8 @@ import XCTest
 /// locale per test. Runs only when the driver sets `TEST_RUNNER_ASO_OUT` (the folder the PNGs are
 /// written to), so the regular suite skips it.
 ///
-/// Preconditions, set up by the driver: the public-domain books on the shelf and a home of
-/// public-domain lists passed as `ASO_HOME` (`-explore-home-file`).
+/// Precondition, set up by the driver: the public-domain books on the shelf. 探索 is the app's
+/// own default home, as a new install makes it, so the shots follow the defaults as they change.
 final class ASOScreenshotUITests: XCTestCase {
     private struct Locale {
         let code: String
@@ -69,9 +69,6 @@ final class ASOScreenshotUITests: XCTestCase {
         app.launchArguments = ["-onboarding.completed", "YES", "-yd_source_disclaimer_accepted", "YES",
                                "-bookLayoutIsGrid", "<true/>",
                                "-AppleLanguages", "(\(locale.code))", "-AppleLocale", locale.region]
-        if let home = env["ASO_HOME_\(locale.code)"] ?? env["ASO_HOME"] {
-            app.launchArguments += ["-explore-home-file", home]
-        }
         // 搜尋來源 without the catalogues of modern editions: their covers are other people's
         // artwork (a film soundtrack, a webtoon) and their titles other people's works, which a
         // store listing must not show. What is left is the shelf and the public libraries.
@@ -143,7 +140,8 @@ final class ASOScreenshotUITests: XCTestCase {
         // 編輯首頁, as it opens: at the foot of the home, with the sections' previews and 新增.
         if wanted("editor") {
             let edit = app.buttons["home.edit"].firstMatch
-            for _ in 0..<12 where !(edit.exists && edit.isHittable) { app.swipeUp(velocity: .fast) }
+            // The default home is long; the loop stops as soon as the button shows.
+            for _ in 0..<40 where !(edit.exists && edit.isHittable) { app.swipeUp(velocity: .fast) }
             if edit.exists {
                 edit.tap()
                 pause(4)
