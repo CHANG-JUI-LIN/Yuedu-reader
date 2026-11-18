@@ -97,7 +97,7 @@ struct OnlineChapterTitleDeduplicatorTests {
             return
         }
         #expect(wrapperChildren.count == 1)
-        guard case .commentBadge(let count, _, _) = try #require(result.titleAccessories.first) else {
+        guard case .commentBadge(let count, _, _, _) = try #require(result.titleAccessories.first) else {
             Issue.record("Expected the chapter review badge to move onto the CSS title")
             return
         }
@@ -125,7 +125,7 @@ struct OnlineChapterTitleDeduplicatorTests {
 
         #expect(result.bodyNodes.isEmpty)
         guard case .inline(_, let inlineChildren, _) = try #require(result.titleAccessories.first),
-              case .commentBadge(let count, _, _) = try #require(inlineChildren.first)
+              case .commentBadge(let count, _, _, _) = try #require(inlineChildren.first)
         else {
             Issue.record("Expected only the nested review badge to move onto the CSS title")
             return

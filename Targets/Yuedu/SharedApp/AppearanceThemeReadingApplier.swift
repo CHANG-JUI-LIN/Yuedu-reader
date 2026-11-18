@@ -343,7 +343,9 @@ extension GlobalSettings {
             customStyleID: commentBubbleSelectedCustomStyleID,
             scale: commentBubbleScale,
             textScale: commentBubbleTextScale,
-            cards: commentCardChoices
+            cards: commentCardChoices,
+            maxCount: commentBubbleMaxCount,
+            list: commentListStyle
         )
     }
 
@@ -464,6 +466,9 @@ extension GlobalSettings {
             assign(\.commentBubbleScale, bubble.scale)
             assign(\.commentBubbleTextScale, bubble.textScale)
             assign(\.commentCardChoices, bubble.cards)
+            assign(\.commentBubbleMaxCount, bubble.maxCount.map(CommentBubbleCount.sanitizedMaximum))
+            // A theme pack is someone else's file: its values are bounded before they are worn.
+            assign(\.commentListStyle, bubble.list?.sanitized)
             let mode = ReaderCommentBubblePresetMode(rawValue: bubble.presetMode) ?? .builtin
             if commentBubblePresetMode != mode || commentBubbleSelectedCustomStyleID != bubble.customStyleID {
                 applyCommentBubbleChoice(

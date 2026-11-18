@@ -16,7 +16,7 @@ import YueduCoreText
 final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
     /// A picture an added element names.
     enum Picture: Equatable {
-        case bubble(count: Int)
+        case bubble(count: Int, traits: CommentBubbleTraits)
         case card(ReviewCardContent)
     }
 
@@ -84,8 +84,8 @@ final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
     private func image(of picture: Picture, renderWidth: CGFloat) async -> UIImage? {
         guard let settings = settings() else { return nil }
         switch picture {
-        case .bubble(let count):
-            return Self.bubbleImage(count: count, pointSize: settings.fontSize, textColor: settings.textColor)
+        case .bubble(let count, let traits):
+            return Self.bubbleImage(count: count, traits: traits, pointSize: settings.fontSize, textColor: settings.textColor)
         case .card(let content):
             let font = UIFont(name: UserReaderFontResolver.selectedPostScriptName ?? "", size: settings.fontSize)
                 ?? .systemFont(ofSize: settings.fontSize)
@@ -102,9 +102,9 @@ final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
     /// chapter document does. The package sets an inline picture's bottom on the baseline and
     /// has no `vertical-align` for one, so the room under the bubble is part of the picture:
     /// its middle then sits at the text's.
-    static func bubbleImage(count: Int, pointSize: CGFloat, textColor: UIColor) -> UIImage? {
+    static func bubbleImage(count: Int, traits: CommentBubbleTraits = .plain, pointSize: CGFloat, textColor: UIColor) -> UIImage? {
         guard let bubble = CommentBubbleSVGRecognizer.commentBadgeImage(
-            count: String(min(count, 99)), pointSize: pointSize, themeTextColor: textColor),
+            count: String(count), traits: traits, pointSize: pointSize, themeTextColor: textColor),
             bubble.size.width > 0, bubble.size.height > 0 else { return nil }
         // The picture is drawn `bubbleWidthEm` wide, so one em is this many of its points.
         let em = bubble.size.width / bubbleWidthEm
@@ -157,8 +157,10 @@ final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
             }
             let width = String(format: "%.3f", Double(bubbleWidthEm))
             for (position, bubble) in placements.bubbles where paragraphs.indices.contains(position) {
-                let name = "\(scheme):bubble/\(min(bubble.count, 99))"
-                pictures[name] = .bubble(count: bubble.count)
+                // Named by all a bubble's picture depends on: two paragraphs share one only when
+                // they would draw the same.
+                let name = "\(scheme):bubble/\(bubble.count)/\(bubble.traits.signature)"
+                pictures[name] = .bubble(count: bubble.count, traits: bubble.traits)
                 try paragraphs[position].append(
                     "<a href=\"\(escaped(bubble.href))\"><img src=\"\(name)\" \(BrowserAddedContent.attributeName)"
                         + " style=\"width:\(width)em;margin-left:0.15em\"></a>")

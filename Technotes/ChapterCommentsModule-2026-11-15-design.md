@@ -121,6 +121,8 @@
 - **只有 `index`**：只有當讀者這一章的段數跟對方回的段數**完全相同**時才照序號掛；不同就只顯示本章說，不顯示段評氣泡。
 - 段評掛不上不影響本章說：本章說只需要對到章。
 - **章名的段評**（2026-11-17，維護者指出模組少了標題氣泡）：起點、QQ閱讀把章名當成一段算段評（段落代號 −1／0；书山聚合的 `ruleContent.title` 把這一段的氣泡接在章名後面，數字是章名這一段自己的則數，不是本章說總數）。`counts`／`hot` 的 `list` 多一條 `title` 規則，讀到 true（`LegadoTruth`）的那一項不看 `quote`／`index`，掛在讀者這一章章名的最後一行（`ChapterParagraphMatch.titleEnd`），點開 `paragraph`；正文不是從章名開始就不掛。
+- **熱門分色、語音、數字上限**（2026-11-17，維護者：分色只看模組標的熱門）：`counts.list` 多 `hot`、`voice` 兩條規則，讀成 `CommentBubbleTraits` 跟著氣泡走（CoreText 的 `RenderableNode.commentBadge`、瀏覽器引擎的圖片名 `bubble/<則數>/<traits>`）。熱門＝樣式的強調色槽（空著就是 `DSUIColor.commentBubbleHot`；內建兩款整個換色），**不再**用「99+／≥100」判斷強調。語音＝樣式的 `voiceSVG`，沒有就在原樣式數字下面加五條聲波（`CommentBubbleSVG.addingVoiceWave`）。數字上限 99／999 是閱讀設定（`commentBubbleMaxCount`，跟主題同步），只管 App 自己畫的數字：來源配置自帶的 SVG 在「跟隨來源」模式照原樣畫，它烤進去的 `99+` 不受影響；來源配置不會給熱門或語音，所以它的氣泡沒有強調色。
+- **寫的人、樓中樓、接手來源配置的評論頁**（2026-11-17，維護者：做適配層讓 App 接過渲染，總開關、樓中樓顯示前幾則＋點開看全部）：`WorkReview` 多 `id`／`avatar`／`badge`／`floor`／`replies`（一層、最多 20）／`replyCount`，全部 Optional，舊快取照樣解碼；`ReviewRules` 同名規則，`replies` 在評論的範圍裡讀。`comments.replies` 用 `{{commentId}}` 拿全部回覆，推進同一個 `ChapterCommentsModel`（`parent`）。`comments.sourcePages` 用主機＋路徑正規式＋查詢參數認來源配置的評論頁，只取 `id`／`chapterId`／`paragraphId` 三個值（來源網址常帶 token，其餘一律不讀、不記 log），接手判斷在 `ReaderReviewSheetContent`，由 `GlobalSettings.commentsUseAppList`（預設關、不進主題）決定；沒模組認得就開來源網頁，接手後請求失敗顯示列表自己的失敗狀態，不退回網頁。限制：來源 JS 直接給 HTML、不給網址的評論頁（`sourceBrowserPage.html`）認不出來；瀏覽器排版引擎點 JS 型氣泡時本來就不先跑來源 JS，網址是空的，也不會接手。
 
 ## 5. App 端架構
 
@@ -183,3 +185,5 @@ P1 單獨上線就有用（TXT 也能看本章說），而且完全避開 §6-1�
 - 來源自帶段評的章不問模組。
 - 位置：開／關評論前後，同一個書籤落在同一個字（P2）。
 - VoiceOver：氣泡讀「段評，N 則」，章末卡片與清單每一列都有標籤。
+
+- **評論列表樣式進主題包、補欄位**（2026-11-17，維護者：「進主題包」；參考 yuedu2.0 分支的原生評論面板）：`WorkReview` 多 `quote`（段落原文引用）、`meta`（網站自己寫的時間·IP 屬地，取代日期）、`images`、`voice`、`isAuthor`，`ReviewRules`／`ReplyRules` 同名規則，`webURL` 一條路讀頭像、配圖、語音網址。列表的樣子是 `CommentListStyle`：滑桿與開關（卡片濃度、圓角、頭像、三種字級、行距、哪些部分顯示、樓中樓則數）＋孤島（Cay）方言的樣式表（頂層＝卡片，`.user`／`.text`／`.time`／`.quote`／`.label`／`.avatar`／`.floor`／`.reply`，`@dark`／`@light`）。優先順序：滑桿 > 樣式表 > App 預設，全在 `CommentListLook.resolved` 一處決定；樣式表只在設定時讀一次（`GlobalSettings.commentListSheet`）。它掛在 `AppearanceThemeReadingSettings.CommentBubble.list`，所以同步、主題包、匯入都走段評氣泡那一列；主題包的值穿上前先 `sanitized`。**不做**分支那套把 CSS 套到來源網頁的作法：它靠猜 DOM 結構加 `setTimeout`／MutationObserver 補標記，網站的標記不是我們的，猜錯就套錯；樣式表只作用在 App 的列表，讀不懂的寫法列在「未套用」並原樣留在主題包裡。

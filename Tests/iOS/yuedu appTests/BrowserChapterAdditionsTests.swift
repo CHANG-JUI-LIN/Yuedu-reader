@@ -53,12 +53,13 @@ struct BrowserChapterAdditionsTests {
     func injects() throws {
         let added = try #require(BrowserChapterAdditions.inject(into: Self.chapter, spine: 3, placements: placements))
         #expect(added.html.components(separatedBy: BrowserAddedContent.attributeName).count - 1 == 4, "a bubble and three cards")
-        #expect(added.pictures["yd-added:bubble/99"] == .bubble(count: 230), "one picture for every bubble of a count")
+        #expect(added.pictures["yd-added:bubble/230/--"] == .bubble(count: 230, traits: .plain),
+                "one picture for every bubble of a count and the same traits")
         #expect(added.pictures.count == 4)
         for href in ["ydreview://r?d=abc", "ydreview://r?d=hot", "ydreview://r?d=say", "ydreview://r?d=all"] {
             #expect(added.html.contains("href=\"\(href)\""), "\(href)")
         }
-        let bubble = try #require(added.html.range(of: "yd-added:bubble/99")), paragraphEnd = try #require(added.html.range(of: "走進長夜。"))
+        let bubble = try #require(added.html.range(of: "yd-added:bubble/230/--")), paragraphEnd = try #require(added.html.range(of: "走進長夜。"))
         let hot = try #require(added.html.range(of: "yd-added:card/3/1")), next = try #require(added.html.range(of: "「嗯。」"))
         #expect(paragraphEnd.upperBound <= bubble.lowerBound && bubble.upperBound <= hot.lowerBound && hot.upperBound <= next.lowerBound,
                 "the bubble ends its paragraph, the card is under it, before the next paragraph")
@@ -198,5 +199,18 @@ struct BrowserChapterAdditionsTests {
         let image = try #require(BrowserChapterAdditions.bubbleImage(count: 12, pointSize: 20, textColor: .black))
         let bare = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(count: "12", pointSize: 20, themeTextColor: .black))
         #expect(image.size.width == bare.size.width && image.size.height >= bare.size.height)
+    }
+
+    @Test("a hot bubble and a voice bubble are pictures of their own")
+    func bubbleTraitsNamePictures() throws {
+        let added = try #require(BrowserChapterAdditions.inject(into: Self.chapter, spine: 3) { paragraphs in
+            var placements = ReaderCommentPlacements()
+            for (position, traits) in zip(paragraphs.indices.prefix(3),
+                                          [CommentBubbleTraits.plain, .init(isHot: true), .init(isHot: true, hasVoice: true)]) {
+                placements.bubbles[position] = .init(count: 12, href: "ydreview://r?d=\(position)", title: "段評", traits: traits)
+            }
+            return placements
+        })
+        #expect(Set(added.pictures.keys) == ["yd-added:bubble/12/--", "yd-added:bubble/12/h-", "yd-added:bubble/12/hv"])
     }
 }

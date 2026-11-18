@@ -19,6 +19,7 @@ struct GlobalSettingsSnapshot: Sendable, Equatable {
     /// changes the SVG, and the bubble image cache keys on that.
     var commentBubbleSelectedCustomStyle: ReaderCommentBubbleCustomStyle?
     var commentBubbleScale: Double
+    var commentBubbleMaxCount: Int
     /// The card templates and which one each kind wears; the templates themselves, not
     /// only IDs, for the same reason as `commentBubbleSelectedCustomStyle`.
     var commentCardChoices: ReaderCommentCardChoices
@@ -61,6 +62,7 @@ extension GlobalSettings {
             commentBubbleSelectedCustomStyleID: commentBubbleSelectedCustomStyleID,
             commentBubbleSelectedCustomStyle: commentBubbleSelectedCustomStyle,
             commentBubbleScale: commentBubbleScale,
+            commentBubbleMaxCount: commentBubbleMaxCount,
             commentCardChoices: commentCardChoices,
             commentCardCustomStyles: commentCardCustomStyles,
             selectedReaderFontPostScript: selectedReaderFontPostScript,

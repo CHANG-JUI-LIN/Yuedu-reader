@@ -45,6 +45,12 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         /// Which template each source review card wears. Nil only in setups written
         /// before card templates, which leave the cards as they are.
         var cards: ReaderCommentCardChoices? = nil
+        /// 數字上限: the largest count a bubble shows before `99+` / `999+`. Nil in setups
+        /// written before it, which leave the reader's as it is.
+        var maxCount: Int? = nil
+        /// 評論列表: how the App's own comment list draws a comment. Nil in setups written
+        /// before it, which leave the list as it is.
+        var list: CommentListStyle? = nil
     }
 
     // MARK: 文字

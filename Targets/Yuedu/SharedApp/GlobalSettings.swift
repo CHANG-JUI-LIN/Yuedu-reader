@@ -600,8 +600,10 @@ class GlobalSettings {
     private static let commentBubbleSelectedCustomStyleIDKey = "yd_comment_bubble_selected_custom_style_id"
     private static let commentBubbleSelectionSyncClockKey = "yd_comment_bubble_selection_sync_clock"
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
+    private static let commentBubbleMaxCountKey = "yd_comment_bubble_max_count"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
     static let commentCardChoicesKey = "yd_comment_card_choices"
+    static let commentListStyleKey = "yd_comment_list_style"
     static let commentCardCustomStylesKey = "yd_comment_card_custom_styles"
     private static let chapterTitleStyleKey = "yd_chapter_title_style_v1"
     private static let chapterTitleCustomPresetsKey = "yd_chapter_title_custom_presets_v1"
@@ -1260,6 +1262,19 @@ class GlobalSettings {
             }
         }
     }
+    /// 段評氣泡 › 數字上限: a bubble shows counts up to it, past it `99+` / `999+`.
+    var commentBubbleMaxCount: Int {
+        didSet {
+            let sanitized = CommentBubbleCount.sanitizedMaximum(commentBubbleMaxCount)
+            if commentBubbleMaxCount != sanitized {
+                commentBubbleMaxCount = sanitized
+            } else {
+                UserDefaults.standard.set(commentBubbleMaxCount, forKey: Self.commentBubbleMaxCountKey)
+                recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+                publishSnapshot()
+            }
+        }
+    }
     /// The old 數字字號比例. Nothing draws with it any more: a bubble's count is the size its
     /// SVG gives it, as in legado and Sigma's bubble packs, and the slider is gone. It stays
     /// stored because themes and synced reading settings carry it as a non-optional
@@ -1287,6 +1302,22 @@ class GlobalSettings {
             publishSnapshot()
         }
     }
+    /// 評論列表: how the App's own comment list draws a comment. Part of the 段評氣泡 row of
+    /// 排版生效範圍, so it syncs and theme packs carry it. Written through
+    /// `GlobalSettings+CommentCards.swift`; the stylesheet is read once, here
+    /// (`commentListSheet`), never while a card draws.
+    var commentListStyle: CommentListStyle {
+        didSet {
+            guard commentListStyle != oldValue else { return }
+            if commentListStyle.css != oldValue.css {
+                commentListSheet = CommentListCSS.parse(commentListStyle.css ?? "")
+            }
+            Self.saveCommentListStyle(commentListStyle)
+            recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+        }
+    }
+    /// `commentListStyle.css`, read.
+    private(set) var commentListSheet: CommentListCSS.Sheet
     /// The card templates of every kind, in the order they were made. Synced through
     /// iCloud per template, like the bubble styles.
     var commentCardCustomStyles: [ReaderCommentCardCustomStyle] {
@@ -1906,6 +1937,14 @@ class GlobalSettings {
     var autoFillBookMetadata: Bool {
         didSet { UserDefaults.standard.set(autoFillBookMetadata, forKey: "yd_auto_fill_book_metadata") }
     }
+    /// 氣泡設定 › 使用 App 內建評論列表 (maintainer, 2026-11-17): a 來源配置's bubble or card opens
+    /// the app's own list when an installed module reads that source's comment page
+    /// (`comments.sourcePages`, `ModuleCommentSourcePages`). Off by default: the source's page,
+    /// as before. A module's own comments are in that list either way. Not a reading setting:
+    /// themes do not carry it.
+    var commentsUseAppList: Bool {
+        didSet { UserDefaults.standard.set(commentsUseAppList, forKey: "yd_comments_use_app_list") }
+    }
     /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
     /// whose TOC was captured this way switches without a network round trip. Off by default
     /// — same as Legado — because it turns one request per source into two.
@@ -2473,11 +2512,18 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: Self.commentBubbleScaleKey) as? Double)
                 ?? Self.defaultCommentBubbleScale
         )
+        commentBubbleMaxCount = CommentBubbleCount.sanitizedMaximum(
+            (UserDefaults.standard.object(forKey: Self.commentBubbleMaxCountKey) as? Int)
+                ?? CommentBubbleCount.defaultMaximum
+        )
         commentBubbleTextScale = Self.sanitizedCommentBubbleTextScale(
             (UserDefaults.standard.object(forKey: Self.commentBubbleTextScaleKey) as? Double)
                 ?? Self.defaultCommentBubbleTextScale
         )
         commentCardChoices = Self.loadCommentCardChoices()
+        let listStyle = Self.loadCommentListStyle()
+        commentListStyle = listStyle
+        commentListSheet = CommentListCSS.parse(listStyle.css ?? "")
         commentCardCustomStyles = Self.loadCommentCardCustomStyles()
         let savedBackgrounds = Self.loadReaderCustomBackgrounds()
         let wornBackgroundID = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundIDKey)
@@ -2607,6 +2653,8 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
         autoFillBookMetadata =
             (UserDefaults.standard.object(forKey: "yd_auto_fill_book_metadata") as? Bool) ?? true
+        commentsUseAppList =
+            (UserDefaults.standard.object(forKey: "yd_comments_use_app_list") as? Bool) ?? false
         changeSourceLoadToc =
             (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         changeSourceGroup = UserDefaults.standard.string(forKey: "yd_change_source_group") ?? ""

@@ -147,6 +147,10 @@ enum DSColor {
     // ── Functional ──
     /// Light label / selected background
     static let accentLight = Color.accentColor.opacity(0.08)
+    /// Over a comment's last picture thumbnail, under the count of the ones not shown.
+    static let commentImageMoreScrim = Color.black.opacity(0.45)
+    /// That count.
+    static let commentImageMoreText = Color.white
     /// Card shadow
     static let shadow = Color.black.opacity(0.05)
     /// Drop shadow under a hero book cover. Deeper than `shadow` because the
@@ -292,6 +296,10 @@ enum DSUIColor {
 
     /// `DSColor.readerSearchHit`.
     static let readerSearchHit = UIColor.systemYellow.withAlphaComponent(0.4)
+
+    /// A 段評 bubble the site marks hot: the app's own bubbles, and a style's empty emphasis
+    /// slot. One fixed colour, as it is baked into the bubble's picture on a day or a night page.
+    static let commentBubbleHot = UIColor(red: 0xF0 / 255.0, green: 0x60 / 255.0, blue: 0x60 / 255.0, alpha: 1)
 
     /// The now-playing bar's ⏸ and ⏭: ink like its title, as Apple Books and Apple Music draw
     /// them, never the accent the bar would otherwise take from the window.
@@ -917,6 +925,20 @@ enum DSLayout {
     static let reviewCardPreviewLines = 4
     /// How many reviews 作品詳情's row shows before 查看全部.
     static let reviewPreviewCount = 8
+    /// A comment writer's picture, beside their name (起點's comment list draws it at 32pt).
+    static let commentAvatarSize: CGFloat = 32
+    /// How many of a comment's replies its card shows; the rest are a list of their own.
+    static let commentInlineReplies = 3
+    /// How many lines each of those replies shows.
+    static let commentInlineReplyLines = 3
+    /// A comment's picture, as a square thumbnail in its card.
+    static let commentImageSize: CGFloat = 72
+    /// How many of a comment's pictures its card shows; the last says how many more.
+    static let commentImagesShown = 3
+    /// The bar beside the book's words a comment quotes.
+    static let commentQuoteBarWidth: CGFloat = 3
+    /// How many lines of the quoted words a card shows.
+    static let commentQuoteLines = 3
     /// 讀者評論's rating bars: the stars beside each, and the bar's own width at most.
     static let ratingBarMaxWidth: CGFloat = 260
     /// 目錄's ground behind the chapter being read: the text's colour, faint.

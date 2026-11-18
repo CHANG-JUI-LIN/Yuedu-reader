@@ -1,7 +1,7 @@
 import Foundation
 
 /// The card templates of 氣泡設定 — 本章說, 作者說, 神評論: the library, each kind's choice,
-/// and how both are stored and synced.
+/// and how both are stored and synced; and 評論列表's style, stored beside them.
 extension GlobalSettings {
 
     // MARK: - Choice
@@ -87,6 +87,28 @@ extension GlobalSettings {
             defaults.set(try JSONEncoder().encode(choices), forKey: commentCardChoicesKey)
         } catch {
             AppLogger.error("comment card choices not stored", error: error)
+        }
+    }
+
+    static func loadCommentListStyle(defaults: UserDefaults = .standard) -> CommentListStyle {
+        guard let data = defaults.data(forKey: commentListStyleKey) else { return CommentListStyle() }
+        do {
+            return try JSONDecoder().decode(CommentListStyle.self, from: data).sanitized
+        } catch {
+            AppLogger.error("comment list style unreadable", error: error)
+            return CommentListStyle()
+        }
+    }
+
+    static func saveCommentListStyle(_ style: CommentListStyle, defaults: UserDefaults = .standard) {
+        guard style != CommentListStyle() else {
+            defaults.removeObject(forKey: commentListStyleKey)
+            return
+        }
+        do {
+            defaults.set(try JSONEncoder().encode(style), forKey: commentListStyleKey)
+        } catch {
+            AppLogger.error("comment list style not stored", error: error)
         }
     }
 

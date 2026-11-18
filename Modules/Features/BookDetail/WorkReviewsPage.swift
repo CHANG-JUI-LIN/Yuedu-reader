@@ -25,6 +25,7 @@ struct WorkReviewsPage: View {
                     WorkReviewCard(review: sorted[index])
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(sorted[index].spokenText(locale: locale))
+                        .commentVoiceAction(sorted[index])
                         .accessibilityIdentifier("reviews.card")
                         .reviewRow()
                 }
@@ -46,6 +47,8 @@ struct WorkReviewsPage: View {
         .pageBackgroundToolbar(for: .global)
         .navigationTitle(localized("讀者評論"))
         .toolbarTitleDisplayMode(.inline)
+        // A clip goes quiet with the page it was started from.
+        .onDisappear { CommentVoicePlayer.shared.stop() }
     }
 
     private var header: some View {

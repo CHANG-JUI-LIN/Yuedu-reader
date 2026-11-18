@@ -294,8 +294,8 @@ struct ReaderCommentBubbleCustomStyleTests {
         #expect(style.usesColorTemplate)
     }
 
-    @Test("resolves the ${color} hex using day/night and emphasis/no-emphasis")
-    func resolvesColorHexByThemeAndEmphasis() {
+    @Test("the emphasis slot is for a hot paragraph, whatever its count")
+    func emphasisSlotFollowsHot() {
         let style = ReaderCommentBubbleCustomStyle(
             name: "pkg",
             svg: "<svg><text>${num}</text></svg>",
@@ -305,11 +305,20 @@ struct ReaderCommentBubbleCustomStyleTests {
             nightNormalColor: "#404040"
         )
 
-        #expect(style.resolvedColorHex(forCount: "5", isNight: false) == "#808080")
-        #expect(style.resolvedColorHex(forCount: "99+", isNight: false) == "#FF0000")
-        #expect(style.resolvedColorHex(forCount: "120", isNight: false) == "#FF0000")
-        #expect(style.resolvedColorHex(forCount: "5", isNight: true) == "#404040")
-        #expect(style.resolvedColorHex(forCount: "99+", isNight: true) == "#FFFF00")
+        #expect(style.slotColorHex(isHot: false, isNight: false) == "#808080")
+        #expect(style.slotColorHex(isHot: true, isNight: false) == "#FF0000")
+        #expect(style.slotColorHex(isHot: false, isNight: true) == "#404040")
+        #expect(style.slotColorHex(isHot: true, isNight: true) == "#FFFF00")
+    }
+
+    @Test("a style's voice version survives bubble.json both ways")
+    func voiceTemplateRoundTripsThroughPackage() throws {
+        let style = ReaderCommentBubbleCustomStyle(name: "v", svg: "<svg><text>${num}</text></svg>",
+                                                   voiceSVG: "<svg><text>${num}</text><rect/></svg>")
+        #expect(style.needsPackageToExport)
+        let data = try JSONEncoder().encode(BubblePackageFile(style: style))
+        let read = try #require(ReaderCommentBubbleCustomStyle.fromBubblePackage(data))
+        #expect(read.voiceSVG == style.voiceSVG)
     }
 
     @Test("does not flag a legacy SVG as a color-template style")

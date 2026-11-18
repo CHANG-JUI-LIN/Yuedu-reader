@@ -12,6 +12,7 @@ struct ReaderCommentPlacements: Equatable, Sendable {
         /// `ReaderHTMLUtilities.moduleReviewHref`: what the tap opens.
         var href: String
         var title: String
+        var traits: CommentBubbleTraits = .plain
     }
 
     /// A card on a line of its own.
@@ -60,8 +61,9 @@ struct ReaderCommentPieces {
 
     /// A 段評 bubble with `count` in it, for the end of the paragraph whose last character has
     /// `host`'s attributes: on that paragraph's line, in its paragraph style.
-    func bubble(count: Int, href: String, title: String, host: [NSAttributedString.Key: Any]) async -> NSAttributedString {
-        let rendered = await renderer().render([.commentBadge(count: String(min(count, 99)), reviewURL: href, title: title)])
+    func bubble(count: Int, href: String, title: String, traits: CommentBubbleTraits = .plain,
+                host: [NSAttributedString.Key: Any]) async -> NSAttributedString {
+        let rendered = await renderer().render([.commentBadge(count: String(count), reviewURL: href, title: title, traits: traits)])
         let piece = NSMutableAttributedString(attributedString: rendered)
         // The renderer ends a top-level run with its paragraph's line break; the bubble joins a
         // paragraph that has its own.
@@ -81,7 +83,7 @@ struct ReaderCommentPieces {
         for (position, bubble) in placements.bubbles.sorted(by: { $0.key < $1.key }) {
             guard paragraphs.indices.contains(position), paragraphs[position].range.length > 0 else { continue }
             let host = built.attributes(at: NSMaxRange(paragraphs[position].range) - 1, effectiveRange: nil)
-            let piece = await self.bubble(count: bubble.count, href: bubble.href, title: bubble.title, host: host)
+            let piece = await self.bubble(count: bubble.count, href: bubble.href, title: bubble.title, traits: bubble.traits, host: host)
             guard piece.length > 0 else { continue }
             decorations.paragraphs[position, default: .init()].trailing = piece
         }

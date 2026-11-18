@@ -330,7 +330,7 @@ struct ModuleScriptAndCommentsTests {
                               "list": ["items": "$.list[*]", "text": "$.content", "author": "$.user"]]
         block["counts"] = ["request": ["url": "https://example.com/c/{{chapterId}}/counts"],
                            "list": ["items": "$.paragraphs[*]", "count": "$.n", "quote": "$.text", "index": "$.no", "id": "$.pid",
-                                    "title": "$.isTitle"]]
+                                    "title": "$.isTitle", "hot": "$.hot", "voice": "$.voice"]]
         block["hot"] = ["request": ["url": "https://example.com/c/{{chapterId}}/hot"],
                         "list": ["items": "$.hot[*]", "text": "$.content", "author": "$.user", "likes": "$.likes", "quote": "$.para"]]
         block["authorSay"] = ["request": ["url": "https://example.com/c/{{chapterId}}/say"], "text": "$.say", "author": "$.author"]
@@ -367,7 +367,7 @@ struct ModuleScriptAndCommentsTests {
         ModuleStub.install([
             "example.com/s": .json(#"{"books":[{"title":"長夜","author":"某作者","href":"/b/7","id":7}]}"#),
             "example.com/b/7/chapters": .json(Self.remoteChapters),
-            "example.com/c/a3/counts": .json(#"{"paragraphs":[{"pid":"-1","n":5,"isTitle":true},{"pid":"p9","no":2,"n":"12条","text":"　　風，起了。","isTitle":false},{"pid":"p10","no":3,"n":0,"text":"沒有評論的段"}]}"#),
+            "example.com/c/a3/counts": .json(#"{"paragraphs":[{"pid":"-1","n":5,"isTitle":true},{"pid":"p9","no":2,"n":"12条","text":"　　風，起了。","isTitle":false,"hot":true,"voice":1},{"pid":"p10","no":3,"n":0,"text":"沒有評論的段"}]}"#),
             "example.com/c/a3/hot": .status(502),
             "example.com/c/a3/say": .json(#"{"say":"今天兩更。","author":"某作者"}"#),
             "example.com/c/a3": .json(#"{"total":"128条","list":[{"content":"伏筆。","user":"甲","likes":9}]}"#),
@@ -376,8 +376,9 @@ struct ModuleScriptAndCommentsTests {
         let thread = try #require(await ChapterComments.thread(for: query("第三章 風起"), library: f.library, order: f.order, client: f.client))
         let notes = await ChapterComments.notes(in: thread, client: f.client)
         #expect(notes.counts == [ModuleParagraphCount(paragraph: .init(quote: "", index: nil, id: "-1", isTitle: true), count: 5),
-                                 ModuleParagraphCount(paragraph: .init(quote: "风起了", index: 2, id: "p9"), count: 12)],
-                "the title's, told by the module's `title` rule; a paragraph with no comments has no bubble")
+                                 ModuleParagraphCount(paragraph: .init(quote: "风起了", index: 2, id: "p9"), count: 12,
+                                                      isHot: true, hasVoice: true)],
+                "the title's, told by the module's `title` rule; the paragraph's hot and spoken, by `hot` and `voice`; a paragraph with no comments has no bubble")
         #expect(notes.hot.isEmpty && notes.authorSay == ModuleAuthorSay(text: "今天兩更。", author: "某作者"))
         let chapter = try await ChapterComments.comments(in: thread, sort: nil, page: 1, client: f.client)
         #expect(chapter.total == 128 && chapter.comments.map(\.text) == ["伏筆。"])
@@ -513,7 +514,8 @@ struct ModuleScriptAndCommentsTests {
         let decorator = ReaderChapterCommentDecorator { _ in
             var notes = RuleModuleChapterNotes(fetchedAt: .now)
             notes.counts = [ModuleParagraphCount(paragraph: .init(quote: "", index: nil, id: "-1", isTitle: true), count: 5),
-                            ModuleParagraphCount(paragraph: .init(quote: ChapterParagraphMatch.fold("他推開門"), index: nil, id: "p9"), count: 12)]
+                            ModuleParagraphCount(paragraph: .init(quote: ChapterParagraphMatch.fold("他推開門"), index: nil, id: "p9"), count: 12,
+                                                 isHot: true, hasVoice: true)]
             return .init(thread: thread, notes: notes, top: [WorkReview(text: "好看", author: "讀者", likes: 3)], total: 128)
         }
         func placements(spine: Int, _ paragraphs: [String]) async throws -> ReaderCommentPlacements? {
@@ -534,9 +536,136 @@ struct ModuleScriptAndCommentsTests {
         #expect(target?.thread == thread && target?.paragraphID == "-1" && target?.heading == "第三章 風起",
                 "it opens the title's comments")
         #expect(drawn.bubbles[3]?.count == 12 && drawn.bubbles.count == 2, "the paragraph keeps its own")
+        #expect(drawn.bubbles[3]?.traits == CommentBubbleTraits(isHot: true, hasVoice: true) && placed.traits == .plain,
+                "a bubble says what the site says of its paragraph")
         #expect(drawn.chapterEnd.map(\.content.kind) == [.chapterSay], "the 本章說 card stays after the chapter")
 
         let untitled = try #require(try await placements(spine: 4, Array(paragraphs.dropFirst(2))))
         #expect(Array(untitled.bubbles.keys) == [1], "the text does not begin with its title: the title's has nowhere to go")
+    }
+
+    // MARK: - Writers, 樓中樓, and a 來源配置's page in the app's list
+
+    /// A paragraph's comments with their writers' pictures, titles and floors, the replies the
+    /// page shows, a request for all of them, and the 來源配置 page the module reads.
+    private func richBlock() -> [String: Any] {
+        var block = notesBlock()
+        block["paragraph"] = [
+            "request": ["url": "https://example.com/c/{{chapterId}}/p/{{paragraphId}}?p={{page}}"],
+            "list": ["items": "$.list[*]", "text": "$.content", "author": "$.user", "id": "$.cid", "avatar": "$.face",
+                     "badge": "$.fans", "floor": "$.floor", "replyCount": "$.replyNum", "quote": "$.quote", "meta": "$.meta",
+                     "images": "$.pics[*]", "voice": "$.voice", "isAuthor": "$.isAuthor",
+                     "replies": ["items": "$.replies[*]", "text": "$.content", "author": "$.user", "badge": "$.fans",
+                                 "isAuthor": "$.isAuthor"]],
+        ]
+        block["replies"] = ["request": ["url": "https://example.com/r/{{commentId}}?p={{page}}"],
+                            "list": ["items": "$.list[*]", "text": "$.content", "author": "$.user", "id": "$.rid"]]
+        block["sourcePages"] = [
+            ["hosts": ["comments.example.net", "*.proxy.example.org"], "path": "^/comments$",
+             "query": ["id": "bookId", "chapterId": "chapterId", "paragraphId": "paragraphId"]],
+            ["hosts": ["example.net"], "path": "^/book/(?<id>\\d+)/chapter/(?<chapterId>\\d+)/comments$"],
+        ]
+        return block
+    }
+
+    @Test("replies are asked by a comment's id, and a 來源配置 page is told by its host, path and named parts only")
+    func richValidated() throws {
+        let accepted = try RuleModuleValidator.validate(module(["search": search, "comments": richBlock()]), appVersion: "3.0.2")
+        #expect(accepted.comments?.replies != nil && accepted.comments?.sourcePages?.count == 2)
+        var noID = richBlock()
+        var paragraph = noID["paragraph"] as! [String: Any]
+        var list = paragraph["list"] as! [String: Any]
+        list["id"] = nil
+        paragraph["list"] = list
+        noID["paragraph"] = paragraph
+        #expect(rejection(module(["search": search, "comments": noID])) == .missingField("comments.chapter.list.id"),
+                "without an id no comment's replies could be asked for")
+        var unnamed = richBlock()
+        unnamed["replies"] = ["request": ["url": "https://example.com/c/{{chapterId}}/replies"],
+                              "list": ["items": "$.list[*]", "text": "$.content"]]
+        #expect(rejection(module(["search": search, "comments": unnamed])) == .missingField("comments.replies.request.url {{commentId}}"))
+        var token = richBlock()
+        token["sourcePages"] = [["hosts": ["example.net"], "query": ["chapterId": "cid", "token": "token"]]]
+        #expect(rejection(module(["search": search, "comments": token])) == .unknownValue(field: "comments.sourcePages[0].query", value: "token"),
+                "a source's token is never a value")
+        var group = richBlock()
+        group["sourcePages"] = [["hosts": ["example.net"], "path": "^/c/(?<chapterId>\\d+)/(?<secret>\\w+)$"]]
+        #expect(rejection(module(["search": search, "comments": group])) == .unknownValue(field: "comments.sourcePages[0].path", value: "secret"))
+        var chapterless = richBlock()
+        chapterless["sourcePages"] = [["hosts": ["example.net"], "query": ["id": "bookId"]]]
+        #expect(rejection(module(["search": search, "comments": chapterless])) == .missingField("comments.sourcePages[0].query.chapterId"))
+        var anyHost = richBlock()
+        anyHost["sourcePages"] = [["hosts": ["*"], "query": ["chapterId": "cid"]]]
+        #expect(rejection(module(["search": search, "comments": anyHost])) == .unknownValue(field: "comments.sourcePages[0].hosts", value: "*"))
+    }
+
+    @Test("a comment's writer, title, floor and the replies under it are read; all its replies by its id")
+    func richComments() async throws {
+        let f = try await fixture(["search": search, "comments": richBlock()], id: "c.rich")
+        defer { f.cleanUp() }
+        ModuleStub.install([
+            "example.com/s": .json(#"{"books":[{"title":"長夜","author":"某作者","href":"/b/7","id":7}]}"#),
+            "example.com/b/7/chapters": .json(Self.remoteChapters),
+            "example.com/c/a3/p/p9": .json(#"""
+            {"list":[{"cid":"c1","content":"這一段寫得好。","user":"乙","face":"//img.example.com/u/1.jpg","fans":"盟主","floor":"3",
+              "replyNum":"12","quote":"風，起了。","meta":"11-11 22:10 · 江蘇",
+              "pics":["//img.example.com/p/1.jpg","/p/2.jpg","ftp://example.com/p/3.jpg"],"voice":"https://cdn.example.com/v/1.mp3",
+              "replies":[{"content":"同意","user":"丙","fans":"學徒","isAuthor":true},{"content":"+1","user":"丁"}]},
+             {"content":"沒有回覆的評論","user":"戊","face":"javascript:alert(1)","isAuthor":"0","voice":"javascript:alert(1)"}]}
+            """#),
+            "example.com/r/c1": .json(#"{"list":[{"rid":"r1","content":"同意","user":"丙"},{"rid":"r2","content":"再看一次","user":"己"}]}"#),
+        ])
+        let thread = try #require(await ChapterComments.thread(for: query("第三章 風起"), library: f.library, order: f.order, client: f.client))
+        let found = try await ChapterComments.comments(in: thread, paragraphID: "p9", sort: nil, page: 1, client: f.client).comments
+        let first = try #require(found.first)
+        #expect(first.id == "c1" && first.avatar?.absoluteString == "https://img.example.com/u/1.jpg"
+                && first.badge == "盟主" && first.floor == "3" && first.replyCount == 12)
+        #expect(first.replies?.map(\.text) == ["同意", "+1"] && first.replies?.first?.badge == "學徒",
+                "the replies are read in their comment's scope")
+        #expect(found.last?.avatar == nil && found.last?.replies == nil && found.last?.id == nil, "only an http(s) picture")
+        #expect(first.quote == "風，起了。" && first.meta == "11-11 22:10 · 江蘇"
+                && first.voice?.absoluteString == "https://cdn.example.com/v/1.mp3" && first.isAuthor == nil)
+        #expect(first.images?.map(\.absoluteString) == ["https://img.example.com/p/1.jpg", "https://example.com/p/2.jpg"],
+                "pictures are http(s), a relative one resolved against the page")
+        #expect(first.replies?.first?.isAuthor == true && first.replies?.last?.isAuthor == nil, "a reply's 作者 is read in its scope")
+        #expect(found.last?.isAuthor == nil && found.last?.voice == nil, "「0」 is not the author; only an http(s) clip")
+        #expect(first.byline(locale: Locale(identifier: "zh-Hant"), includesAuthor: false) == "11-11 22:10 · 江蘇",
+                "the site's own when-and-where stands for the day")
+        #expect(first.floorText == String(format: localized("%@ 樓"), "3") && WorkReview(text: "x", floor: "沙發").floorText == "沙發")
+        let spoken = first.spokenText(locale: Locale(identifier: "zh-Hant"))
+        #expect(spoken.contains("盟主") && spoken.contains("同意"), "VoiceOver hears the title and the replies the card shows")
+        #expect(spoken.contains("風，起了。") && spoken.contains(String(format: localized("%d 張配圖"), 2))
+                && spoken.contains(localized("有語音")), "and the quote, the pictures and the voice clip")
+        #expect(!ChapterCommentsModel.listsReplies(of: WorkReview(text: "x", replies: [WorkReview(text: "a"), WorkReview(text: "b")]),
+                                                    in: nil, shown: 2)
+                && ChapterCommentsModel.listsReplies(of: WorkReview(text: "x", replies: [WorkReview(text: "a"), WorkReview(text: "b")]),
+                                                     in: nil, shown: 1),
+                "查看全部 follows how many replies 評論列表 shows")
+        #expect(ChapterCommentsModel.listsReplies(of: first, in: thread) && !ChapterCommentsModel.listsReplies(of: found[1], in: thread))
+
+        let model = ChapterCommentsModel(repliesTo: first, in: thread, paragraphID: "p9")
+        let all = try await ChapterComments.replies(in: thread, paragraphID: "p9", commentID: "c1", page: 1, client: f.client)
+        #expect(all.map(\.text) == ["同意", "再看一次"] && model.sorts.isEmpty && model.parent == first)
+        #expect(ModuleStub.urls.last == "https://example.com/r/c1?p=1")
+    }
+
+    @Test("a 來源配置's comment page a module reads opens that module's comments; the rest of its address is never kept")
+    func sourcePages() throws {
+        let module = try RuleModuleValidator.validate(module(["search": search, "comments": richBlock()]), appVersion: "3.0.2")
+        let byQuery = try #require(ModuleCommentSourcePages.target(
+            address: "https://cdn.proxy.example.org/comments?token=SECRET&bookId=7&chapterId=a3&paragraphId=p9", modules: [module]))
+        #expect(byQuery.thread.record.id == "7" && byQuery.thread.chapter.id == "a3" && byQuery.paragraphID == "p9"
+                && byQuery.heading.isEmpty)
+        #expect(!String(describing: byQuery).contains("SECRET"), "the token stays in the source's address")
+        let byPath = try #require(ModuleCommentSourcePages.target(address: "https://example.net/book/7/chapter/42/comments",
+                                                                 modules: [module]))
+        #expect(byPath.thread.chapter.id == "42" && byPath.paragraphID == nil && byPath.thread.record.id == "7")
+        #expect(ModuleCommentSourcePages.target(address: "https://example.net/book/7/chapter/42/comments/x", modules: [module]) == nil,
+                "the whole path must match")
+        #expect(ModuleCommentSourcePages.target(address: "https://other.example.com/comments?bookId=7&chapterId=a3", modules: [module]) == nil)
+        #expect(ModuleCommentSourcePages.target(address: "https://comments.example.net/comments?bookId=7", modules: [module]) == nil,
+                "no chapter: not this page")
+        #expect(ModuleCommentSourcePages.target(address: "https://comments.example.net/comments?chapterId=a3", modules: [module]) == nil,
+                "the module's requests need the record's id")
     }
 }

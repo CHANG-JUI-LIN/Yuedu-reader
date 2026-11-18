@@ -36,10 +36,42 @@ struct ModuleParagraphReference: Codable, Hashable, Sendable {
     var isTitle = false
 }
 
+extension ModuleParagraphReference {
+    private enum CodingKeys: String, CodingKey { case quote, index, id, isTitle }
+
+    /// A cached chapter's notes written before `isTitle` read as about no title.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        quote = try container.decode(String.self, forKey: .quote)
+        index = try container.decodeIfPresent(Int.self, forKey: .index)
+        id = try container.decode(String.self, forKey: .id)
+        isTitle = try container.decodeIfPresent(Bool.self, forKey: .isTitle) ?? false
+    }
+}
+
 /// 段評: a paragraph and how many comments it has.
 struct ModuleParagraphCount: Codable, Hashable, Sendable {
     var paragraph: ModuleParagraphReference
     var count: Int
+    /// The site marks the paragraph's comments as hot (the module's `hot` rule): its bubble
+    /// wears the style's emphasis colour.
+    var isHot = false
+    /// Among the paragraph's comments is a spoken one (the module's `voice` rule): its bubble
+    /// is the style's voice version.
+    var hasVoice = false
+}
+
+extension ModuleParagraphCount {
+    private enum CodingKeys: String, CodingKey { case paragraph, count, isHot, hasVoice }
+
+    /// A cached chapter's notes written before the flags read as neither.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paragraph = try container.decode(ModuleParagraphReference.self, forKey: .paragraph)
+        count = try container.decode(Int.self, forKey: .count)
+        isHot = try container.decodeIfPresent(Bool.self, forKey: .isHot) ?? false
+        hasVoice = try container.decodeIfPresent(Bool.self, forKey: .hasVoice) ?? false
+    }
 }
 
 /// 熱評: a picked comment and the paragraph it is under.
@@ -77,6 +109,7 @@ extension RuleModuleClient {
     nonisolated static func canAskComments(of item: RuleListItem, by comments: RuleModule.Comments) -> Bool {
         let requests = [comments.chapters.request, comments.chapter.request] + [
             comments.paragraph?.request, comments.counts?.request, comments.hot?.request, comments.authorSay?.request,
+            comments.replies?.request,
         ].compactMap { $0 }
         let names = Set(requests.flatMap { request in
             RuleModuleValidator.templateNames(in: request.url + (request.body ?? "") + (request.headers ?? [:]).values.joined())
@@ -147,6 +180,35 @@ extension RuleModuleClient {
         let scripts = module.scripts
         let read = await Self.readComments(answer.text, baseURL: answer.baseURL, by: block.list, total: block.total, scripts: scripts)
         SourcePerfTrace.record("module.comments.page", "module=\(module.id) page=\(page) comments=\(read.comments.count)",
+                               since: started, thresholdMs: 0)
+        if duration > 0 {
+            save(RuleModuleCommentPage(comments: read.comments, total: read.total, fetchedAt: now(), version: module.version), to: file)
+        }
+        return read
+    }
+
+    static let commentRepliesCacheName = "~commentReplies"
+
+    /// One page of a comment's replies (`comments.replies`), `page` from 1, and the site's count
+    /// of them all. The comment is the chapter's, or with `paragraphID` that paragraph's.
+    func commentReplies(commentID: String, chapterID: String, paragraphID: String?, of item: RuleListItem, page: Int,
+                        by comments: RuleModule.Comments, in module: RuleModule) async throws -> (comments: [WorkReview], total: Int?) {
+        guard let block = comments.replies else { return ([], nil) }
+        let values = module.withGlobalValues([
+            "id": item.id ?? "", "url": item.bookUrl, "chapterId": chapterID, "paragraphId": paragraphID ?? "",
+            "commentId": commentID, "page": String(page),
+        ], language: nil)
+        let file = cacheFile(module: module.id, entry: Self.commentRepliesCacheName, values: values)
+        let duration = TimeInterval(max(comments.cacheDuration ?? 0, 0))
+        if duration > 0, let cached = cached(RuleModuleCommentPage.self, at: file), cached.version == module.version,
+           now().timeIntervalSince(cached.fetchedAt) < duration {
+            return (cached.comments, cached.total)
+        }
+        let started = SourcePerfTrace.now
+        let answer = try await perform(block.request, values: values, in: module)
+        let read = await Self.readComments(answer.text, baseURL: answer.baseURL, by: block.list.asReviewRules, total: block.total,
+                                           scripts: module.scripts)
+        SourcePerfTrace.record("module.comments.replies", "module=\(module.id) page=\(page) replies=\(read.comments.count)",
                                since: started, thresholdMs: 0)
         if duration > 0 {
             save(RuleModuleCommentPage(comments: read.comments, total: read.total, fetchedAt: now(), version: module.version), to: file)
@@ -254,7 +316,12 @@ extension RuleModuleClient {
             engine.setContent(element, baseUrl: baseURL)
             guard let count = number(engine.getString(ruleStr: block.list.count)), count > 0,
                   let paragraph = paragraph(block.list.paragraph, engine: engine) else { continue }
-            counts.append(ModuleParagraphCount(paragraph: paragraph, count: count))
+            func flag(_ rule: String?) -> Bool {
+                guard let rule, !rule.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+                return LegadoTruth.isTrue(engine.getString(ruleStr: rule))
+            }
+            counts.append(ModuleParagraphCount(paragraph: paragraph, count: count,
+                                               isHot: flag(block.list.hot), hasVoice: flag(block.list.voice)))
         }
         return (counts, total)
     }

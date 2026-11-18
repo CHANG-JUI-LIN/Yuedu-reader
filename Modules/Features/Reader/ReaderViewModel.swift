@@ -518,6 +518,13 @@ final class ReaderViewModel: ObservableObject {
         }
     }
 
+    /// A module drew comments into this book's text (`ReaderChapterCommentDecorator`): they are
+    /// styled in 氣泡設定 as a source's are, so the reader's settings offer it.
+    func recordModuleComments() {
+        guard !hasParagraphReviews else { return }
+        hasParagraphReviews = true
+    }
+
     /// Links are a string search, so they are checked here. A bubble without one takes
     /// decoding the chapter's SVGs until one is recognized, which is off the main actor.
     private func recordParagraphReviewsIfPresent(in content: String) {

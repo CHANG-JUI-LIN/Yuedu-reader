@@ -14,12 +14,68 @@ struct WorkReview: Codable, Hashable, Sendable {
     var rating: Double?
     /// How many readers marked it helpful.
     var likes: Int?
+    /// The site's own id of the comment: its replies' `{{commentId}}`.
+    var id: String?
+    /// The writer's picture, an http(s) address.
+    var avatar: URL?
+    /// The title the site gives the writer beside their name (起點's 粉絲稱號: 盟主, 學徒).
+    var badge: String?
+    /// Its place in the thread as the site writes it (`3`, `沙發`).
+    var floor: String?
+    /// The replies the page shows under it (樓中樓), at most `replyLimit`; one level deep.
+    var replies: [WorkReview]?
+    /// How many replies it has in all, as the site says.
+    var replyCount: Int?
+    /// The words of the book it answers, as the site quotes them (段落原文引用).
+    var quote: String?
+    /// When and where, as the site writes it under a comment (`11-11 22:10 · 江蘇`): drawn in
+    /// place of the day, which a site's `3 小時前` has none of.
+    var meta: String?
+    /// The pictures it carries, http(s) addresses, at most `imageLimit`.
+    var images: [URL]?
+    /// The spoken comment it carries, an http(s) address of the audio.
+    var voice: URL?
+    /// The work's own author wrote it.
+    var isAuthor: Bool?
 
     /// Source-controlled text is bounded before it reaches SwiftUI's layout
     /// (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 4).
     static let textLimit = 2_000
     static let titleLimit = 120
     static let authorLimit = 60
+    static let idLimit = 120
+    static let badgeLimit = 20
+    static let floorLimit = 12
+    static let replyLimit = 20
+    static let quoteLimit = 300
+    static let metaLimit = 60
+    static let imageLimit = 9
+
+    init(title: String? = nil, text: String, author: String? = nil, date: Date? = nil, rating: Double? = nil,
+         likes: Int? = nil, id: String? = nil, avatar: URL? = nil, badge: String? = nil, floor: String? = nil,
+         replies: [WorkReview]? = nil, replyCount: Int? = nil, quote: String? = nil, meta: String? = nil,
+         images: [URL]? = nil, voice: URL? = nil, isAuthor: Bool? = nil) {
+        self.quote = quote
+        self.meta = meta
+        self.images = images
+        self.voice = voice
+        self.isAuthor = isAuthor
+        self.title = title
+        self.text = text
+        self.author = author
+        self.date = date
+        self.rating = rating
+        self.likes = likes
+        self.id = id
+        self.avatar = avatar
+        self.badge = badge
+        self.floor = floor
+        self.replies = replies
+        self.replyCount = replyCount
+    }
+
+    /// How many replies it has, as the site says, else as many as the page showed.
+    var knownReplyCount: Int { max(replyCount ?? 0, replies?.count ?? 0) }
 }
 
 /// A work's rating as a whole.

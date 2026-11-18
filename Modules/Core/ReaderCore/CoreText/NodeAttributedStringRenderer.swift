@@ -632,8 +632,8 @@ struct NodeAttributedStringRenderer: Sendable {
             }
             return rendered
 
-        case .commentBadge(let count, let reviewURL, let title):
-            return await renderCommentBadge(count: count, reviewURL: reviewURL, title: title, ctx: ctx)
+        case .commentBadge(let count, let reviewURL, let title, let traits):
+            return await renderCommentBadge(count: count, reviewURL: reviewURL, title: title, traits: traits, ctx: ctx)
 
         case .ruby(let base, let text, let style):
             let childCtx = applyInlineStyle(style, to: ctx)
@@ -1396,6 +1396,7 @@ struct NodeAttributedStringRenderer: Sendable {
         count: String,
         reviewURL: String,
         title: String,
+        traits: CommentBubbleTraits,
         ctx: RenderContext
     ) async -> NSAttributedString {
         let badgeColor = ctx.textColor.withAlphaComponent(0.55)
@@ -1405,6 +1406,7 @@ struct NodeAttributedStringRenderer: Sendable {
         // broken SVG template by silently switching to a second rendering implementation.
         guard let image = CommentBubbleSVGRecognizer.commentBadgeImage(
             count: count,
+            traits: traits,
             pointSize: ctx.font.pointSize,
             themeTextColor: badgeColor
         ) else {

@@ -88,7 +88,13 @@ extension RuleModuleClient {
     /// The page's reviews, or a chapter's comments (`comments.chapter.list`): one rule set reads both.
     nonisolated static func readList(_ rules: RuleModule.ReviewRules, in text: String, baseURL: String, scale: Double,
                                      engine: ModernRuleEngine) -> [WorkReview] {
-        engine.setContent(text, baseUrl: baseURL)
+        readList(rules, scope: text, baseURL: baseURL, scale: scale, engine: engine)
+    }
+
+    /// The list in `scope`: a page, or one comment's element for the replies under it.
+    nonisolated private static func readList(_ rules: RuleModule.ReviewRules, scope: Any, baseURL: String, scale: Double,
+                                             engine: ModernRuleEngine) -> [WorkReview] {
+        engine.setContent(scope, baseUrl: baseURL)
         var found: [WorkReview] = []
         for element in engine.getElements(ruleStr: rules.items) {
             guard found.count < reviewLimit else { break }
@@ -100,15 +106,48 @@ extension RuleModuleClient {
                 let value = OPDSClient.plainMetadata(engine.getString(ruleStr: rule), limit: limit)
                 return value.isEmpty ? nil : value
             }
-            found.append(WorkReview(
+            var review = WorkReview(
                 title: line(rules.title, limit: WorkReview.titleLimit),
                 text: body,
                 author: line(rules.author, limit: WorkReview.authorLimit),
                 date: line(rules.date, limit: 40).flatMap(date(from:)),
                 rating: line(rules.rating, limit: 20).flatMap { stars($0, outOf: scale) },
-                likes: line(rules.likes, limit: 20).flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil }))
+                likes: line(rules.likes, limit: 20).flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil },
+                id: line(rules.id, limit: WorkReview.idLimit),
+                avatar: line(rules.avatar, limit: 2_000).flatMap { webURL($0, baseURL: baseURL) },
+                badge: line(rules.badge, limit: WorkReview.badgeLimit),
+                floor: line(rules.floor, limit: WorkReview.floorLimit),
+                replyCount: line(rules.replyCount, limit: 20).flatMap(number).flatMap { $0 > 0 ? $0 : nil },
+                quote: line(rules.quote, limit: WorkReview.quoteLimit),
+                meta: line(rules.meta, limit: WorkReview.metaLimit),
+                images: rules.images.flatMap { rule in
+                    let urls = engine.getStringList(ruleStr: rule).lazy.compactMap { webURL($0, baseURL: baseURL) }
+                    let found = Array(urls.prefix(WorkReview.imageLimit))
+                    return found.isEmpty ? nil : found
+                },
+                voice: line(rules.voice, limit: 2_000).flatMap { webURL($0, baseURL: baseURL) },
+                isAuthor: rules.isAuthor.flatMap { rule in
+                    rule.isEmpty ? nil : (LegadoTruth.isTrue(engine.getString(ruleStr: rule)) ? true : nil)
+                })
+            // Last: the replies are read in the comment's scope, and leave the engine in theirs.
+            if let replyRules = rules.replies {
+                let replies = Array(readList(replyRules.asReviewRules, scope: element, baseURL: baseURL, scale: scale,
+                                             engine: engine).prefix(WorkReview.replyLimit))
+                review.replies = replies.isEmpty ? nil : replies
+            }
+            found.append(review)
         }
         return found
+    }
+
+    /// A comment's picture, audio or writer's face: an http(s) address, a relative one resolved
+    /// against the page's.
+    nonisolated static func webURL(_ text: String, baseURL: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = trimmed.hasPrefix("//") ? "https:" + trimmed : trimmed
+        guard let url = URL(string: resolved, relativeTo: URL(string: baseURL))?.absoluteURL,
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http", url.host != nil else { return nil }
+        return url
     }
 
     /// A site's number as stars out of `WorkRating.stars`; nil for no number, zero (unrated), or

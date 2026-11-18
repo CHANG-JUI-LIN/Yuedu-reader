@@ -4,6 +4,9 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
     var id: UUID
     var name: String
     var svg: String
+    /// The style's voice version, for a paragraph with a spoken comment: the same `${color}` /
+    /// `__TEXT__` conventions as `svg`. Nil draws `svg` with a sound wave under its count.
+    var voiceSVG: String?
     /// Last local edit time, stamped by `ReaderCommentBubbleCustomStyleLibrary.upserting`.
     /// Drives the iCloud last-write-wins merge clock (`updatedAt` in the sync
     /// record); nil for styles that predate the sync feature (old UserDefaults
@@ -14,8 +17,7 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
     var sizeScale: Double?
     /// Text-color hex strings (e.g. `#808080`) materialized into the `${color}`
     /// SVG placeholder at render time. Both day & night, each split into a
-    /// normal colour and an "emphasis" colour used when the count overflows (`99+`)
-    /// or numerically reaches 100+.
+    /// normal colour and an "emphasis" colour for a paragraph the site marks hot.
     var dayEmphasisColor: String?
     var dayNormalColor: String?
     var nightEmphasisColor: String?
@@ -25,6 +27,7 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
         id: UUID = UUID(),
         name: String,
         svg: String,
+        voiceSVG: String? = nil,
         updatedAt: Date? = nil,
         sizeScale: Double? = nil,
         dayEmphasisColor: String? = nil,
@@ -35,6 +38,7 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
         self.id = id
         self.name = name
         self.svg = svg
+        self.voiceSVG = voiceSVG
         self.updatedAt = updatedAt
         self.sizeScale = sizeScale
         self.dayEmphasisColor = dayEmphasisColor
@@ -47,33 +51,22 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
     /// the `${color}` / `${num}` placeholder convention) and therefore benefits
     /// from color materialization at render time.
     var usesColorTemplate: Bool {
-        let normal = svg.lowercased()
-        return normal.contains("${color}") || normal.contains("${num}")
-    }
-
-    /// Returns the hex color to substitute for `${color}` given the count text
-    /// (`"12"`, `"99+"`, …) and whether the reader is currently in night mode.
-    /// Falls back to a neutral gray when the JSON did not specify a slot.
-    func resolvedColorHex(forCount count: String, isNight: Bool) -> String {
-        slotColorHex(forCount: count, isNight: isNight) ?? "#808080"
-    }
-
-    /// The slot colour for this count, or nil when the style left that slot empty — for a
-    /// QiReader `__TEXT__` style that means "follow the reading theme" (`AUTO`).
-    func slotColorHex(forCount count: String, isNight: Bool) -> String? {
-        let emphasis = Self.isEmphasisCount(count)
-        if isNight {
-            return emphasis ? nightEmphasisColor : nightNormalColor
+        [svg, voiceSVG ?? ""].contains { template in
+            let normal = template.lowercased()
+            return normal.contains("${color}") || normal.contains("${num}")
         }
-        return emphasis ? dayEmphasisColor : dayNormalColor
     }
 
-    /// "Emphasis" is triggered when the displayed count overflows (`99+`, `100+`)
-    /// or the numeric value reaches 100. Plain two-digit counts use the normal slot.
-    static func isEmphasisCount(_ count: String) -> Bool {
-        let trimmed = count.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.contains("+") { return true }
-        return (Int(trimmed) ?? 0) >= 100
+    /// The slot colour for a bubble, or nil when the style left that slot empty — for a
+    /// QiReader `__TEXT__` style that means "follow the reading theme" (`AUTO`).
+    ///
+    /// The emphasis slot is for a paragraph the site marks hot, never for a count's size
+    /// (maintainer 2026-11-17: 分色 follows what the site marks).
+    func slotColorHex(isHot: Bool, isNight: Bool) -> String? {
+        if isNight {
+            return isHot ? nightEmphasisColor : nightNormalColor
+        }
+        return isHot ? dayEmphasisColor : dayNormalColor
     }
 }
 
@@ -90,6 +83,8 @@ struct BubblePackageFile: Codable {
     var nightNormalColor: String?
     var sizeScale: Double?
     var svgTemplate: String?
+    /// The style's voice version (`ReaderCommentBubbleCustomStyle.voiceSVG`); Yuedu's own key.
+    var voiceSvgTemplate: String?
 
     /// Builds a custom style from the package, taking the SVG template verbatim
     /// (placeholders preserved so the renderer can substitute `${color}` per
@@ -108,6 +103,10 @@ struct BubblePackageFile: Codable {
             id: id,
             name: resolvedName,
             svg: svg,
+            voiceSVG: voiceSvgTemplate.flatMap {
+                let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            },
             sizeScale: sizeScale,
             dayEmphasisColor: dayEmphasisColor,
             dayNormalColor: dayNormalColor,
@@ -129,7 +128,8 @@ extension BubblePackageFile {
             nightEmphasisColor: style.nightEmphasisColor,
             nightNormalColor: style.nightNormalColor,
             sizeScale: style.sizeScale,
-            svgTemplate: style.svg
+            svgTemplate: style.svg,
+            voiceSvgTemplate: style.voiceSVG
         )
     }
 }
@@ -140,6 +140,7 @@ extension ReaderCommentBubbleCustomStyle {
         usesColorTemplate
             || [dayEmphasisColor, dayNormalColor, nightEmphasisColor, nightNormalColor].contains { $0 != nil }
             || sizeScale != nil
+            || voiceSVG != nil
     }
 
     /// Attempts to parse a `bubble.json` package from raw file contents.

@@ -78,6 +78,57 @@ struct CommentBubbleSVG {
             opacity: opacity
         )
     }
+
+    /// The voice version of a bubble that has none of its own (maintainer 2026-11-17: a
+    /// paragraph with a spoken comment shows a sound wave under its count, as 起點's does):
+    /// the count made smaller and lifted, five bars under it in the count's colour. A bubble
+    /// with no count gets the wave low in its middle.
+    func addingVoiceWave(themeTextColor: UIColor) -> CommentBubbleSVG {
+        let textIndex = elements.firstIndex { if case .text = $0 { return true } else { return false } }
+        var elements = elements
+        let unit: CGFloat
+        let center: CGPoint
+        let color: UIColor
+        let transform: CGAffineTransform
+        if let textIndex, case let .text(text, x, y, fontSize, family, weight, anchor, textColor, textTransform, baseline) = elements[textIndex] {
+            // Where the count's middle is, from the point the SVG anchors it on.
+            let middleY = baseline == .alphabetic ? y - fontSize * 0.35 : y
+            let middleX: CGFloat
+            switch anchor?.lowercased() {
+            case "middle": middleX = x
+            case "end": middleX = x - fontSize * 0.5
+            default: middleX = x + fontSize * 0.5
+            }
+            let smaller = fontSize * 0.72
+            let liftedMiddle = middleY - fontSize * 0.28
+            elements[textIndex] = .text(
+                text: text, x: x, y: baseline == .alphabetic ? liftedMiddle + smaller * 0.35 : liftedMiddle,
+                fontSize: smaller, fontFamily: family, fontWeight: weight, anchor: anchor, color: textColor,
+                transform: textTransform, baseline: baseline)
+            unit = fontSize
+            center = CGPoint(x: middleX, y: middleY + fontSize * 0.36)
+            color = textColor ?? themeTextColor
+            transform = textTransform
+        } else {
+            let box = viewBox.width > 0 && viewBox.height > 0 ? viewBox : CGRect(x: 0, y: 0, width: width, height: height)
+            unit = box.height * 0.4
+            center = CGPoint(x: box.midX, y: box.maxY - box.height * 0.22)
+            color = themeTextColor
+            transform = .identity
+        }
+        let barWidth = unit * 0.08
+        let gap = unit * 0.07
+        let heights: [CGFloat] = [0.45, 0.8, 1, 0.8, 0.45].map { $0 * unit * 0.36 }
+        var left = center.x - (CGFloat(heights.count) * barWidth + CGFloat(heights.count - 1) * gap) / 2
+        for height in heights {
+            elements.append(.rect(x: left, y: center.y - height / 2, width: barWidth, height: height,
+                                  rx: barWidth / 2, ry: barWidth / 2, strokeColor: nil, strokeWidth: nil,
+                                  fillColor: color, transform: transform))
+            left += barWidth + gap
+        }
+        return CommentBubbleSVG(viewBox: viewBox, width: width, height: height, elements: elements,
+                                viewBoxFit: viewBoxFit, opacity: opacity)
+    }
 }
 
 extension CommentBubbleSVG.Element {
@@ -127,18 +178,30 @@ struct CommentBubbleSVGRecognizer {
     </svg>
     """
 
+    /// The colour the app's own two bubbles are drawn in.
+    private static let builtinBubbleColor = "color:#8E8E93"
+
+    /// - Parameter isHot: the app's own bubbles are drawn in `DSUIColor.commentBubbleHot`; a
+    ///   custom style's comes from its emphasis slot (`materializeTemplateColors`).
     static func templateSVG(
         for mode: ReaderCommentBubblePresetMode,
-        customSVG: String
+        customSVG: String,
+        isHot: Bool = false
     ) -> String {
         switch mode {
         case .builtin:
-            return builtinBubbleSVG
+            return builtinTemplate(builtinBubbleSVG, isHot: isHot)
         case .square:
-            return squareBubbleSVG
+            return builtinTemplate(squareBubbleSVG, isHot: isHot)
         case .custom:
             return customSVG.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+    }
+
+    /// One of the app's own bubbles, in the hot colour when the site marks the paragraph hot.
+    static func builtinTemplate(_ svg: String, isHot: Bool) -> String {
+        guard isHot else { return svg }
+        return svg.replacingOccurrences(of: builtinBubbleColor, with: "color:\(hexString(DSUIColor.commentBubbleHot))")
     }
 
     // MARK: - Diagnostics (⟐ bubble) — deduped so a chapter's hundreds of bubbles
@@ -419,7 +482,8 @@ struct CommentBubbleSVGRecognizer {
         pointSize: CGFloat,
         themeTextColor: UIColor,
         recognizedBubble: CommentBubbleSVG? = nil,
-        sourceTextFace: BubbleTextFace = .declared
+        sourceTextFace: BubbleTextFace = .declared,
+        traits: CommentBubbleTraits = .plain
     ) -> UIImage? {
         // One read for the key and the image, so a settings change between them cannot file
         // an image drawn with the new settings under the old key.
@@ -432,7 +496,8 @@ struct CommentBubbleSVGRecognizer {
                 pointSize: pointSize,
                 themeTextColor: themeTextColor,
                 displayText: recognizedBubble?.displayText,
-                sourceTextFace: sourceTextFace
+                sourceTextFace: sourceTextFace,
+                traits: traits
             )
         }
         if let cached = bubbleImageCache.object(forKey: cacheKey) {
@@ -446,7 +511,8 @@ struct CommentBubbleSVGRecognizer {
             pointSize: pointSize,
             themeTextColor: themeTextColor,
             sourceBubble: recognizedBubble,
-            sourceTextFace: sourceTextFace
+            sourceTextFace: sourceTextFace,
+            traits: traits
         ) else { return nil }
         bubbleImageCache.setObject(image, forKey: cacheKey)
         noteBubbleCache(hit: false)
@@ -457,23 +523,30 @@ struct CommentBubbleSVGRecognizer {
     /// source-provided bubble images. A comment tag has no source SVG of its own, so the built-in
     /// template is the neutral source shape when the reader is set to follow source styling; the
     /// selected reader SVG is applied by `computeResolvedBubbleImage` when custom styling is on.
+    ///
+    /// The count is the app's to show, so it is shown up to the reader's 數字上限 whichever
+    /// mode draws it; `traits` (a module's site's say) make it the hot or the voice bubble.
     static func commentBadgeImage(
         count: String,
+        traits: CommentBubbleTraits = .plain,
         pointSize: CGFloat,
         themeTextColor: UIColor
     ) -> UIImage? {
-        guard let template = recognize(src: "", svgContent: builtinBubbleSVG) else {
+        let svg = builtinTemplate(builtinBubbleSVG, isHot: traits.isHot)
+        guard let template = recognize(src: "", svgContent: svg) else {
             return nil
         }
+        let shown = CommentBubbleCount.displayText(count, maximum: GlobalSettings.snapshot.commentBubbleMaxCount)
         return resolvedBubbleImage(
             src: "",
-            svgContent: builtinBubbleSVG,
+            svgContent: svg,
             pointSize: pointSize,
             themeTextColor: themeTextColor,
-            recognizedBubble: template.replacingDisplayText(with: count),
+            recognizedBubble: template.replacingDisplayText(with: shown),
             // The app's own template, not a source's SVG: its count reads in the reading
             // font, as a bubble package's does.
-            sourceTextFace: .reader
+            sourceTextFace: .reader,
+            traits: traits
         )
     }
 
@@ -488,7 +561,8 @@ struct CommentBubbleSVGRecognizer {
         pointSize: CGFloat,
         themeTextColor: UIColor,
         displayText: String?,
-        sourceTextFace: BubbleTextFace
+        sourceTextFace: BubbleTextFace,
+        traits: CommentBubbleTraits
     ) -> String {
         let identity = (svgContent?.isEmpty == false) ? svgContent! : src
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -501,7 +575,8 @@ struct CommentBubbleSVGRecognizer {
             // The whole style, not its length: an edit in place keeps the ID and can keep the
             // SVG's length (a colour swap), and the colour slots live beside the SVG.
             s.commentBubbleSelectedCustomStyle.map { style in
-                [style.svg, style.dayNormalColor, style.dayEmphasisColor, style.nightNormalColor, style.nightEmphasisColor]
+                [style.svg, style.voiceSVG, style.dayNormalColor, style.dayEmphasisColor, style.nightNormalColor,
+                 style.nightEmphasisColor]
                     .map { $0 ?? "-" }
                     .joined(separator: "/")
                     .hashValue
@@ -509,7 +584,9 @@ struct CommentBubbleSVGRecognizer {
             } ?? "-",
             String(format: "%.2f", s.commentBubbleScale),
             sourceTextFace.rawValue,
-            s.selectedReaderFontPostScript ?? "sys"
+            s.selectedReaderFontPostScript ?? "sys",
+            traits.signature,
+            String(s.commentBubbleMaxCount)
         ].joined(separator: "|")
         let textIdentity = displayText.map { "|T\($0)" } ?? ""
         return "\(identity.utf8.count)#\(identity.hashValue)\(textIdentity)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)"
@@ -522,38 +599,26 @@ struct CommentBubbleSVGRecognizer {
         pointSize: CGFloat,
         themeTextColor: UIColor,
         sourceBubble: CommentBubbleSVG? = nil,
-        sourceTextFace: BubbleTextFace
+        sourceTextFace: BubbleTextFace,
+        traits: CommentBubbleTraits = .plain
     ) -> UIImage? {
         guard let sourceBubble = sourceBubble ?? recognize(src: src, svgContent: svgContent) else {
             return nil
         }
         if settings.commentBubbleFollowsSourceSVG {
-            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
+            // A source's own SVG says neither (its traits are `.plain`); a module's bubble is
+            // the app's own, hot already in `commentBadgeImage`.
+            let bubble = traits.hasVoice ? sourceBubble.addingVoiceWave(themeTextColor: themeTextColor) : sourceBubble
+            return draw(svg: bubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
         }
 
-        let bubbleText = sourceBubble.displayText ?? "0"
-        var templateSource = ReaderDocumentTrace.measuringSync("bubbleTemplateSource") {
-            templateSVG(
-                for: settings.commentBubblePresetMode,
-                customSVG: settings.commentBubbleSelectedCustomStyle?.svg ?? ""
-            )
-        }
-        // Imported styles keep colour placeholders the parser cannot resolve; see
-        // `materializeTemplateColors`. Only the active template is touched — a retained
-        // custom artwork cannot change a builtin SVG.
-        if let style = settings.commentBubbleSelectedCustomStyle {
-            templateSource = materializeTemplateColors(
-                templateSource,
-                style: style,
-                count: bubbleText,
-                themeTextColor: themeTextColor
-            )
-        }
-        // The user picked this template explicitly, so it is parsed permissively — an
-        // artwork-only bubble (no <text>) draws its picture and simply shows no count.
-        let template = recognizeUserTemplate(templateSource)
-            ?? recognizeUserTemplate(builtinBubbleSVG)
-
+        let bubbleText = CommentBubbleCount.displayText(sourceBubble.displayText ?? "0",
+                                                        maximum: settings.commentBubbleMaxCount)
+        // A selected style that cannot be drawn falls back to the app's own bubble.
+        let template = styledTemplate(mode: settings.commentBubblePresetMode,
+                                      style: settings.commentBubbleSelectedCustomStyle,
+                                      traits: traits, themeTextColor: themeTextColor)
+            ?? styledTemplate(mode: .builtin, style: nil, traits: traits, themeTextColor: themeTextColor)
         guard let template else {
             return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
         }
@@ -566,6 +631,36 @@ struct CommentBubbleSVGRecognizer {
         )
     }
 
+    /// The reader's bubble for `mode` (and `style`, when it is `.custom`) as a bubble with
+    /// `traits` is drawn, its count still the template's: the reader and the style editor's
+    /// preview both draw this. Nil when the template cannot be read.
+    ///
+    /// A voice bubble is the style's own voice version when it has one, else its bubble with a
+    /// wave under the count (`addingVoiceWave`); a hot one wears the hot colour.
+    static func styledTemplate(
+        mode: ReaderCommentBubblePresetMode,
+        style: ReaderCommentBubbleCustomStyle?,
+        traits: CommentBubbleTraits,
+        themeTextColor: UIColor
+    ) -> CommentBubbleSVG? {
+        let voiceSVG = mode == .custom && traits.hasVoice
+            ? style?.voiceSVG.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } : nil
+        var templateSource = ReaderDocumentTrace.measuringSync("bubbleTemplateSource") {
+            voiceSVG ?? templateSVG(for: mode, customSVG: style?.svg ?? "", isHot: traits.isHot)
+        }
+        // Imported styles keep colour placeholders the parser cannot resolve; see
+        // `materializeTemplateColors`. A builtin SVG has none, so a retained custom style
+        // cannot change it.
+        if let style {
+            templateSource = materializeTemplateColors(templateSource, style: style, isHot: traits.isHot,
+                                                       themeTextColor: themeTextColor)
+        }
+        // The user picked this template explicitly, so it is parsed permissively — an
+        // artwork-only bubble (no <text>) draws its picture and simply shows no count.
+        guard let template = recognizeUserTemplate(templateSource) else { return nil }
+        return traits.hasVoice && voiceSVG == nil ? template.addingVoiceWave(themeTextColor: themeTextColor) : template
+    }
+
     /// Resolves the colour placeholders an imported style carries into concrete hex, before
     /// recognition (the parser only reads real hex/rgb colours). Shared by the reader and the
     /// settings preview so both draw the same bubble.
@@ -575,11 +670,13 @@ struct CommentBubbleSVGRecognizer {
     ///   the digits. The pack's own colour lands in the slots on import; `AUTO` leaves them
     ///   empty, which means the reading theme's text colour.
     ///
-    /// Styles without either token (the legacy SVG editor's) come back untouched.
+    /// The emphasis slot is for a paragraph the site marks hot (`isHot`); an empty one is
+    /// `DSUIColor.commentBubbleHot`, so a hot bubble stands out in every style that has a
+    /// colour slot. Styles without either token (the legacy SVG editor's) come back untouched.
     static func materializeTemplateColors(
         _ svg: String,
         style: ReaderCommentBubbleCustomStyle,
-        count: String,
+        isHot: Bool,
         themeTextColor: UIColor
     ) -> String {
         var source = svg
@@ -596,15 +693,16 @@ struct CommentBubbleSVGRecognizer {
         }
         guard hasColorToken || hasTextToken else { return svg }
         let isNight = isNightTheme(themeTextColor: themeTextColor)
+        let hot = isHot ? hexString(DSUIColor.commentBubbleHot) : nil
         if hasColorToken {
             source = materializeColorTemplate(
                 source,
-                colorHex: style.resolvedColorHex(forCount: count, isNight: isNight)
+                colorHex: style.slotColorHex(isHot: isHot, isNight: isNight) ?? hot ?? "#808080"
             )
         }
         if hasTextToken {
-            let hex = style.slotColorHex(forCount: count, isNight: isNight)
-                ?? hexString(themeTextColor)
+            let hex = style.slotColorHex(isHot: isHot, isNight: isNight)
+                ?? hot ?? hexString(themeTextColor)
             source = source.replacingOccurrences(of: qiReaderTextColorToken, with: hex)
         }
         return source
@@ -1099,7 +1197,7 @@ struct CommentBubbleSVGRecognizer {
     /// The CSS colour keywords, which AndroidSVG takes in any paint as legado draws a
     /// bubble. Bubble packs outline their shapes with `fill="black"` and `fill="white"`;
     /// without the names those shapes drew nothing (猫咪气泡 lost its outline and its box).
-    private static let cssNamedColors: [String: UInt32] = {
+    static let cssNamedColors: [String: UInt32] = {
         let table = """
         aliceblue f0f8ff antiquewhite faebd7 aqua 00ffff aquamarine 7fffd4 azure f0ffff
         beige f5f5dc bisque ffe4c4 black 000000 blanchedalmond ffebcd blue 0000ff blueviolet 8a2be2

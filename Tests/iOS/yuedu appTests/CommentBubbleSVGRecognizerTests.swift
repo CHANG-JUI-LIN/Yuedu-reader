@@ -56,6 +56,55 @@ struct CommentBubbleSVGRecognizerTests {
         }
     }
 
+    @Test("a count past the 數字上限 shows the limit and a plus")
+    func countCapsAtMaximum() {
+        #expect(CommentBubbleCount.displayText("98", maximum: 99) == "98")
+        #expect(CommentBubbleCount.displayText("99", maximum: 99) == "99")
+        #expect(CommentBubbleCount.displayText("100", maximum: 99) == "99+")
+        #expect(CommentBubbleCount.displayText("1500", maximum: 999) == "999+")
+        #expect(CommentBubbleCount.displayText("150", maximum: 999) == "150")
+        // A source's own text is the source's.
+        #expect(CommentBubbleCount.displayText("99+", maximum: 999) == "99+")
+        #expect(CommentBubbleCount.sanitizedMaximum(500) == CommentBubbleCount.defaultMaximum)
+    }
+
+    @Test("a hot bubble wears the hot colour, in the app's bubbles and in a style's empty emphasis slot")
+    func hotBubbleColour() throws {
+        let hot = CommentBubbleSVGRecognizer.hexString(DSUIColor.commentBubbleHot)
+        for mode in [ReaderCommentBubblePresetMode.builtin, .square] {
+            #expect(CommentBubbleSVGRecognizer.templateSVG(for: mode, customSVG: "", isHot: true).contains(hot))
+            #expect(!CommentBubbleSVGRecognizer.templateSVG(for: mode, customSVG: "", isHot: false).contains(hot))
+        }
+        let style = ReaderCommentBubbleCustomStyle(name: "pkg", svg: "<svg><text fill=\"${color}\">${num}</text></svg>",
+                                                   dayNormalColor: "#808080")
+        #expect(CommentBubbleSVGRecognizer.materializeTemplateColors(style.svg, style: style, isHot: true,
+                                                                      themeTextColor: .black).contains(hot))
+        #expect(CommentBubbleSVGRecognizer.materializeTemplateColors(style.svg, style: style, isHot: false,
+                                                                      themeTextColor: .black).contains("#808080"))
+    }
+
+    @Test("a voice bubble is the style's voice version, or its bubble with a wave under the count")
+    func voiceBubbleTemplate() throws {
+        let plain = try #require(CommentBubbleSVGRecognizer.styledTemplate(
+            mode: .builtin, style: nil, traits: .plain, themeTextColor: .black))
+        let voiced = try #require(CommentBubbleSVGRecognizer.styledTemplate(
+            mode: .builtin, style: nil, traits: .init(hasVoice: true), themeTextColor: .black))
+        #expect(voiced.elements.count == plain.elements.count + 5)
+        func countSlot(_ svg: CommentBubbleSVG) -> (y: CGFloat, size: CGFloat)? {
+            for case let .text(_, _, y, size, _, _, _, _, _, _) in svg.elements { return (y, size) }
+            return nil
+        }
+        let before = try #require(countSlot(plain)), after = try #require(countSlot(voiced))
+        #expect(after.size < before.size)
+        #expect(after.y < before.y)
+
+        let own = "<svg width=\"96\" height=\"72\" viewBox=\"0 0 96 72\"><circle/><text x=\"48\" y=\"40\" font-size=\"20\">0</text></svg>"
+        let style = ReaderCommentBubbleCustomStyle(name: "v", svg: CommentBubbleSVGRecognizer.builtinBubbleSVG, voiceSVG: own)
+        let styled = try #require(CommentBubbleSVGRecognizer.styledTemplate(
+            mode: .custom, style: style, traits: .init(hasVoice: true), themeTextColor: .black))
+        #expect(countSlot(styled)?.size == 20)
+    }
+
     @Test("accepts a full custom template beyond the legacy 8 KiB limit")
     func acceptsLargeCustomTemplateWithDisplayTextPlaceholder() throws {
         let detailedPath = String(repeating: "M0 0 L1 1 L2 0 Z ", count: 520)
@@ -376,7 +425,7 @@ struct QiReaderBubbleTemplateTests {
         let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
             Self.qiReaderSVG,
             style: Self.autoStyle(),
-            count: "12",
+            isHot: false,
             themeTextColor: .black
         )
         let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(materialized))
@@ -396,7 +445,7 @@ struct QiReaderBubbleTemplateTests {
         let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
             Self.qiReaderSVG,
             style: Self.autoStyle(),
-            count: "12",
+            isHot: false,
             themeTextColor: UIColor(red: 1, green: 0, blue: 0, alpha: 1)
         )
         #expect(!materialized.contains("__TEXT__"))
@@ -411,7 +460,7 @@ struct QiReaderBubbleTemplateTests {
         let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
             Self.qiReaderSVG,
             style: style,
-            count: "12",
+            isHot: false,
             themeTextColor: .black
         )
         #expect(materialized.contains("#00FF00"))
@@ -423,7 +472,7 @@ struct QiReaderBubbleTemplateTests {
         let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
             Self.qiReaderSVG,
             style: Self.autoStyle(),
-            count: "88",
+            isHot: false,
             themeTextColor: .black
         )
         let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(materialized))

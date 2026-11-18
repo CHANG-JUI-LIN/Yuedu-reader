@@ -72,6 +72,13 @@ struct ReaderParagraphBubbleSettingsView: View {
                     range: GlobalSettings.commentBubbleScaleRange,
                     step: 0.05
                 )
+                Picker(selection: $settings.commentBubbleMaxCount) {
+                    ForEach(CommentBubbleCount.maximumChoices, id: \.self) { maximum in
+                        Text(verbatim: "\(maximum)+").tag(maximum)
+                    }
+                } label: {
+                    SettingsRowLabel(localized("數字上限"), systemImage: "number")
+                }
             }
             .interfaceSectionSurface()
         }
@@ -119,11 +126,11 @@ struct ReaderParagraphBubbleSettingsView: View {
 
     private func customStyleButton(style: ReaderCommentBubbleCustomStyle) -> some View {
         let name = style.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Colour placeholders resolved the way the reader does, for "99".
+        // Colour placeholders resolved the way the reader does, for a plain bubble.
         let previewSVG = CommentBubbleSVGRecognizer.materializeTemplateColors(
             style.svg,
             style: style,
-            count: "99",
+            isHot: false,
             themeTextColor: .label
         )
         return BubbleStyleTile(
@@ -277,8 +284,9 @@ struct CommentBubbleStyleDraft: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
-/// 新建樣式 / 編輯樣式 for a 段評 bubble: its name, SVG and colour slots, with a preview of
-/// "99" in day and in night. Leaving without 儲存 keeps the style as it was.
+/// 新建樣式 / 編輯樣式 for a 段評 bubble: its name, SVG, voice version and colour slots, with
+/// a preview of "99" in day and in night, plain and as a hot paragraph with a spoken comment.
+/// Leaving without 儲存 keeps the style as it was.
 struct CommentBubbleStyleEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable private var settings = GlobalSettings.shared
@@ -286,6 +294,7 @@ struct CommentBubbleStyleEditorView: View {
 
     @State private var name: String
     @State private var svg: String
+    @State private var voiceSVG: String
     @State private var dayNormalColor: String?
     @State private var dayEmphasisColor: String?
     @State private var nightNormalColor: String?
@@ -296,6 +305,7 @@ struct CommentBubbleStyleEditorView: View {
         self.draft = draft
         _name = State(initialValue: draft.style?.name ?? "")
         _svg = State(initialValue: draft.style?.svg ?? "")
+        _voiceSVG = State(initialValue: draft.style?.voiceSVG ?? "")
         _dayNormalColor = State(initialValue: draft.style?.dayNormalColor)
         _dayEmphasisColor = State(initialValue: draft.style?.dayEmphasisColor)
         _nightNormalColor = State(initialValue: draft.style?.nightNormalColor)
@@ -311,8 +321,12 @@ struct CommentBubbleStyleEditorView: View {
 
             Section(header: Text(localized("預覽")).foregroundStyle(DSColor.textSecondary)) {
                 HStack(spacing: DSSpacing.sm) {
-                    bubblePreview(isNight: false)
-                    bubblePreview(isNight: true)
+                    bubblePreview(isNight: false, traits: .plain)
+                    bubblePreview(isNight: true, traits: .plain)
+                }
+                HStack(spacing: DSSpacing.sm) {
+                    bubblePreview(isNight: false, traits: Self.hotVoice)
+                    bubblePreview(isNight: true, traits: Self.hotVoice)
                 }
             }
             .interfaceSectionSurface()
@@ -327,6 +341,19 @@ struct CommentBubbleStyleEditorView: View {
                 } label: {
                     SettingsRowLabel(localized("從剪貼簿貼上 SVG"), systemImage: "doc.on.clipboard", role: .action)
                 }
+            }
+            .interfaceSectionSurface()
+
+            Section {
+                TextEditor(text: $voiceSVG)
+                    .font(DSFont.monospaced())
+                    .frame(minHeight: DSLayout.readerSVGEditorHeight)
+                    .accessibilityLabel(localized("語音版 SVG"))
+            } header: {
+                Text(localized("語音版 SVG")).foregroundStyle(DSColor.textSecondary)
+            } footer: {
+                Text(localized("段評裡有語音時使用；留空時在數字下方加上聲波。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -358,7 +385,7 @@ struct CommentBubbleStyleEditorView: View {
             } header: {
                 Text(localized("顏色")).foregroundStyle(DSColor.textSecondary)
             } footer: {
-                Text(localized("強調顏色用於 99+ 與 100 以上的數字；未設定時 ${color} 為灰色，__TEXT__ 跟隨閱讀文字顏色。"))
+                Text(localized("強調顏色用於模組標為熱門的段評，未設定時為紅色；一般顏色未設定時 ${color} 為灰色，__TEXT__ 跟隨閱讀文字顏色。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
@@ -399,6 +426,8 @@ struct CommentBubbleStyleEditorView: View {
             // style stays in `GlobalSettings` as that object until relaunch — read by every
             // thread that draws a bubble. Stored native instead (Crashlytics dde5251b).
             svg: CommentBubbleSVGRecognizer.native(svg.trimmingCharacters(in: .whitespacesAndNewlines)),
+            voiceSVG: voiceSVG.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil : CommentBubbleSVGRecognizer.native(voiceSVG.trimmingCharacters(in: .whitespacesAndNewlines)),
             updatedAt: draft.style?.updatedAt,
             sizeScale: draft.style?.sizeScale,
             dayEmphasisColor: dayEmphasisColor,
@@ -408,16 +437,23 @@ struct CommentBubbleStyleEditorView: View {
         )
     }
 
-    private func bubblePreview(isNight: Bool) -> some View {
+    private static let hotVoice = CommentBubbleTraits(isHot: true, hasVoice: true)
+
+    /// The edited style as the reader draws it for a bubble with `traits`.
+    private func bubblePreview(isNight: Bool, traits: CommentBubbleTraits) -> some View {
         let theme: ReaderTheme = CommentStylePreviewContext.current(isNight: isNight).theme
-        let style = editedStyle
-        let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
-            style.svg,
-            style: style,
-            count: "99",
-            themeTextColor: theme.uiTextColor
-        )
-        let image = ReaderParagraphBubbleSettingsView.previewImage(svg: materialized, textColor: theme.uiTextColor)
+        let image = CommentBubbleSVGRecognizer.styledTemplate(
+            mode: .custom, style: editedStyle, traits: traits, themeTextColor: theme.uiTextColor
+        ).map {
+            CommentBubbleSVGRecognizer.draw(svg: $0.replacingDisplayText(with: "99"), pointSize: 34,
+                                            themeTextColor: theme.uiTextColor, textFace: .reader)
+        }
+        let label = switch (isNight, traits == .plain) {
+        case (false, true): localized("白天預覽")
+        case (true, true): localized("夜間預覽")
+        case (false, false): localized("白天熱門語音預覽")
+        case (true, false): localized("夜間熱門語音預覽")
+        }
         return ZStack {
             if let image {
                 Image(uiImage: image)
@@ -435,15 +471,17 @@ struct CommentBubbleStyleEditorView: View {
         .background(Color(uiColor: theme.uiBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(localized(isNight ? "夜間預覽" : "白天預覽"))
+        .accessibilityLabel(label)
         .accessibilityValue(image == nil ? localized("預覽無法繪製。") : "")
     }
 
     private func save() {
         let style = editedStyle
-        if let message = ReaderCommentStyleImporter.bubbleValidationMessage(for: style.svg) {
-            validationMessage = message
-            return
+        for template in [style.svg, style.voiceSVG].compactMap({ $0 }) {
+            if let message = ReaderCommentStyleImporter.bubbleValidationMessage(for: template) {
+                validationMessage = message
+                return
+            }
         }
         settings.upsertCommentBubbleCustomStyle(style)
         settings.commentBubbleFollowsSourceSVG = false

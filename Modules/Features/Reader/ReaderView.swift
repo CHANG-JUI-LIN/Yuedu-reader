@@ -3151,7 +3151,10 @@ struct ReaderView: View {
             BookSourceLoginSheet(source: source) { sourceLoginTarget = nil }
         }
         // A chapter's comments arrived from a module: build the chapter again with them.
-        .onReceive(commentDecorator.updates) { spine in applyCommentUpdate(spine: spine) }
+        .onReceive(commentDecorator.updates) { spine in
+            readerViewModel.recordModuleComments()
+            applyCommentUpdate(spine: spine)
+        }
         .sheet(item: $contentDebugTarget) { target in
             BookSourceRuleDebugView(source: target.source, initialTab: .content, initialURL: target.chapterURL)
         }

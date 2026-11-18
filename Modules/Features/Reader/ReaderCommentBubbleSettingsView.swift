@@ -42,6 +42,27 @@ struct ReaderCommentBubbleSettingsView: View {
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
+
+            Section {
+                Toggle(isOn: $settings.commentsUseAppList) {
+                    SettingsRowLabel(localized("使用 App 內建評論列表"), systemImage: "text.bubble")
+                }
+                .accessibilityIdentifier("commentSettings.appList")
+                NavigationLink {
+                    ReaderCommentListSettingsView()
+                } label: {
+                    SettingsValueLabel(
+                        title: localized("評論列表"),
+                        systemImage: "list.bullet.rectangle",
+                        value: localized(settings.commentListStyle == CommentListStyle() ? "預設" : "自訂")
+                    )
+                }
+                .accessibilityIdentifier("commentSettings.listStyle")
+            } footer: {
+                Text(localized("來源配置的評論頁有模組能讀時，改在 App 的列表顯示；沒有對應模組的仍開來源的網頁。"))
+                    .dsSectionFooter()
+            }
+            .interfaceSectionSurface()
         }
         .softScrollEdges()
         .navigationTitle(localized("氣泡設定"))

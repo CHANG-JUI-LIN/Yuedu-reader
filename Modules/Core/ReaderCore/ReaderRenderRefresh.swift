@@ -64,6 +64,7 @@ struct ReaderDocumentStyleFingerprint: Equatable {
     let commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle]
     let commentBubbleSelectedCustomStyleID: UUID?
     let commentBubbleScale: Double
+    let commentBubbleMaxCount: Int
     let commentCardChoices: ReaderCommentCardChoices
     let commentCardCustomStyles: [ReaderCommentCardCustomStyle]
     /// The reading text colour while any card wears a template. A template card bakes it,

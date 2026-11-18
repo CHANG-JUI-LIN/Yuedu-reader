@@ -142,7 +142,8 @@ final class ReaderChapterCommentDecorator: ReaderChapterDecorationSource {
             guard let place = place(count.paragraph), placements.bubbles[place.position] == nil,
                   let href = ReaderHTMLUtilities.moduleReviewHref(count: String(count.count), title: localized("段評"), token: place.token)
             else { continue }
-            placements.bubbles[place.position] = .init(count: count.count, href: href, title: localized("段評"))
+            placements.bubbles[place.position] = .init(count: count.count, href: href, title: localized("段評"),
+                                                       traits: .init(isHot: count.isHot, hasVoice: count.hasVoice))
         }
         let hotTitle = ReaderCommentCardKind.hotComment.localizedTitle
         for hot in data.notes.hot {
@@ -176,16 +177,40 @@ final class ReaderChapterCommentDecorator: ReaderChapterDecorationSource {
 }
 
 /// What a tapped bubble or card opens: a module's comments in the app's own list, a source's
-/// in its own page.
+/// in its own page — or, with 使用 App 內建評論列表 on, in the app's list too when a module reads
+/// that page (`ModuleCommentSourcePages`).
 struct ReaderReviewSheetContent: View {
     let target: ReaderHTMLUtilities.ReviewTarget
     let onDismiss: (_ body: String?) -> Void
 
+    private enum Route {
+        case appList(ModuleCommentTarget)
+        case sourcePage
+    }
+
+    /// Where a source's comments open, once the modules are asked.
+    @State private var route: Route?
+
     var body: some View {
         if let comments = ModuleCommentTargets.target(target.moduleToken) {
             ChapterCommentsSheet(target: comments)
-        } else {
+        } else if !GlobalSettings.shared.commentsUseAppList {
             LegadoReviewBrowserView(target: target, onDismiss: onDismiss)
+        } else {
+            switch route {
+            case .appList(let comments):
+                ChapterCommentsSheet(target: comments)
+            case .sourcePage:
+                LegadoReviewBrowserView(target: target, onDismiss: onDismiss)
+            case nil:
+                ProgressView()
+                    .accessibilityLabel(localized("讀取中"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .task {
+                        // No module reads this page: the source's own, as with the setting off.
+                        route = await ModuleCommentSourcePages.target(for: target).map(Route.appList) ?? .sourcePage
+                    }
+            }
         }
     }
 }

@@ -438,10 +438,75 @@ App 照這個順序找紀錄：
   `"title": "$.paragraph_id@js:result == -1"`（要宣告 `"javascript": true`）。讀到的值是 true（不是空的、`false`、`0`、`no`）的那一項，
   不看 `quote` 和 `index`，氣泡畫在讀者這一章的章名後面，點下去打開 `paragraph`（`{{paragraphId}}` 是這一項的 `id`）。
   讀者這一章的正文不是從章名開始的，就不顯示。
+- `hot`（只有 `counts` 有）：這一段的段評是不是網站標的**熱門**。讀到 true 的那一段，氣泡換成讀者氣泡樣式的強調顏色
+  （內建樣式是紅色）。沒寫這條就沒有熱門氣泡；App 不會自己用則數判斷熱不熱門。
+- `voice`（只有 `counts` 有）：這一段的段評裡**有沒有語音**。讀到 true 的那一段，氣泡換成樣式的語音版（數字下方有聲波）。
+- 氣泡裡的數字最多顯示到讀者在「段評氣泡 › 數字上限」選的 99 或 999，超過就是 `99+`／`999+`。`count` 照實給就好。
 - 對不上的那一段不顯示氣泡或熱評，不會掛到別段去。
 
 請在模組的 `description` 寫明：讀者讀書時會把書名、作者（或 ISBN）送到你的網站。章名和內文不會送出。
 讀者可以在 設定 → 模組 關掉「在正文顯示模組的評論」，或在「資料來源」取消勾選這個模組。
+
+#### 寫的人、樓層、樓中樓
+
+評論列表是 App 自己畫的，`chapter.list`、`paragraph.list`（還有 `reviews.list`）除了上表，還讀得懂這些，有給才畫：
+
+| 欄位 | 說明 |
+|------|------|
+| `avatar` | 寫的人的頭像，http(s) 網址（`//` 開頭、相對網址都行）。畫在名字左邊。 |
+| `badge` | 網站給這個人的稱號，例如起點的粉絲稱號（盟主、學徒），畫在名字後面的小標籤。最長 20 字。 |
+| `floor` | 第幾樓。純數字（`3`、`#3`）顯示成「3 樓」，其他照原樣（`沙發`）。 |
+| `id` | 這則評論在你網站上的代號，`replies` 的 `{{commentId}}`。 |
+| `replyCount` | 這則評論總共幾則回覆，`12`、`12条` 都讀得懂。 |
+| `quote` | 評論引用的原文（段落原文引用），畫在內文上面、左邊一條線。最長 300 字。 |
+| `meta` | 網站寫在評論下面的時間和地點，例如 `11-11 22:10 · 江蘇`，照原樣畫在日期的位置；有它就不畫 `date`。最長 60 字。 |
+| `images` | 評論的配圖，多個值，http(s) 網址（`//` 開頭、相對網址都行）。最多留 9 張，卡片畫前 3 張縮圖。 |
+| `voice` | 語音評論的音檔網址，http(s)。卡片多一個「播放語音」，同時只放一則。 |
+| `isAuthor` | 寫的人是這本書的作者時為真（`true`、`1`；`false`、`0`、空的都算假）。名字後面多一個「作者」標籤。 |
+| `replies` | 這則評論下面頁面上就有的回覆：`items`、`text` 必填，`author`、`date`、`likes`、`id`、`avatar`、`badge`、`floor`、`meta`、`images`、`voice`、`isAuthor` 選填，在這則評論的範圍裡讀。最多留 20 則，卡片畫前 3 則（讀者可在 評論列表 改）。回覆不會再有回覆。 |
+
+有 `avatar`、`badge`、`floor` 或 `isAuthor` 的評論，名字畫在內文上面（像起點的評論區），沒有就照舊畫在下面。
+
+列表長什麼樣子是讀者的事，不是模組的：閱讀設定 → 氣泡設定 → 評論列表 調卡片、字級、哪些部分要顯示，還能寫樣式表；這些跟著主題包走。
+
+```json
+"replies": {
+  "request": { "url": "https://example.com/api/comments/{{commentId}}/replies?page={{page}}" },
+  "total": "$.total",
+  "list": { "items": "$.list[*]", "text": "$.content", "author": "$.user", "avatar": "$.face", "badge": "$.fansTitle" }
+}
+```
+
+`comments.replies`：一則評論的全部回覆。`request` 必須用 `{{commentId}}`（評論的 `id`），
+還可以用 `{{chapterId}}`、`{{id}}`、`{{url}}`、`{{paragraphId}}`、`{{page}}`。有 `replies` 的話，`chapter.list` 或 `paragraph.list`
+至少要有一個寫 `id`。評論有回覆時，卡片下面多一行「查看全部 N 則回覆」，點了推一頁看全部；沒有 `replies` 時，
+頁面上的回覆超過 3 則才有這一行，裡面就是頁面上那些。
+
+#### 接手來源配置的評論頁 `sourcePages`
+
+讀者在 氣泡設定 打開「使用 App 內建評論列表」後，點**來源配置**的段評氣泡或本章說卡片，如果它要開的網址是某個模組
+認得的評論頁，就改成那個模組的評論，畫在 App 的列表裡；沒有模組認得就照舊開來源的網頁。
+
+```json
+"sourcePages": [
+  {
+    "hosts": ["comments.example.net", "*.proxy.example.org"],
+    "path": "^/comments$",
+    "query": { "id": "bookId", "chapterId": "chapterId", "paragraphId": "paragraphId" }
+  },
+  { "hosts": ["example.net"], "path": "^/book/(?<id>\\d+)/chapter/(?<chapterId>\\d+)/comments$" }
+]
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `hosts` | ✓ | 評論頁的主機，寫全名，或 `*.example.org`（它和底下所有名稱）。 |
+| `path` |  | 正規表示式，**整個路徑**都要符合。具名群組 `(?<id>…)`、`(?<chapterId>…)`、`(?<paragraphId>…)` 就是那幾個值。 |
+| `query` |  | 哪個查詢參數是哪個值：`{"chapterId": "cid"}` 讀 `?cid=…`。寫了的參數網址裡一定要有，否則不算這一頁。 |
+
+讀得到的值只有三個：`id`（紀錄的 `{{id}}`）、`chapterId`、`paragraphId`，而且一定要讀到 `chapterId`。
+有 `paragraphId` 打開 `paragraph`，沒有就打開 `chapter`。模組的請求如果還要 `{{url}}`，就接手不了。
+**網址的其他部分不會讀、不會送出**：來源的評論頁網址常帶著讀者的 token，它只留在來源那邊。
 
 ### 5.3 打開一本書 `detail`（頂層）
 

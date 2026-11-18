@@ -243,6 +243,7 @@ enum RuleModuleValidator {
             if let counts = comments.counts { found.append(("comments.counts", counts.request)) }
             if let hot = comments.hot { found.append(("comments.hot", hot.request)) }
             if let say = comments.authorSay { found.append(("comments.authorSay", say.request)) }
+            if let replies = comments.replies { found.append(("comments.replies", replies.request)) }
         }
         return found
     }
@@ -265,6 +266,23 @@ enum RuleModuleValidator {
         if let paragraph = comments.paragraph {
             try validate(paragraph, path: "comments.paragraph", hosts: hosts, globals: globals, ofParagraph: true)
         }
+        if let replies = comments.replies {
+            // A comment's replies are asked by its id: a list must read one.
+            func has(_ rule: String?) -> Bool { !(rule ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            guard has(comments.chapter.list.id) || has(comments.paragraph?.list.id) else {
+                throw .missingField("comments.chapter.list.id")
+            }
+            try validateChapterRequest(replies.request, path: "comments.replies", hosts: hosts, globals: globals,
+                                       extra: ["page", "paragraphId", "commentId"], requiresChapter: false)
+            guard templates(of: replies.request).contains("commentId") else {
+                throw .missingField("comments.replies.request.url {{commentId}}")
+            }
+            try validate(replies.list, path: "comments.replies.list")
+            if let total = replies.total { try checkRule(total, field: "comments.replies.total", declared: [], innerRules: true) }
+        }
+        for (index, page) in (comments.sourcePages ?? []).enumerated() {
+            try validate(page, path: "comments.sourcePages[\(index)]")
+        }
         if let counts = comments.counts {
             // A bubble opens its paragraph's comments.
             guard comments.paragraph != nil else { throw .missingField("comments.paragraph") }
@@ -273,6 +291,7 @@ enum RuleModuleValidator {
             try requireText(counts.list.count, "comments.counts.list.count")
             try validate(counts.list.paragraph, count: counts.paragraphCount, path: "comments.counts")
             for case let (name, rule?) in [("list.items", counts.list.items), ("list.count", counts.list.count),
+                                           ("list.hot", counts.list.hot), ("list.voice", counts.list.voice),
                                            ("paragraphCount", counts.paragraphCount)] as [(String, String?)] {
                 try checkRule(rule, field: "comments.counts.\(name)", declared: [], innerRules: true)
             }
@@ -311,10 +330,12 @@ enum RuleModuleValidator {
         }
     }
 
-    /// A request about one chapter: `{{chapterId}}` it must name, the record's keys, and with
+    /// A request about one chapter: `{{chapterId}}` it must name (unless `requiresChapter` is
+    /// off: a comment's replies are told by the comment's id), the record's keys, and with
     /// `extra` whatever else its block fills. On the module's hosts.
     private static func validateChapterRequest(_ request: RuleModule.Request, path: String, hosts: RuleModuleHosts,
-                                               globals: Set<String>, extra: Set<String> = []) throws(RuleModuleRejection) {
+                                               globals: Set<String>, extra: Set<String> = [],
+                                               requiresChapter: Bool = true) throws(RuleModuleRejection) {
         let method = (request.method ?? "GET").uppercased()
         guard method == "GET" || method == "POST" else {
             throw .unsupportedMethod(field: "\(path).request.method", method: request.method ?? "")
@@ -331,7 +352,9 @@ enum RuleModuleValidator {
         }
         if hasOptionTail(request.url) { throw .urlOptions(field: "\(path).request.url") }
         // Which chapter: without it the page would be the same for every chapter.
-        guard templates(of: request).contains("chapterId") else { throw .missingField("\(path).request.url {{chapterId}}") }
+        guard !requiresChapter || templates(of: request).contains("chapterId") else {
+            throw .missingField("\(path).request.url {{chapterId}}")
+        }
         try checkHost(request.url, field: "\(path).request.url", hosts: hosts)
     }
 
@@ -357,11 +380,61 @@ enum RuleModuleValidator {
         try requireText(list.text, "\(path).list.text")
         let rules: [(String, String?)] = [
             ("list.items", list.items), ("list.text", list.text), ("list.title", list.title), ("list.author", list.author),
-            ("list.date", list.date), ("list.likes", list.likes), ("total", block.total),
+            ("list.date", list.date), ("list.likes", list.likes), ("list.id", list.id), ("list.avatar", list.avatar),
+            ("list.badge", list.badge), ("list.floor", list.floor), ("list.replyCount", list.replyCount), ("list.quote", list.quote),
+            ("list.meta", list.meta), ("list.images", list.images), ("list.voice", list.voice), ("list.isAuthor", list.isAuthor),
+            ("total", block.total),
         ]
         for case let (name, rule?) in rules {
             try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
         }
+        if let replies = list.replies { try validate(replies, path: "\(path).list.replies") }
+    }
+
+    /// The replies under a comment, or on a page of their own.
+    private static func validate(_ rules: RuleModule.ReplyRules, path: String) throws(RuleModuleRejection) {
+        try requireText(rules.items, "\(path).items")
+        try requireText(rules.text, "\(path).text")
+        let named: [(String, String?)] = [
+            ("items", rules.items), ("text", rules.text), ("author", rules.author), ("date", rules.date),
+            ("likes", rules.likes), ("id", rules.id), ("avatar", rules.avatar), ("badge", rules.badge), ("floor", rules.floor),
+            ("meta", rules.meta), ("images", rules.images), ("voice", rules.voice), ("isAuthor", rules.isAuthor),
+        ]
+        for case let (name, rule?) in named {
+            try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
+        }
+    }
+
+    /// A 來源配置's comment page: hosts written out or as `*.`, a path that is a regular
+    /// expression, and the parts that are `id`, `chapterId` and `paragraphId`, the chapter's
+    /// among them. No other part of the address can become a value.
+    private static func validate(_ page: RuleModule.SourcePage, path: String) throws(RuleModuleRejection) {
+        guard !page.hosts.isEmpty else { throw .missingField("\(path).hosts") }
+        for host in page.hosts {
+            let entry = host.trimmingCharacters(in: .whitespaces).lowercased()
+            let isWritten = !entry.isEmpty && !RuleModuleHosts.isWildcard(entry)
+                && entry.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == ".") }
+            guard isWritten || RuleModuleHosts.wildcardDomain(entry) != nil else {
+                throw .unknownValue(field: "\(path).hosts", value: host)
+            }
+        }
+        var names = Set<String>()
+        if let pattern = page.path {
+            guard (try? NSRegularExpression(pattern: pattern)) != nil else { throw .unknownValue(field: "\(path).path", value: pattern) }
+            for group in ModuleCommentSourcePages.groupNames(in: pattern) {
+                guard ModuleCommentSourcePages.valueNames.contains(group) else {
+                    throw .unknownValue(field: "\(path).path", value: group)
+                }
+                names.insert(group)
+            }
+        }
+        for (name, parameter) in (page.query ?? [:]).sorted(by: { $0.key < $1.key }) {
+            guard ModuleCommentSourcePages.valueNames.contains(name) else { throw .unknownValue(field: "\(path).query", value: name) }
+            try requireText(parameter, "\(path).query.\(name)")
+            names.insert(name)
+        }
+        // Which chapter: without it every chapter's bubble would open the same comments.
+        guard names.contains("chapterId") else { throw .missingField("\(path).query.chapterId") }
     }
 
     // MARK: - Entries
@@ -647,6 +720,9 @@ enum RuleModuleValidator {
         let rules: [(String, String?)] = [
             ("list.items", list.items), ("list.text", list.text), ("list.title", list.title), ("list.author", list.author),
             ("list.date", list.date), ("list.rating", list.rating), ("list.likes", list.likes),
+            ("list.id", list.id), ("list.avatar", list.avatar), ("list.badge", list.badge), ("list.floor", list.floor),
+            ("list.replyCount", list.replyCount), ("list.quote", list.quote), ("list.meta", list.meta),
+            ("list.images", list.images), ("list.voice", list.voice), ("list.isAuthor", list.isAuthor),
             ("rating.score", reviews.rating?.score), ("rating.count", reviews.rating?.count),
             ("rating.distribution", reviews.rating?.distribution),
         ]
@@ -654,6 +730,7 @@ enum RuleModuleValidator {
         for case let (name, rule?) in rules {
             try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
         }
+        if let replies = list.replies { try validate(replies, path: "\(path).list.replies") }
     }
 
     /// A request asked of a record `search` or `lookup` found (`related`; `reviews` has its own

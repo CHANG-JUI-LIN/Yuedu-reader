@@ -81,8 +81,9 @@ public indirect enum RenderableNode: Sendable {
     case unsupportedInteractive(type: String, title: String, children: [RenderableNode], style: RenderStyle = .none)
 
     /// Paragraph-review badge (段評). Renders as a tappable inline count bubble; `reviewURL`
-    /// carries the `ydreview://` action that opens the source's review web page.
-    case commentBadge(count: String, reviewURL: String, title: String)
+    /// carries the `ydreview://` action that opens the source's review web page; `traits`, what a
+    /// module's site said of the paragraph (hot, spoken).
+    case commentBadge(count: String, reviewURL: String, title: String, traits: CommentBubbleTraits = .plain)
 
     // MARK: Special
 

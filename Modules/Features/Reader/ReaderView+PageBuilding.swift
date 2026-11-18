@@ -27,6 +27,7 @@ extension ReaderView {
             commentBubbleCustomStyles: settings.commentBubbleCustomStyles,
             commentBubbleSelectedCustomStyleID: settings.commentBubbleSelectedCustomStyleID,
             commentBubbleScale: settings.commentBubbleScale,
+            commentBubbleMaxCount: settings.commentBubbleMaxCount,
             commentCardChoices: settings.commentCardChoices,
             commentCardCustomStyles: settings.commentCardCustomStyles,
             commentCardTextColorHex: anyCommentCardTemplateWorn ? readerTheme.uiTextColor.rgbHex : nil,

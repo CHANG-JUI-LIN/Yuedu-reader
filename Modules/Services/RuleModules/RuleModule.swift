@@ -79,6 +79,35 @@ struct RuleModule: Codable, Hashable, Sendable {
         var hot: HotComments?
         /// 作者說: the author's note on the chapter.
         var authorSay: AuthorSay?
+        /// All of one comment's replies (樓中樓): `{{commentId}}` is the comment's `id`, with the
+        /// chapter's, the paragraph's and the record's as the comments request has them.
+        var replies: Replies?
+        /// The 來源配置 comment pages the module reads: a source's bubble or card
+        /// whose address is one of these opens the app's own list of the module's comments, when
+        /// 使用 App 內建評論列表 is on (`ModuleCommentSourcePages`).
+        var sourcePages: [SourcePage]?
+    }
+
+    /// One comment's replies, a page at a time: `{{page}}` from 1.
+    struct Replies: Codable, Hashable, Sendable {
+        var request: Request
+        var list: ReplyRules
+        /// How many replies there are in all, read on the page itself.
+        var total: String?
+    }
+
+    /// A 來源配置's comment page, told by its address: the host, the path, and which of its parts
+    /// are the record's `{{id}}`, the chapter's `{{chapterId}}` and the paragraph's
+    /// `{{paragraphId}}`. Nothing else of the address is read: a source's page can carry the
+    /// reader's token, and it never reaches the module's requests.
+    struct SourcePage: Codable, Hashable, Sendable {
+        /// Host names, written out or as `*.example.org`.
+        var hosts: [String]
+        /// A regular expression the whole path must match; its named groups `id`, `chapterId`
+        /// and `paragraphId` are those values.
+        var path: String?
+        /// Query parameters that are those values: `{"chapterId": "cid"}` reads `?cid=…`.
+        var query: [String: String]?
     }
 
     /// Which paragraph an item is about. The paragraph is told by its text (`quote`, the
@@ -110,6 +139,10 @@ struct RuleModule: Codable, Hashable, Sendable {
         var index: String?
         var id: String?
         var title: String?
+        /// True for a paragraph the site marks as hot: its bubble wears the emphasis colour.
+        var hot: String?
+        /// True for a paragraph with a spoken comment: its bubble is the voice version.
+        var voice: String?
 
         var paragraph: ParagraphRules { ParagraphRules(quote: quote, index: index, id: id, title: title) }
     }
@@ -206,6 +239,51 @@ struct RuleModule: Codable, Hashable, Sendable {
         var rating: String?
         /// How many readers marked it helpful.
         var likes: String?
+        /// The site's own id of the comment: its replies' `{{commentId}}`.
+        var id: String?
+        /// The writer's picture, an http(s) address.
+        var avatar: String?
+        /// The title the site gives the writer beside their name (粉絲稱號).
+        var badge: String?
+        /// Its place in the thread (`3`, `沙發`).
+        var floor: String?
+        /// The replies the page shows under it, read in its scope.
+        var replies: ReplyRules?
+        /// How many replies it has in all.
+        var replyCount: String?
+        /// The words of the book it answers (段落原文引用).
+        var quote: String?
+        /// When and where, as the site writes it (`11-11 22:10 · 江蘇`).
+        var meta: String?
+        /// The pictures it carries, several values, http(s) addresses.
+        var images: String?
+        /// The address of its spoken comment's audio.
+        var voice: String?
+        /// True when the work's author wrote it.
+        var isAuthor: String?
+    }
+
+    /// One reply, read in the scope `items` selects. Replies have no replies of their own.
+    struct ReplyRules: Codable, Hashable, Sendable {
+        var items: String
+        var text: String
+        var author: String?
+        var date: String?
+        var likes: String?
+        var id: String?
+        var avatar: String?
+        var badge: String?
+        var floor: String?
+        var meta: String?
+        var images: String?
+        var voice: String?
+        var isAuthor: String?
+
+        /// As a comment's rules, with nothing below it.
+        var asReviewRules: ReviewRules {
+            ReviewRules(items: items, text: text, author: author, date: date, likes: likes, id: id, avatar: avatar,
+                        badge: badge, floor: floor, meta: meta, images: images, voice: voice, isAuthor: isAuthor)
+        }
     }
 
     struct RatingRules: Codable, Hashable, Sendable {

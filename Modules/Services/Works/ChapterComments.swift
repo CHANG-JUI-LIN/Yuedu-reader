@@ -104,6 +104,18 @@ enum ChapterComments {
         }
     }
 
+    /// One page of a comment's replies (樓中樓): the chapter's comment, or with `paragraphID`
+    /// that paragraph's.
+    static func replies(in thread: ChapterCommentThread, paragraphID: String?, commentID: String, page: Int,
+                        client: RuleModuleClient = RuleModuleClient()) async throws -> [WorkReview] {
+        guard let block = thread.module.comments else { return [] }
+        let module = thread.module, record = thread.record, chapterID = thread.chapter.id
+        return try await LibrarySearch.within(timeout) {
+            try await client.commentReplies(commentID: commentID, chapterID: chapterID, paragraphID: paragraphID, of: record,
+                                            page: page, by: block, in: module)
+        }.comments
+    }
+
     /// The thread's 段評 counts, 熱評 and 作者說.
     static func notes(in thread: ChapterCommentThread, client: RuleModuleClient = RuleModuleClient()) async -> RuleModuleChapterNotes {
         guard let block = thread.module.comments else { return RuleModuleChapterNotes(fetchedAt: .now) }
@@ -118,6 +130,91 @@ struct ModuleCommentTarget: Equatable, Sendable {
     var paragraphID: String?
     /// What the list is headed: the chapter's title, or the paragraph's first words.
     var heading: String
+}
+
+/// 使用 App 內建評論列表 (maintainer, 2026-11-17): a 來源配置's comment page that an installed
+/// module reads (`comments.sourcePages`) is opened as that module's comments, in the app's own
+/// list. The page's address gives the record's id, the chapter's and the paragraph's, and
+/// nothing else of it is kept or sent: a source's address can carry the reader's token. A page
+/// no module reads opens as the source's own page, as before.
+enum ModuleCommentSourcePages {
+    /// The values a page's address can give.
+    nonisolated static let valueNames: Set<String> = ["id", "chapterId", "paragraphId"]
+
+    /// The named groups of a path pattern, `(?<chapterId>…)`.
+    nonisolated static func groupNames(in pattern: String) -> [String] {
+        let groups = /\(\?<([A-Za-z][A-Za-z0-9]*)>/
+        return pattern.matches(of: groups).map { String($0.output.1) }
+    }
+
+    /// What `url` gives as `page` reads it; nil when it is not that page, or names no chapter.
+    nonisolated static func values(of url: URL, on page: RuleModule.SourcePage) -> [String: String]? {
+        guard let host = url.host, RuleModuleHosts(page.hosts).allowsRedirect(to: host) else { return nil }
+        var values: [String: String] = [:]
+        if let pattern = page.path {
+            let expression: NSRegularExpression
+            do {
+                expression = try NSRegularExpression(pattern: pattern)
+            } catch {
+                // The validator compiled it at import; a pattern that fails here never matches.
+                AppLogger.parse("⟐ source comments: path pattern failed", context: ["error": String(describing: error)])
+                return nil
+            }
+            let path = url.path
+            let whole = NSRange(path.startIndex..., in: path)
+            guard let match = expression.firstMatch(in: path, range: whole), match.range == whole else { return nil }
+            for name in groupNames(in: pattern) where valueNames.contains(name) {
+                let range = match.range(withName: name)
+                guard range.location != NSNotFound, let found = Range(range, in: path) else { continue }
+                values[name] = String(path[found])
+            }
+        }
+        if let query = page.query {
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            for (name, parameter) in query where valueNames.contains(name) {
+                guard let value = items.first(where: { $0.name == parameter })?.value, !value.isEmpty else { return nil }
+                values[name] = value
+            }
+        }
+        let trimmed = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
+        return trimmed["chapterId"] == nil ? nil : trimmed
+    }
+
+    /// The comments a source's page at `address` is, of the first of `modules` that reads it and
+    /// can ask about what it gives; nil when none does.
+    nonisolated static func target(address: String, modules: [RuleModule]) -> ModuleCommentTarget? {
+        guard let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
+        for module in modules {
+            guard let block = module.comments else { continue }
+            for page in block.sourcePages ?? [] {
+                guard let values = values(of: url, on: page), let chapterID = values["chapterId"] else { continue }
+                let paragraphID = values["paragraphId"]
+                // A paragraph's page needs the module's paragraph comments.
+                if paragraphID != nil, block.paragraph == nil { continue }
+                let record = RuleListItem(name: "", author: "", bookUrl: "", coverUrl: "", intro: "", wordCount: "",
+                                          lastChapter: "", kind: "", id: values["id"])
+                guard RuleModuleClient.canAskComments(of: record, by: block) else { continue }
+                let thread = ChapterCommentThread(module: module, record: record,
+                                                  chapter: ModuleCommentChapter(id: chapterID, title: ""))
+                return ModuleCommentTarget(thread: thread, paragraphID: paragraphID, heading: "")
+            }
+        }
+        return nil
+    }
+
+    /// The comments a tapped source bubble or card opens in the app's list, from the modules
+    /// 資料來源 has checked, in its order.
+    @MainActor
+    static func target(for review: ReaderHTMLUtilities.ReviewTarget, library: RuleModuleLibrary = .shared,
+                       order: MetadataFillOrderStore = .shared) async -> ModuleCommentTarget? {
+        guard !review.url.isEmpty else { return nil }
+        await library.loadIfNeeded()
+        let found = target(address: review.url, modules: ChapterComments.modules(in: library, order: order))
+        AppLogger.parse("⟐ source comments: app list", context: [
+            "host": URL(string: review.url)?.host ?? "", "module": found?.thread.module.id ?? "none",
+        ])
+        return found
+    }
 }
 
 /// The comments the laid-out chapters' bubbles and cards are tapped for, by the token their
@@ -162,10 +259,13 @@ final class ChapterCommentsModel: ObservableObject {
     @Published private(set) var isLoadingMore = false
     @Published private(set) var hasMore = false
 
-    /// What the list is headed: the chapter's title, or the paragraph's first words.
+    /// What the list is headed: the chapter's title, or the paragraph's first words; empty for
+    /// a source's page, whose paragraph the app does not know (no heading row).
     let heading: String
     /// The paragraph whose comments these are; nil for the chapter's.
     let paragraphID: String?
+    /// The comment whose replies these are (樓中樓); nil for a list of comments.
+    let parent: WorkReview?
     private let findThread: () async -> ChapterCommentThread?
     /// The thread, the paragraph, the order, the page.
     private let readPage: (ChapterCommentThread, String?, String?, Int) async throws -> [WorkReview]
@@ -173,17 +273,20 @@ final class ChapterCommentsModel: ObservableObject {
     private var seen = Set<String>()
     private var generation = 0
 
-    /// The site's orders for this list; empty when it has one.
+    /// The site's orders for this list; empty when it has one, and for replies.
     var sorts: [RuleModule.Option] {
-        (paragraphID == nil ? thread?.sorts : thread?.paragraphSorts) ?? []
+        guard parent == nil else { return [] }
+        return (paragraphID == nil ? thread?.sorts : thread?.paragraphSorts) ?? []
     }
 
-    init(heading: String, paragraphID: String? = nil, findThread: @escaping () async -> ChapterCommentThread?,
+    init(heading: String, paragraphID: String? = nil, parent: WorkReview? = nil,
+         findThread: @escaping () async -> ChapterCommentThread?,
          readPage: @escaping (ChapterCommentThread, String?, String?, Int) async throws -> [WorkReview] = {
              try await ChapterComments.comments(in: $0, paragraphID: $1, sort: $2, page: $3).comments
          }) {
         self.heading = heading
         self.paragraphID = paragraphID
+        self.parent = parent
         self.findThread = findThread
         self.readPage = readPage
     }
@@ -191,6 +294,41 @@ final class ChapterCommentsModel: ObservableObject {
     /// The comments a bubble or a card in the text was tapped for: their thread is known.
     convenience init(target: ModuleCommentTarget) {
         self.init(heading: target.heading, paragraphID: target.paragraphID, findThread: { target.thread })
+    }
+
+    /// All of `comment`'s replies: from the module's `replies` request when it has one and the
+    /// comment its id, else the ones its page showed.
+    convenience init(repliesTo comment: WorkReview, in thread: ChapterCommentThread, paragraphID: String?) {
+        let shown = comment.replies ?? []
+        let asks = Self.asksReplies(of: comment, in: thread)
+        self.init(heading: "", paragraphID: paragraphID, parent: comment, findThread: { thread },
+                  readPage: { thread, paragraphID, _, page in
+                      guard asks, let id = comment.id else { return page == 1 ? shown : [] }
+                      return try await ChapterComments.replies(in: thread, paragraphID: paragraphID, commentID: id, page: page)
+                  })
+    }
+
+    /// Whether `comment`'s replies are a list of their own: some it has, more than its card shows
+    /// or more the site can be asked for.
+    static func listsReplies(of comment: WorkReview, in thread: ChapterCommentThread?,
+                             shown: Int = DSLayout.commentInlineReplies) -> Bool {
+        let count = comment.knownReplyCount
+        guard count > 0 else { return false }
+        if let thread, asksReplies(of: comment, in: thread) { return true }
+        return (comment.replies?.count ?? 0) > shown
+    }
+
+    private static func asksReplies(of comment: WorkReview, in thread: ChapterCommentThread) -> Bool {
+        comment.id != nil && thread.module.comments?.replies != nil
+    }
+
+    private var hasStarted = false
+
+    /// The first page, once: a list shown again after a pushed one is not read again.
+    func loadIfNeeded() async {
+        guard !hasStarted else { return }
+        hasStarted = true
+        await load()
     }
 
     /// Finds the thread and reads its first page.
@@ -233,7 +371,8 @@ final class ChapterCommentsModel: ObservableObject {
             let found = try await readPage(thread, paragraphID, sort, page + 1)
             // Another order was chosen while this page was read: its answer is not this list's.
             guard asked == generation else { return }
-            let fresh = found.filter { seen.insert("\($0.author ?? "")\u{1F}\($0.text)").inserted }
+            // By the site's id when it gives one: two readers can write the same words.
+            let fresh = found.filter { seen.insert($0.id.map { "#\($0)" } ?? "\($0.author ?? "")\u{1F}\($0.text)").inserted }
             page += 1
             comments += fresh
             hasMore = !fresh.isEmpty

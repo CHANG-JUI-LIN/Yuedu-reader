@@ -72,15 +72,16 @@ struct CommentBubblePerformanceTests {
             )
             global.applyCommentBubbleSync(styles: saved.2 + [style])
             global.applyCommentBubbleSync(selection: style.id)
-            let cases: [(String, UIColor, [UInt8])] = [
-                ("12", .black, [255, 0, 0, 255]),
-                ("120", .black, [0, 0, 255, 255]),
-                ("12", .white, [0, 255, 0, 255]),
-                ("120", .white, [255, 255, 0, 255])
+            // The emphasis slot is a hot paragraph's, not a large count's.
+            let cases: [(Bool, UIColor, [UInt8])] = [
+                (false, .black, [255, 0, 0, 255]),
+                (true, .black, [0, 0, 255, 255]),
+                (false, .white, [0, 255, 0, 255]),
+                (true, .white, [255, 255, 0, 255])
             ]
-            for (count, textColor, expected) in cases {
+            for (isHot, textColor, expected) in cases {
                 let image = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(
-                    count: count, pointSize: 22, themeTextColor: textColor
+                    count: "120", traits: .init(isHot: isHot), pointSize: 22, themeTextColor: textColor
                 ))
                 let cgImage = try #require(image.cgImage)
                 var pixel = [UInt8](repeating: 0, count: 4)

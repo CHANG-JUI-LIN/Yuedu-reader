@@ -533,7 +533,7 @@ struct QiThemeImporterTests {
                 CommentBubbleSVGRecognizer.materializeTemplateColors(
                     imported.style.svg,
                     style: imported.style,
-                    count: "12",
+                    isHot: false,
                     themeTextColor: .black
                 )
             ))
@@ -559,7 +559,7 @@ struct QiThemeImporterTests {
             CommentBubbleSVGRecognizer.materializeTemplateColors(
                 imported.style.svg,
                 style: imported.style,
-                count: "12",
+                isHot: false,
                 themeTextColor: .black
             )
         ))
