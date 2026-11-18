@@ -313,7 +313,6 @@ struct TTSPanelView: View {
             .ttsPanelDoneButtonStyle()
             .accessibilityLabel(localized("完成"))
         }
-        .buttonStyle(.borderless)
     }
 
     private var cover: some View {

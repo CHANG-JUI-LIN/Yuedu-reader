@@ -179,35 +179,16 @@ private struct DebugLogRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 8) {
-                Text(icon)
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.step)
-                        .font(DSFont.caption)
-                        .foregroundColor(color.opacity(0.8))
-                        .bold()
-
-                    Text(entry.summary)
-                        .font(DSFont.subheadline)
-                        .foregroundColor(color)
-                        .lineLimit(isExpanded ? nil : 2)
+            if entry.detail != nil {
+                Button {
+                    withAnimation(reduceMotion ? nil : DSAnimation.fast) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    header
                 }
-
-                Spacer()
-
-                Text(entry.timestamp, style: .time)
-                    .font(DSFont.caption2)
-                    .foregroundStyle(DSColor.textSecondary)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard entry.detail != nil else { return }
-                withAnimation(reduceMotion ? nil : DSAnimation.fast) {
-                    isExpanded.toggle()
-                }
+            } else {
+                header
             }
 
             if isExpanded, let detail = entry.detail {
@@ -241,6 +222,33 @@ private struct DebugLogRow: View {
                 Label(localized("複製"), systemImage: "doc.on.doc")
             }
         }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(icon)
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.step)
+                    .font(DSFont.caption)
+                    .foregroundColor(color.opacity(0.8))
+                    .bold()
+
+                Text(entry.summary)
+                    .font(DSFont.subheadline)
+                    .foregroundColor(color)
+                    .lineLimit(isExpanded ? nil : 2)
+            }
+
+            Spacer()
+
+            Text(entry.timestamp, style: .time)
+                .font(DSFont.caption2)
+                .foregroundStyle(DSColor.textSecondary)
+        }
+        .multilineTextAlignment(.leading)
     }
 
     private var icon: String {

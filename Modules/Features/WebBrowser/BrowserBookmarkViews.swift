@@ -55,7 +55,6 @@ struct BrowserSitesList: View {
                             trailing: nil
                         )
                     }
-                    .buttonStyle(.plain)
                     .contextMenu {
                         BrowserBookmarkMenuItems(
                             bookmark: bookmark,
@@ -85,7 +84,6 @@ struct BrowserSitesList: View {
                             trailing: Self.relativeTime(entry.date)
                         )
                     }
-                    .buttonStyle(.plain)
                 }
                 .onDelete { offsets in
                     offsets.map { history.entries[$0] }.forEach(history.remove)

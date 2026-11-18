@@ -168,7 +168,6 @@ private struct BookmarkCardRow: View {
                 moreMenu
             } else {
                 Button(action: onSelect) { content }
-                    .buttonStyle(.borderless)
                     .accessibilityLabel("\(primary)，\(metaText)")
                     .accessibilityHint(localized("點兩下跳至此頁"))
 

@@ -272,7 +272,6 @@ private struct SourceImportRow: View {
                         stateBadge
                     }
                 }
-                .buttonStyle(.plain)
                 .accessibilityLabel(name)
                 .accessibilityValue(Self.stateTitle(state))
                 .accessibilityAddTraits(
@@ -283,7 +282,7 @@ private struct SourceImportRow: View {
                     Image(systemName: "curlybraces")
                         .foregroundColor(DSColor.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .accessibilityLabel(localized("編輯來源 JSON"))
             }
             .frame(minHeight: DSLayout.minimumTapTarget)
@@ -297,7 +296,7 @@ private struct SourceImportRow: View {
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .accessibilityLabel(localized("源註釋"))
                 .accessibilityValue(comment)
                 .accessibilityHint(localized(isCommentExpanded ? "收合註釋" : "展開註釋"))

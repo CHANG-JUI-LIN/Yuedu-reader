@@ -109,7 +109,6 @@ struct ChangeChapterSourcePage: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .disabled(replacingOffset != nil)
     }
 

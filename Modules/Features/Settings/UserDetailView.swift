@@ -137,7 +137,6 @@ struct UserDetailView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .buttonStyle(.plain)
                 .accessibilityIdentifier("settings_pro_row")
             }
             .interfaceSectionSurface()
@@ -154,7 +153,6 @@ struct UserDetailView: View {
                             .foregroundStyle(DSColor.textTertiary)
                     }
                 }
-                .buttonStyle(.plain)
             }
             .interfaceSectionSurface()
 

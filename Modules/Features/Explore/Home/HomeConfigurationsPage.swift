@@ -84,7 +84,6 @@ struct HomeConfigurationsPage: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         // 編輯 folds the delete control into the row (「移除、名稱」), so what a double tap does
         // there is the list's: the photo and name are an action instead, as the swipe's are outside it.
@@ -138,7 +137,6 @@ struct HomeConfigurationsPage: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .disabled(editMode.isEditing)
         .accessibilityIdentifier("homeConfigurations.template.\(start.rawValue)")
     }

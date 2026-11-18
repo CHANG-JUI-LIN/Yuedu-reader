@@ -255,7 +255,6 @@ struct RegexHighlightSettingsView: View {
             } label: {
                 ruleLabel(rule, isBuiltIn: isBuiltIn)
             }
-            .buttonStyle(.plain)
             .accessibilityLabel(rule.name)
             .accessibilityValue(rule.pattern)
             .accessibilityHint(localized("提示：編輯規則"))

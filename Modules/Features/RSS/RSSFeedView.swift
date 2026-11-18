@@ -72,7 +72,6 @@ struct RSSSmartFeedView: View {
                                     timeFormatter: timeFormatter
                                 )
                             }
-                            .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
@@ -293,7 +292,6 @@ struct RSSFeedView: View {
                             timeFormatter: timeFormatter
                         )
                     }
-                    .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)

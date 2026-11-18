@@ -602,7 +602,6 @@ private struct AboutSupportView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 }
 

@@ -165,7 +165,6 @@ struct ChangeSourceOriginRow: View {
                 .frame(minHeight: DSLayout.minimumTapTarget)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityValue(accessibilityValue)
             .accessibilityAction(named: Text(localized(score > 0 ? "取消讚" : "讚"))) {

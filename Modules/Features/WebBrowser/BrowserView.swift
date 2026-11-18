@@ -1263,7 +1263,6 @@ struct WebTOCSheet: View {
                         }
                         .padding(.vertical, 2)
                     }
-                    .buttonStyle(.plain)
                     .listRowBackground(
                         idx == selectedIndex ? DSColor.accent.opacity(0.07) : Color.clear
                     )

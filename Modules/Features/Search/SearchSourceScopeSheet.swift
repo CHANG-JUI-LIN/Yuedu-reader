@@ -158,7 +158,6 @@ struct SearchSourceScopeSheet: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .listRowBackground(DSColor.surface)
         .accessibilityLabel(source.bookSourceName)
         .accessibilityValue(localized(isSelected ? "已選取" : "未選取"))

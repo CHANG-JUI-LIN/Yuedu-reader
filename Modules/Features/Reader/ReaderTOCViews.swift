@@ -471,8 +471,8 @@ struct ReaderTOCView: View {
         }
     }
 
-    /// One row, spaced and set as a detail page's 目錄 was (maintainer, 2026-11-12): the title in
-    /// body text, room above and under it, a hairline between rows.
+    /// One row, set as a detail page's 目錄 was (maintainer, 2026-11-12): the title in body
+    /// text, a hairline between rows. Spaced as a List spaces its rows (2026-11-18).
     private func chapterRow(_ chapter: BookChapter) -> some View {
         let isLocked = lockedChapterIndexes.contains(chapter.index)
         let isUncached = uncachedChapterIndexes.contains(chapter.index)
@@ -536,12 +536,9 @@ struct ReaderTOCView: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.vertical, DSSpacing.md)
-            // A minimum, not a height: a two-line title over an update time needs more.
-            .frame(minHeight: DSLayout.minimumTapTarget)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // The list's own row: its height, its insets, the whole row the button (maintainer,
+        // 2026-11-18: the rows' own padding stood them too far apart).
         .accessibilityValue([isLocked ? localized("付費章節") : nil, isUncached ? localized("未下載") : nil]
             .compactMap { $0 }.joined(separator: "，"))
         .accessibilityAddTraits(isCurrent(chapter) ? .isSelected : [])

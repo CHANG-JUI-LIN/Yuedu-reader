@@ -770,7 +770,6 @@ struct AppearanceThemeView: View {
                     .accessibilityHidden(true)
             }
         }
-        .buttonStyle(.plain)
     }
 }
 

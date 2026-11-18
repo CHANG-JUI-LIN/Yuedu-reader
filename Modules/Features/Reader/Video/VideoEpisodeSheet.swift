@@ -77,7 +77,6 @@ struct VideoEpisodeSheet: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 }

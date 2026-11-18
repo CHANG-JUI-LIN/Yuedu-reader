@@ -377,9 +377,10 @@ struct TTSSettingsView: View {
                     .foregroundColor(
                         selectedSourceIds.contains(source.id) ? DSColor.accent : DSColor.textSecondary
                     )
+                    .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
+            .buttonStyle(.borderless)
 
             Button {
                 selectSource(source)
@@ -392,7 +393,6 @@ struct TTSSettingsView: View {
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
 
             Menu {
                 Button {
@@ -435,6 +435,7 @@ struct TTSSettingsView: View {
                     .rotationEffect(.degrees(90))
                     .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             }
+            .buttonStyle(.borderless)
             .accessibilityLabel(localized("更多"))
         }
         .frame(minHeight: DSLayout.minimumTapTarget)
@@ -665,7 +666,6 @@ struct TTSSettingsView: View {
                     .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
             .accessibilityIdentifier("\(identifier)_source")
             .accessibilityLabel(title)
             .accessibilityValue(isSelected ? localized("使用中") : localized("未選取"))

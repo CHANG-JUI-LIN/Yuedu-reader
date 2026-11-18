@@ -323,7 +323,6 @@ private struct ReaderBatterySVGAssetRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             } else {
                 assetSummary
@@ -358,6 +357,8 @@ private struct ReaderBatterySVGAssetRow: View {
                     )
                     .contentShape(Rectangle())
             }
+            // Borderless so a tap on ⋯ opens the menu instead of also selecting the row.
+            .buttonStyle(.borderless)
             .accessibilityLabel(localized("更多操作"))
         }
         .task(id: previewTaskID) {

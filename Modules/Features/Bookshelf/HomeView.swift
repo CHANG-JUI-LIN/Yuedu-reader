@@ -1980,7 +1980,6 @@ struct BookRow: View {
                     rowContent
                 } else {
                     Button(action: openBook) { rowContent }
-                        .buttonStyle(.plain)
 
                     VStack {
                         Spacer(minLength: 0)
@@ -2423,7 +2422,6 @@ private struct BookshelfFolderRow: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
                 .opacity(isSelecting ? DSLayout.bookshelfUnselectedCoverOpacity : 1)
 
                 if !isSelecting {

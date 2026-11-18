@@ -122,7 +122,6 @@ struct SourceOriginRow: View {
             .frame(minHeight: DSLayout.minimumTapTarget)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .accessibilityValue(kindLabel ?? "")
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
@@ -142,7 +141,6 @@ struct SourceVersionRow: View {
                 .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .listRowBackground(Color.clear)
     }
 }
