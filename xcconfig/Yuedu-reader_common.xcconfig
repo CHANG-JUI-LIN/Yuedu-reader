@@ -7,8 +7,12 @@ TARGETED_DEVICE_FAMILY = 1,2
 // Warnings as errors (staged — enable fully after cleanup)
 SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
 
-// Debug information
+// Debug information. Debug builds keep DWARF in the object files: their code lives in
+// YueduReader.debug.dylib, so a dSYM of the stub executable came out empty (Xcode's "empty dSYM
+// file detected" warning) and dsymutil spent seconds every build writing a 240 MB dSYM nothing
+// used — Crashlytics uploads only non-Debug dSYMs.
 DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+DEBUG_INFORMATION_FORMAT[config=Debug] = dwarf
 
 // Enable module verification
 ENABLE_MODULE_VERIFIER = YES
