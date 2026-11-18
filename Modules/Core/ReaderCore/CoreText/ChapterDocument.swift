@@ -89,7 +89,9 @@ final class ChapterDocumentStore {
     private var accessOrder: UInt64 = 0
     private var generation: UInt64 = 0
 
-    init(builder: any AttributedStringBuilding, capacity: Int = 8) {
+    nonisolated static let defaultCapacity = 8
+
+    init(builder: any AttributedStringBuilding, capacity: Int = ChapterDocumentStore.defaultCapacity) {
         self.builder = builder
         self.capacity = max(1, capacity)
     }

@@ -677,10 +677,50 @@ final class CoreTextPaginator: Sendable {
         case fontSizeChanged  // Clear all caches
         case viewSizeChanged  // Clear all caches
         case themeChanged     // Don't clear caches, only redraw
+        case memoryWarning    // Clear all caches: the engine is dropping its layouts too
     }
 
     private let layoutFingerprintProvider: @Sendable (NSAttributedString) -> Int
-    private let cache = OSAllocatedUnfairLock<[CacheKey: ChapterLayout]>(initialState: [:])
+    /// Full layouts, most recently used last, at most `cacheCapacity` of them.
+    ///
+    /// A layout is found again only under the `ContentRevision` of the document it was made
+    /// from, and every build of a chapter mints a new one, so an entry outlives its use as
+    /// soon as the document store lets that document go. The store keeps
+    /// `ChapterDocumentStore.defaultCapacity` documents, and this keeps as many layouts.
+    /// Unbounded, it kept every chapter laid out in a session, and each rebuild of one again:
+    /// an hour of switching chapters ran the process out of memory inside Core Text
+    /// (TestFlight AGA6UftGrSZehKw65KigEv8, Crashlytics 17c788ce, 3.0.2 (154)).
+    private let cache = OSAllocatedUnfairLock(initialState: LayoutLRU())
+    private let cacheCapacity: Int
+
+    private struct LayoutLRU {
+        var layouts: [CacheKey: ChapterLayout] = [:]
+        var order: [CacheKey] = []
+
+        mutating func get(_ key: CacheKey) -> ChapterLayout? {
+            guard let layout = layouts[key] else { return nil }
+            touch(key)
+            return layout
+        }
+
+        mutating func set(_ layout: ChapterLayout, for key: CacheKey, capacity: Int) {
+            layouts[key] = layout
+            touch(key)
+            while order.count > capacity {
+                layouts[order.removeFirst()] = nil
+            }
+        }
+
+        mutating func removeAll() {
+            layouts.removeAll()
+            order.removeAll()
+        }
+
+        private mutating func touch(_ key: CacheKey) {
+            order.removeAll { $0 == key }
+            order.append(key)
+        }
+    }
     private enum ContentIdentity: Hashable {
         case revision(ContentRevision)
         case fingerprint(Int)
@@ -706,8 +746,10 @@ final class CoreTextPaginator: Sendable {
     }
 
     init(
+        cacheCapacity: Int = ChapterDocumentStore.defaultCapacity,
         layoutFingerprintProvider: @escaping @Sendable (NSAttributedString) -> Int = { CoreTextPaginator.layoutFingerprint(for: $0) }
     ) {
+        self.cacheCapacity = max(1, cacheCapacity)
         self.layoutFingerprintProvider = layoutFingerprintProvider
     }
 
@@ -1028,18 +1070,23 @@ final class CoreTextPaginator: Sendable {
         }
     }
 
+    /// Test evidence: how many full layouts this paginator is holding.
+    var cachedLayoutCount: Int {
+        cache.withLock { $0.layouts.count }
+    }
+
     private func cachedLayout(for key: CacheKey) -> ChapterLayout? {
-        cache.withLock { $0[key] }
+        cache.withLock { $0.get(key) }
     }
 
     private func storeLayout(_ layout: ChapterLayout, for key: CacheKey) {
-        cache.withLock { $0[key] = layout }
+        cache.withLock { $0.set(layout, for: key, capacity: cacheCapacity) }
     }
 
     @MainActor
     func invalidate(reason: InvalidationReason) {
         switch reason {
-        case .fontSizeChanged, .viewSizeChanged:
+        case .fontSizeChanged, .viewSizeChanged, .memoryWarning:
             removeAllCachedLayouts()
         case .themeChanged:
             break

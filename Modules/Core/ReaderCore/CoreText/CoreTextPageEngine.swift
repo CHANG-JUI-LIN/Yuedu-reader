@@ -378,6 +378,8 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 self?.invalidateSnapshots()
                 self?.prerenderer.purgeCaches()
                 self?._layouts.trim(keeping: 0)
+                // The paginator holds the same layouts; trimming only the engine's freed nothing.
+                self?.paginationManager.invalidate(reason: .memoryWarning)
                 self?.cancelPreloadTasks()
                 self?.chapterDocumentStore.invalidateAll()
                 MemoryFootprint.log("warning-after")
