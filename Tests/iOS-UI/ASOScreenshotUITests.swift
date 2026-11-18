@@ -134,7 +134,7 @@ final class ASOScreenshotUITests: XCTestCase {
         tab(app, locale.explore).tap()
         pause(1)
         tab(app, locale.explore).tap()   // a second tap scrolls the home to its top
-        pause(Double(env["ASO_EXPLORE_WAIT"] ?? "8") ?? 8)
+        pause(Double(env["ASO_EXPLORE_WAIT"] ?? "15") ?? 15)
         if wanted("explore") { shoot("explore") }
 
         // 編輯首頁, as it opens: at the foot of the home, with the sections' previews and 新增.
