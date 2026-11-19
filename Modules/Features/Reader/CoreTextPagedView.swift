@@ -171,6 +171,22 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.pullDownPageViewController = pvc
         pvc.view.addGestureRecognizer(bookmarkPan)
 
+        // 仿真 only: on a page missing a neighbour, stops every drag not already clearly
+        // heading for the neighbour that exists, before UIKit's curl pan can begin on it
+        // (`ReaderCurlBoundaryGate`). The curl pan waits for it like it waits for the
+        // vertical pans, and it fails at once everywhere else.
+        if adapterDescriptor.transitionStyle == .pageCurl, !adapterDescriptor.disablesBuiltInSwipe {
+            let gatePan = UIPanGestureRecognizer(
+                target: context.coordinator,
+                action: #selector(Coordinator.handleCurlBoundaryGatePan(_:))
+            )
+            gatePan.maximumNumberOfTouches = 1
+            gatePan.delegate = context.coordinator
+            context.coordinator.curlBoundaryGatePan = gatePan
+            context.coordinator.curlBoundaryPageViewController = pvc
+            pvc.view.addGestureRecognizer(gatePan)
+        }
+
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: pvc)
 
         return pvc
@@ -184,8 +200,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     /// `_handlePanGesture:` asks for the curl's incoming pages again at `.began` and hands them
     /// to the transition unchecked, and with the data source gone `_canHandleGestures` is false
     /// and that answer is empty without the data source ever being asked — so a curl pan that
-    /// passed its begin check before the Coordinator went throws. Both reports had no
-    /// `curl no page` breadcrumb at the throw, which is that path.
+    /// passed its begin check before the Coordinator went throws. (The reports' missing
+    /// `curl no page` breadcrumb at the throw does not prove this path: `Crashlytics.log` lands
+    /// a main-queue turn after the ask, so a same-turn throw drops it. The crash at the book's
+    /// last page with the Coordinator alive is `ReaderCurlBoundaryGate`'s.)
     ///
     /// Disabling a recognizer cancels a recognition in flight synchronously, so no pan reaches
     /// `.began` here; the controller then takes no more touches and has no data source to lose.
@@ -593,6 +611,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // Pull-down bookmark gesture state
         weak var pullDownBookmarkPanGesture: UIPanGestureRecognizer?
         weak var pullDownPageViewController: UIPageViewController?
+        // 仿真 book-edge gate (`ReaderCurlBoundaryGate`)
+        weak var curlBoundaryGatePan: UIPanGestureRecognizer?
+        weak var curlBoundaryPageViewController: UIPageViewController?
         /// The hint in the gap the pulled page opens above itself. Parented to the
         /// page view controller's view just above its top edge, so it comes down
         /// with the page and shows in the gap the page leaves.
@@ -2210,7 +2231,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// transition without checking it again. A nil at that moment is the crash. It has not
         /// been reproduced, so every curl nil leaves a breadcrumb saying which boundary it was
         /// (a real book end, or one the index walk below invented while chapters paginate) and
-        /// what the pan was doing; the next report then names its own cause.
+        /// what the pan was doing.
+        ///
+        /// What these breadcrumbs can and cannot show (UIKit 27.x, read 2026-11-19): the ask
+        /// check treats a gesture whose direction is still undecided as backward, so at the
+        /// last page it passes on "before" and logs nothing. The nil that throws is asked for
+        /// in the same main-queue turn as the throw, and `Crashlytics.log` lands a turn later,
+        /// so the breadcrumb of the fatal ask never reaches the report. The ones that do reach
+        /// it are earlier, rejected asks: the 11-16 report shows two `asked=after` at the last
+        /// page before the crash. The absence of a breadcrumb does not mean UIKit never asked.
         private func recordCurlBoundary(
             asked: String,
             from viewController: UIViewController,
@@ -2242,6 +2271,55 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 + " total=\(currentEngine.totalPages) stackWrite=\(stackWriteTotalPages)"
                 + " rtl=\(isRTL ? 1 : 0) pan=\(panDetail)"
             )
+        }
+
+        /// The book-edge gate's own action. It has nothing to do: beginning is the whole job,
+        /// since that fails UIKit's curl pan, which waits for it.
+        @objc func handleCurlBoundaryGatePan(_ gesture: UIPanGestureRecognizer) {}
+
+        /// Whether the book-edge gate takes this drag away from UIKit's curl pan
+        /// (`ReaderCurlBoundaryGate`).
+        fileprivate func curlBoundaryGateStops(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard pageTurnStyle == .curl,
+                  let pan = gestureRecognizer as? UIPanGestureRecognizer,
+                  let pvc = curlBoundaryPageViewController,
+                  pvc.dataSource != nil,
+                  let neighbours = curlNeighbourSides(on: pvc) else { return false }
+            // The view UIKit reads the pan in (`_shouldBeginNavigationInDirection:…`).
+            let space = pvc.view.superview ?? pvc.view
+            let stops = ReaderCurlBoundaryGate.blocks(
+                hasAfter: neighbours.after,
+                hasBefore: neighbours.before,
+                afterSign: pvc.view.effectiveUserInterfaceLayoutDirection == .rightToLeft ? 1 : -1,
+                translation: pan.translation(in: space),
+                velocity: pan.velocity(in: space)
+            )
+            if stops {
+                AppLogger.render(
+                    "[FlipTrace] curl edge gate stopped a drag after=\(neighbours.after) before=\(neighbours.before)"
+                )
+            }
+            return stops
+        }
+
+        /// Which of UIKit's two neighbours the data source would vend for the pages on screen,
+        /// answered by the same walk `pageForward` / `pageBackward` take, without building the
+        /// pages. Nil when nothing is on screen.
+        private func curlNeighbourSides(on pvc: UIPageViewController) -> (after: Bool, before: Bool)? {
+            guard let shown = pvc.viewControllers, let first = shown.first, let last = shown.last else {
+                return nil
+            }
+            if usesMidSpine {
+                let forward = midSpinePage(after: last) != nil
+                let backward = midSpinePage(before: first) != nil
+                return isRTL ? (backward, forward) : (forward, backward)
+            }
+            // The sheet's front; its back, when UIKit holds one, carries the same position.
+            let front = shown.first { !($0 is PageBackViewController) } ?? first
+            guard let position = committedReadingPosition(of: front) else { return (false, false) }
+            let forward = steppedPosition(.forward, from: position) != nil
+            let backward = steppedPosition(.backward, from: position) != nil
+            return isRTL ? (backward, forward) : (forward, backward)
         }
 
         private func pageBackward(from viewController: UIViewController) -> UIViewController? {
@@ -3187,6 +3265,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // MARK: - UIGestureRecognizerDelegate (swipe-up exit / pull-down bookmark)
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            if gestureRecognizer === curlBoundaryGatePan {
+                return curlBoundaryGateStops(gestureRecognizer)
+            }
             if gestureRecognizer === pullDownBookmarkPanGesture {
                 guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
                       let view = pan.view,
@@ -3209,9 +3290,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
+            // UIKit's curl pan waits for the book-edge gate, which fails in the same touch
+            // event unless it stops the drag. Not the vertical pans: the gate waits for them
+            // (below), and making each wait for the other is a cycle.
+            if gestureRecognizer === curlBoundaryGatePan {
+                return otherGestureRecognizer is UIPanGestureRecognizer
+                    && otherGestureRecognizer.view === gestureRecognizer.view
+                    && otherGestureRecognizer !== swipeUpExitPanGesture
+                    && otherGestureRecognizer !== pullDownBookmarkPanGesture
+            }
             // Horizontal page-turn pans on the same container (cover / instant /
-            // curl) wait for the vertical pans, which fail immediately unless the
-            // drag is clearly up or down — page turns keep their responsiveness.
+            // curl) and the book-edge gate wait for the vertical pans, which fail
+            // immediately unless the drag is clearly up or down — page turns keep
+            // their responsiveness.
             guard gestureRecognizer === swipeUpExitPanGesture
                     || gestureRecognizer === pullDownBookmarkPanGesture else { return false }
             // Not each other: the two vertical pans are mutually exclusive by
