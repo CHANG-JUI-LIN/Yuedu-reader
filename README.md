@@ -101,7 +101,6 @@ The source code is open source. The App Store version is the official build main
 - **Sources (Legado format):** [Guide index](docs/book-source/README.md) · [常见症状对照表](docs/book-source/troubleshooting.zh-Hans.md) — import, five-stage validation, rule debugger, syntax cheat sheet, differences from Legado, and symptom→fix troubleshooting.
 - **Modules:** [模組開發文件](docs/modules/README.md) (Traditional Chinese) — the JSON format behind lists, search, ISBN lookup, and in-app reading. The built-in official modules use the same format, so they double as examples.
 - **Battery SVG templates:** [English](docs/reader-overlay/BatterySVG.en.md) · [简体中文](docs/reader-overlay/BatterySVG.zh-Hans.md) · [繁體中文](docs/reader-overlay/BatterySVG.zh-Hant.md) — template format, dynamic markers, supported SVG subset, and import troubleshooting.
-- **Release notes:** [3.0.1](docs/release-notes/3.0.1.md) · [3.0.0](docs/release-notes/3.0.0.md) (Traditional Chinese).
 
 ### Developer reference
 
