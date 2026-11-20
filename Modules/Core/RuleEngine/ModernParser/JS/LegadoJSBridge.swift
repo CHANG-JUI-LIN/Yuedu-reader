@@ -269,8 +269,12 @@ final class LegadoScriptWaits: Sendable {
 
     /// The time spent waiting so far, the wait in progress included.
     var waitedSeconds: TimeInterval {
-        let now = DispatchTime.now().uptimeNanoseconds
-        let nanos = state.withLock { $0.ended + ($0.count > 0 ? now - $0.since : 0) }
+        // The clock is read under the lock `during` sets `since` under, so `since <= now`.
+        // Read before it, a wait starting on another thread in between left `since` past
+        // `now` and the subtraction trapped (Crashlytics ecc0b515…, a 7260-source search).
+        let nanos = state.withLock {
+            $0.ended + ($0.count > 0 ? DispatchTime.now().uptimeNanoseconds - $0.since : 0)
+        }
         return TimeInterval(nanos) / 1_000_000_000
     }
 
