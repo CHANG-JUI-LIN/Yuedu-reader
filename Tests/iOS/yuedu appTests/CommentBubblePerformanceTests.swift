@@ -43,10 +43,10 @@ struct CommentBubblePerformanceTests {
         global.commentBubblePresetMode = .builtin
         global.commentBubbleFollowsSourceSVG = false
         let first = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(
-            count: "12", pointSize: 22, themeTextColor: .black
+            count: "12", pointSize: 22, themeTextColor: .black, pageBackground: .white
         ))
         let second = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(
-            count: "99", pointSize: 22, themeTextColor: .black
+            count: "99", pointSize: 22, themeTextColor: .black, pageBackground: .white
         ))
         #expect(first.pngData() != second.pngData())
     }
@@ -72,16 +72,22 @@ struct CommentBubblePerformanceTests {
             )
             global.applyCommentBubbleSync(styles: saved.2 + [style])
             global.applyCommentBubbleSync(selection: style.id)
-            // The emphasis slot is a hot paragraph's, not a large count's.
-            let cases: [(Bool, UIColor, [UInt8])] = [
-                (false, .black, [255, 0, 0, 255]),
-                (true, .black, [0, 0, 255, 255]),
-                (false, .white, [0, 255, 0, 255]),
-                (true, .white, [255, 255, 0, 255])
+            // The emphasis slot is a hot paragraph's, not a large count's. Day or night is the
+            // page's: #777 text is dimmed text on 黑色 and night (FB-230), and the same text on
+            // a light page is day, so the cached bubble cannot be the other page's.
+            let dimmed = UIColor(red: 0x77 / 255, green: 0x77 / 255, blue: 0x77 / 255, alpha: 1)
+            let cases: [(Bool, UIColor, UIColor, [UInt8])] = [
+                (false, .black, .white, [255, 0, 0, 255]),
+                (true, .black, .white, [0, 0, 255, 255]),
+                (false, .white, .black, [0, 255, 0, 255]),
+                (true, .white, .black, [255, 255, 0, 255]),
+                (false, dimmed, .black, [0, 255, 0, 255]),
+                (false, dimmed, .white, [255, 0, 0, 255]),
             ]
-            for (isHot, textColor, expected) in cases {
+            for (isHot, textColor, page, expected) in cases {
                 let image = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(
-                    count: "120", traits: .init(isHot: isHot), pointSize: 22, themeTextColor: textColor
+                    count: "120", traits: .init(isHot: isHot), pointSize: 22, themeTextColor: textColor,
+                    pageBackground: page
                 ))
                 let cgImage = try #require(image.cgImage)
                 var pixel = [UInt8](repeating: 0, count: 4)
@@ -95,7 +101,7 @@ struct CommentBubblePerformanceTests {
                     context.interpolationQuality = .none
                     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
                 }
-                #expect(pixel == expected)
+                #expect(pixel == expected, "text \(textColor) on \(page)")
             }
         }
     }

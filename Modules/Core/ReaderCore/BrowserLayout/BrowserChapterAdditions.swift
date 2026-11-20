@@ -85,12 +85,14 @@ final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
         guard let settings = settings() else { return nil }
         switch picture {
         case .bubble(let count, let traits):
-            return Self.bubbleImage(count: count, traits: traits, pointSize: settings.fontSize, textColor: settings.textColor)
+            return Self.bubbleImage(count: count, traits: traits, pointSize: settings.fontSize, textColor: settings.textColor,
+                                    pageBackground: settings.backgroundColor)
         case .card(let content):
             let font = UIFont(name: UserReaderFontResolver.selectedPostScriptName ?? "", size: settings.fontSize)
                 ?? .systemFont(ofSize: settings.fontSize)
             return await ReviewCardRaster.image(card: content, columnWidth: max(1, renderWidth),
-                                                reader: .init(font: font, textColor: settings.textColor))
+                                                reader: .init(font: font, textColor: settings.textColor,
+                                                              pageBackground: settings.backgroundColor))
         }
     }
 
@@ -102,9 +104,11 @@ final class BrowserChapterAdditions: BrowserLayoutResourceProviding {
     /// chapter document does. The package sets an inline picture's bottom on the baseline and
     /// has no `vertical-align` for one, so the room under the bubble is part of the picture:
     /// its middle then sits at the text's.
-    static func bubbleImage(count: Int, traits: CommentBubbleTraits = .plain, pointSize: CGFloat, textColor: UIColor) -> UIImage? {
+    static func bubbleImage(count: Int, traits: CommentBubbleTraits = .plain, pointSize: CGFloat, textColor: UIColor,
+                            pageBackground: UIColor) -> UIImage? {
         guard let bubble = CommentBubbleSVGRecognizer.commentBadgeImage(
-            count: String(count), traits: traits, pointSize: pointSize, themeTextColor: textColor),
+            count: String(count), traits: traits, pointSize: pointSize, themeTextColor: textColor,
+            pageBackground: pageBackground),
             bubble.size.width > 0, bubble.size.height > 0 else { return nil }
         // The picture is drawn `bubbleWidthEm` wide, so one em is this many of its points.
         let em = bubble.size.width / bubbleWidthEm

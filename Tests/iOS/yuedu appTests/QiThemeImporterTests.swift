@@ -534,7 +534,8 @@ struct QiThemeImporterTests {
                     imported.style.svg,
                     style: imported.style,
                     isHot: false,
-                    themeTextColor: .black
+                    themeTextColor: .black,
+                    pageBackground: .white
                 )
             ))
             #expect(template.replacingDisplayText(with: "12").displayText == "12")
@@ -560,7 +561,8 @@ struct QiThemeImporterTests {
                 imported.style.svg,
                 style: imported.style,
                 isHot: false,
-                themeTextColor: .black
+                themeTextColor: .black,
+                pageBackground: .white
             )
         ))
         #expect(template.displayText == nil)

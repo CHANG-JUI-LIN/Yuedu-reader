@@ -275,9 +275,10 @@ struct ReviewCardTemplateTests {
     @MainActor
     func builtinHotCommentTagFollowsTheBackground() throws {
         let template = try ReviewCardTemplate(source: ReviewCardTemplate.builtinSource(for: .hotComment))
-        let reader = ReviewCardRaster.Reader(font: .systemFont(ofSize: 19), textColor: .black)
         var accents: Set<String> = []
         for theme in ReaderTheme.allCases {
+            let reader = ReviewCardRaster.Reader(
+                font: .systemFont(ofSize: 19), textColor: .black, pageBackground: theme.uiBackgroundColor)
             let themed = ReviewCardRaster.appearance(for: reader, theme: theme)
             let filled = template.filled(
                 with: ReviewCardContent.sample(for: .hotComment), appearance: themed, width: 360, colorHex: "#333333"
@@ -288,6 +289,33 @@ struct ReviewCardTemplateTests {
         // Red on 白色 and 黑色; 護眼綠 and 棕色 each their own.
         #expect(ReaderTheme.white.commentCardAccent == ReaderTheme.night.commentCardAccent)
         #expect(accents.count == 3)
+    }
+
+    /// FB-230: on 黑色 with the text dimmed to #777, the cards took their day look — light
+    /// glass on a black page, unreadable. The page decides day or night, not the text.
+    @Test("a card is drawn for night by its page, whatever the text colour (FB-230)")
+    @MainActor
+    func nightIsThePagesNotTheTexts() throws {
+        let template = try ReviewCardTemplate(source: ReviewCardTemplate.builtinSource(for: .chapterSay))
+        let content = ReviewCardContent.sample(for: .chapterSay)
+        let dimmed = UIColor(red: 0x77 / 255, green: 0x77 / 255, blue: 0x77 / 255, alpha: 1)
+        let black = UIColor.black
+        let paper = UIColor(red: 244 / 255, green: 245 / 255, blue: 247 / 255, alpha: 1)
+        let cases: [(text: UIColor, page: UIColor, night: Bool)] = [
+            (dimmed, black, true),
+            (UIColor(white: 0.85, alpha: 1), black, true),
+            (UIColor(red: 0x33 / 255, green: 0x33 / 255, blue: 0x33 / 255, alpha: 1), paper, false),
+            (dimmed, paper, false),
+        ]
+        for (text, page, night) in cases {
+            let reader = ReviewCardRaster.Reader(font: .systemFont(ofSize: 19), textColor: text, pageBackground: page)
+            #expect(reader.isNight == night, "text \(text) on \(page)")
+            let appearance = ReviewCardRaster.appearance(for: reader, theme: night ? .night : .white)
+            #expect(appearance.isNight == night, "text \(text) on \(page)")
+            let filled = template.filled(with: content, appearance: appearance, width: 360,
+                                         colorHex: appearance.textColorHex)
+            #expect(filled.contains(night ? "yd-night" : "yd-day"), "text \(text) on \(page)")
+        }
     }
 
     @Test("comment text is escaped and never filled a second time")
@@ -509,7 +537,7 @@ struct ReviewCardTemplateTests {
         let template = try ReviewCardTemplate(source: source)
         let card = ReviewCardContent.sample(for: kind)
         func filled(_ font: UIFont) -> String {
-            let reader = ReviewCardRaster.Reader(font: font, textColor: .black)
+            let reader = ReviewCardRaster.Reader(font: font, textColor: .black, pageBackground: .white)
             let appearance = ReviewCardRaster.appearance(for: reader, theme: .white)
             return template.filled(with: card, appearance: appearance, width: 360, colorHex: "#333333")
         }
@@ -525,7 +553,7 @@ struct ReviewCardTemplateTests {
         let template = try ReviewCardTemplate(source: ReviewCardTemplate.builtinSource(for: .chapterSay))
         let card = try #require(ReviewCardContent.extract(from: qidianTwoCommentCard))
         func image(_ font: UIFont) async throws -> Data {
-            let reader = ReviewCardRaster.Reader(font: font, textColor: .black)
+            let reader = ReviewCardRaster.Reader(font: font, textColor: .black, pageBackground: .white)
             let appearance = ReviewCardRaster.appearance(for: reader, theme: .white)
             let svg = template.filled(with: card, appearance: appearance, width: 360, colorHex: "#333333")
             let drawn = try #require(await SVGWebViewRasterizer.shared.renderCard(svgString: svg, width: 360, isNight: false))

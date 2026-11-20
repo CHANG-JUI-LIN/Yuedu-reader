@@ -1408,7 +1408,8 @@ struct NodeAttributedStringRenderer: Sendable {
             count: count,
             traits: traits,
             pointSize: ctx.font.pointSize,
-            themeTextColor: badgeColor
+            themeTextColor: badgeColor,
+            pageBackground: config.backgroundColor
         ) else {
             AppLogger.render("comment badge SVG template failed", context: [
                 "count": count,
@@ -1471,6 +1472,7 @@ struct NodeAttributedStringRenderer: Sendable {
                     svgContent: svgContent,
                     pointSize: ctx.font.pointSize,
                     themeTextColor: ctx.textColor,
+                    pageBackground: config.backgroundColor,
                     recognizedBubble: recognized
                 ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
                 var bubbleStyle = style
@@ -1506,7 +1508,8 @@ struct NodeAttributedStringRenderer: Sendable {
                 await ReviewCardRaster.image(
                     svg: svgContent,
                     columnWidth: resolvedWidth,
-                    reader: ReviewCardRaster.Reader(font: ctx.font, textColor: ctx.textColor),
+                    reader: ReviewCardRaster.Reader(
+                        font: ctx.font, textColor: ctx.textColor, pageBackground: config.backgroundColor),
                     styleWidth: style.width,
                     styleHeight: style.height,
                     isAuthorSized: isAuthorSizedSVG(style),
@@ -1678,7 +1681,8 @@ struct NodeAttributedStringRenderer: Sendable {
             image = await ReviewCardRaster.image(
                 svg: svgContent,
                 columnWidth: resolvedWidth,
-                reader: ReviewCardRaster.Reader(font: blockCtx.font, textColor: blockCtx.textColor),
+                reader: ReviewCardRaster.Reader(
+                    font: blockCtx.font, textColor: blockCtx.textColor, pageBackground: config.backgroundColor),
                 styleWidth: payload.style.width,
                 styleHeight: payload.style.height,
                 isAuthorSized: isAuthorSizedSVG(payload.style),

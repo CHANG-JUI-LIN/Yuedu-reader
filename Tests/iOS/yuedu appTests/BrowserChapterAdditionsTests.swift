@@ -196,8 +196,10 @@ struct BrowserChapterAdditionsTests {
 
     @Test("a bubble's picture leaves room under the bubble, so it sits at the middle of its line")
     func bubblePicture() throws {
-        let image = try #require(BrowserChapterAdditions.bubbleImage(count: 12, pointSize: 20, textColor: .black))
-        let bare = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(count: "12", pointSize: 20, themeTextColor: .black))
+        let image = try #require(BrowserChapterAdditions.bubbleImage(count: 12, pointSize: 20, textColor: .black,
+                                                                            pageBackground: .white))
+        let bare = try #require(CommentBubbleSVGRecognizer.commentBadgeImage(count: "12", pointSize: 20, themeTextColor: .black,
+                                                                                   pageBackground: .white))
         #expect(image.size.width == bare.size.width && image.size.height >= bare.size.height)
     }
 

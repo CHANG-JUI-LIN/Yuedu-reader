@@ -31,6 +31,9 @@ enum OnlineImageLoader {
     /// `bodyPointSize`: the reader's body text size, used to scale source review cards
     /// (`ReviewCardRaster`); 0 keeps the plain column-width sizing.
     /// `themeTextColor`: the reading text colour, which a card template's text follows.
+    /// `pageBackground`: the reading background, which says whether a card or bubble is drawn
+    /// for night. Without either, the card is set in the system's own `.label` on
+    /// `.systemBackground`, which go dark together.
     /// `headers`: the book source's request header map (Legado `header`), applied to remote
     /// fetches. Chapter illustrations live on the source's own CDN, and those CDNs gate on the
     /// source's declared User-Agent/Referer just like cover art does — legado downloads them via
@@ -42,6 +45,7 @@ enum OnlineImageLoader {
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
         themeTextColor: UIColor? = nil,
+        pageBackground: UIColor? = nil,
         timeout: TimeInterval = 8,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
@@ -74,6 +78,7 @@ enum OnlineImageLoader {
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
                 themeTextColor: themeTextColor,
+                pageBackground: pageBackground,
                 headers: effectiveHeaders,
                 cachePolicy: cachePolicy,
                 session: session,
@@ -96,6 +101,7 @@ enum OnlineImageLoader {
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
         themeTextColor: UIColor? = nil,
+        pageBackground: UIColor? = nil,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy,
         session: URLSession,
@@ -107,6 +113,7 @@ enum OnlineImageLoader {
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
                 themeTextColor: themeTextColor,
+                pageBackground: pageBackground,
                 decode: decode
             )
         }
@@ -116,6 +123,7 @@ enum OnlineImageLoader {
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
                 themeTextColor: themeTextColor,
+                pageBackground: pageBackground,
                 headers: headers,
                 cachePolicy: cachePolicy,
                 session: session,
@@ -173,6 +181,7 @@ enum OnlineImageLoader {
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
         themeTextColor: UIColor? = nil,
+        pageBackground: UIColor? = nil,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         guard uri.hasPrefix("data:"), let commaIdx = uri.firstIndex(of: ",") else { return nil }
@@ -206,6 +215,7 @@ enum OnlineImageLoader {
                     svgContent: svg,
                     pointSize: pointSize,
                     themeTextColor: .secondaryLabel,
+                    pageBackground: pageBackground ?? .systemBackground,
                     recognizedBubble: recognized
                 ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: pointSize, themeTextColor: .secondaryLabel)
             }
@@ -216,6 +226,7 @@ enum OnlineImageLoader {
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
                 themeTextColor: themeTextColor,
+                pageBackground: pageBackground,
                 baseURL: nil
             )
         }
@@ -238,6 +249,7 @@ enum OnlineImageLoader {
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
         themeTextColor: UIColor? = nil,
+        pageBackground: UIColor? = nil,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
         session: URLSession = .trusting,
@@ -298,6 +310,7 @@ enum OnlineImageLoader {
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
                 themeTextColor: themeTextColor,
+                pageBackground: pageBackground,
                 baseURL: url
             )
         }
@@ -346,6 +359,7 @@ enum OnlineImageLoader {
         renderWidth: CGFloat,
         bodyPointSize: CGFloat,
         themeTextColor: UIColor?,
+        pageBackground: UIColor?,
         baseURL: URL?
     ) async -> UIImage? {
         // Every caller passes the column it lays out in (at least 1pt); the screen's width is not
@@ -358,7 +372,8 @@ enum OnlineImageLoader {
         let reader = bodyPointSize > 0
             ? ReviewCardRaster.Reader(
                 font: UserReaderFontResolver.bodyFont(size: bodyPointSize),
-                textColor: themeTextColor ?? .label
+                textColor: themeTextColor ?? .label,
+                pageBackground: pageBackground ?? .systemBackground
             )
             : nil
         return await ReviewCardRaster.image(

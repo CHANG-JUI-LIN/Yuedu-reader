@@ -15,7 +15,8 @@ struct CommentStylePreviewContext {
             theme: theme,
             reader: ReviewCardRaster.Reader(
                 font: UserReaderFontResolver.bodyFont(size: ReaderConfig.shared.fontSize),
-                textColor: theme.uiTextColor
+                textColor: theme.uiTextColor,
+                pageBackground: theme.uiBackgroundColor
             )
         )
     }

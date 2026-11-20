@@ -481,6 +481,7 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         pointSize: CGFloat,
         themeTextColor: UIColor,
+        pageBackground: UIColor,
         recognizedBubble: CommentBubbleSVG? = nil,
         sourceTextFace: BubbleTextFace = .declared,
         traits: CommentBubbleTraits = .plain
@@ -495,6 +496,7 @@ struct CommentBubbleSVGRecognizer {
                 svgContent: svgContent,
                 pointSize: pointSize,
                 themeTextColor: themeTextColor,
+                isNight: isNightPage(background: pageBackground),
                 displayText: recognizedBubble?.displayText,
                 sourceTextFace: sourceTextFace,
                 traits: traits
@@ -510,6 +512,7 @@ struct CommentBubbleSVGRecognizer {
             svgContent: svgContent,
             pointSize: pointSize,
             themeTextColor: themeTextColor,
+            pageBackground: pageBackground,
             sourceBubble: recognizedBubble,
             sourceTextFace: sourceTextFace,
             traits: traits
@@ -530,7 +533,8 @@ struct CommentBubbleSVGRecognizer {
         count: String,
         traits: CommentBubbleTraits = .plain,
         pointSize: CGFloat,
-        themeTextColor: UIColor
+        themeTextColor: UIColor,
+        pageBackground: UIColor
     ) -> UIImage? {
         let svg = builtinTemplate(builtinBubbleSVG, isHot: traits.isHot)
         guard let template = recognize(src: "", svgContent: svg) else {
@@ -542,6 +546,7 @@ struct CommentBubbleSVGRecognizer {
             svgContent: svg,
             pointSize: pointSize,
             themeTextColor: themeTextColor,
+            pageBackground: pageBackground,
             recognizedBubble: template.replacingDisplayText(with: shown),
             // The app's own template, not a source's SVG: its count reads in the reading
             // font, as a bubble package's does.
@@ -551,8 +556,9 @@ struct CommentBubbleSVGRecognizer {
     }
 
     /// The full determinant of a drawn bubble: which SVG (the count is baked into it), the
-    /// point size, the resolved theme text colour, and every GlobalSettings knob that alters
-    /// the draw. Changing any of these mints a new key, so stale settings never surface a
+    /// point size, the resolved theme text colour, whether the page is dark (a style's day or
+    /// night colour slots; the text colour does not say it, FB-230), and every GlobalSettings
+    /// knob that alters the draw. Changing any of these mints a new key, so stale settings never surface a
     /// wrong bubble; `L…` folds the selected style's length in to catch in-place SVG edits.
     private static func bubbleImageCacheKey(
         settings s: GlobalSettingsSnapshot,
@@ -560,6 +566,7 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         pointSize: CGFloat,
         themeTextColor: UIColor,
+        isNight: Bool,
         displayText: String?,
         sourceTextFace: BubbleTextFace,
         traits: CommentBubbleTraits
@@ -589,7 +596,8 @@ struct CommentBubbleSVGRecognizer {
             String(s.commentBubbleMaxCount)
         ].joined(separator: "|")
         let textIdentity = displayText.map { "|T\($0)" } ?? ""
-        return "\(identity.utf8.count)#\(identity.hashValue)\(textIdentity)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)"
+        return "\(identity.utf8.count)#\(identity.hashValue)\(textIdentity)|\(Int(pointSize.rounded()))|\(rgba)|"
+            + "\(isNight ? "N" : "D")|\(sig)"
     }
 
     private static func computeResolvedBubbleImage(
@@ -598,6 +606,7 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         pointSize: CGFloat,
         themeTextColor: UIColor,
+        pageBackground: UIColor,
         sourceBubble: CommentBubbleSVG? = nil,
         sourceTextFace: BubbleTextFace,
         traits: CommentBubbleTraits = .plain
@@ -617,8 +626,9 @@ struct CommentBubbleSVGRecognizer {
         // A selected style that cannot be drawn falls back to the app's own bubble.
         let template = styledTemplate(mode: settings.commentBubblePresetMode,
                                       style: settings.commentBubbleSelectedCustomStyle,
-                                      traits: traits, themeTextColor: themeTextColor)
-            ?? styledTemplate(mode: .builtin, style: nil, traits: traits, themeTextColor: themeTextColor)
+                                      traits: traits, themeTextColor: themeTextColor, pageBackground: pageBackground)
+            ?? styledTemplate(mode: .builtin, style: nil, traits: traits, themeTextColor: themeTextColor,
+                              pageBackground: pageBackground)
         guard let template else {
             return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
         }
@@ -641,7 +651,8 @@ struct CommentBubbleSVGRecognizer {
         mode: ReaderCommentBubblePresetMode,
         style: ReaderCommentBubbleCustomStyle?,
         traits: CommentBubbleTraits,
-        themeTextColor: UIColor
+        themeTextColor: UIColor,
+        pageBackground: UIColor
     ) -> CommentBubbleSVG? {
         let voiceSVG = mode == .custom && traits.hasVoice
             ? style?.voiceSVG.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } : nil
@@ -653,7 +664,7 @@ struct CommentBubbleSVGRecognizer {
         // cannot change it.
         if let style {
             templateSource = materializeTemplateColors(templateSource, style: style, isHot: traits.isHot,
-                                                       themeTextColor: themeTextColor)
+                                                       themeTextColor: themeTextColor, pageBackground: pageBackground)
         }
         // The user picked this template explicitly, so it is parsed permissively — an
         // artwork-only bubble (no <text>) draws its picture and simply shows no count.
@@ -665,7 +676,8 @@ struct CommentBubbleSVGRecognizer {
     /// recognition (the parser only reads real hex/rgb colours). Shared by the reader and the
     /// settings preview so both draw the same bubble.
     ///
-    /// - `${color}` (bubble.json): the style's day/night × normal/emphasis slot.
+    /// - `${color}` (bubble.json): the style's day/night × normal/emphasis slot, day or night
+    ///   by the page the bubble sits on (`isNightPage(background:)`).
     /// - `__TEXT__` (QiReader `commentBubbleStyleData`): the count colour on the outline and
     ///   the digits. The pack's own colour lands in the slots on import; `AUTO` leaves them
     ///   empty, which means the reading theme's text colour.
@@ -677,7 +689,8 @@ struct CommentBubbleSVGRecognizer {
         _ svg: String,
         style: ReaderCommentBubbleCustomStyle,
         isHot: Bool,
-        themeTextColor: UIColor
+        themeTextColor: UIColor,
+        pageBackground: UIColor
     ) -> String {
         var source = svg
         let (hasColorToken, hasTextToken) = ReaderDocumentTrace.measuringSync("bubbleColorTemplateCheck") {
@@ -692,7 +705,7 @@ struct CommentBubbleSVGRecognizer {
             }
         }
         guard hasColorToken || hasTextToken else { return svg }
-        let isNight = isNightTheme(themeTextColor: themeTextColor)
+        let isNight = isNightPage(background: pageBackground)
         let hot = isHot ? hexString(DSUIColor.commentBubbleHot) : nil
         if hasColorToken {
             source = materializeColorTemplate(
@@ -731,18 +744,14 @@ struct CommentBubbleSVGRecognizer {
             .replacingOccurrences(of: "${Color}", with: colorHex)
     }
 
-    /// Infers whether the reader is in night mode from the body text colour the
-    /// paginator already resolved. The night theme renders text on a dark
-    /// background, so the body text luminance is high; day themes sit well below
-    /// 0.5. This avoids plumbing a separate isNight flag through every render
-    /// call site.
-    static func isNightTheme(themeTextColor: UIColor) -> Bool {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        themeTextColor.getRed(&r, green: &g, blue: &b, alpha: &a)
-        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
-        return luminance > 0.5
+    /// Whether the page a bubble or review card sits on is dark — the reading background
+    /// decides it, as it decides the chapter title's template (`yd_isDark`). The text colour
+    /// does not: a reader on 黑色 who dims the text to #777 is still reading at night, and
+    /// deciding by the text's brightness drew the cards' day glass on a black page (FB-230).
+    static func isNightPage(background: UIColor) -> Bool {
+        background.yd_isDark
     }
-    
+
     private static func getSVGString(src: String, svgContent: String?) -> String? {
         if let svgContent, !svgContent.isEmpty {
             // Guard: dde5251b's bridged SVG came from a source never pinned down (the SVG editor,

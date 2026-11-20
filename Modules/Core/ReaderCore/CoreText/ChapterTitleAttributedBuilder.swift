@@ -471,8 +471,10 @@ enum ChapterTitleAttributedBuilder {
     }
 }
 
-private extension UIColor {
-    /// Luminance-based dark test, for choosing the light vs dark template.
+extension UIColor {
+    /// Luminance-based dark test of a reading background: the chapter title's light or dark
+    /// template, and whether review cards and bubbles are drawn for night
+    /// (`CommentBubbleSVGRecognizer.isNightPage`).
     var yd_isDark: Bool {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         getRed(&r, green: &g, blue: &b, alpha: &a)

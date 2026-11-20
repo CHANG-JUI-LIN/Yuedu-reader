@@ -131,7 +131,9 @@ struct ReaderParagraphBubbleSettingsView: View {
             style.svg,
             style: style,
             isHot: false,
-            themeTextColor: .label
+            themeTextColor: .label,
+            // The tile is the app's own surface: `.label` on it, dark with the system.
+            pageBackground: .systemBackground
         )
         return BubbleStyleTile(
             title: name.isEmpty ? localized("自訂 SVG") : name,
@@ -443,7 +445,8 @@ struct CommentBubbleStyleEditorView: View {
     private func bubblePreview(isNight: Bool, traits: CommentBubbleTraits) -> some View {
         let theme: ReaderTheme = CommentStylePreviewContext.current(isNight: isNight).theme
         let image = CommentBubbleSVGRecognizer.styledTemplate(
-            mode: .custom, style: editedStyle, traits: traits, themeTextColor: theme.uiTextColor
+            mode: .custom, style: editedStyle, traits: traits, themeTextColor: theme.uiTextColor,
+            pageBackground: theme.uiBackgroundColor
         ).map {
             CommentBubbleSVGRecognizer.draw(svg: $0.replacingDisplayText(with: "99"), pointSize: 34,
                                             themeTextColor: theme.uiTextColor, textFace: .reader)

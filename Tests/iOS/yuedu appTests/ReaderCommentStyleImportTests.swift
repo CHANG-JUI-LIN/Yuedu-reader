@@ -146,7 +146,7 @@ struct ReaderCommentStyleImportTests {
             for kind in ReaderCommentCardKind.allCases {
                 settings.setCommentCardPrefersSelectedStyle(false, for: kind)
             }
-            let reader = ReviewCardRaster.Reader(font: .systemFont(ofSize: 18), textColor: .black)
+            let reader = ReviewCardRaster.Reader(font: .systemFont(ofSize: 18), textColor: .black, pageBackground: .white)
             @MainActor func redrawn() -> String? {
                 ReviewCardRaster.templatedSVG(Self.sourceChapterCard, columnWidth: 360, reader: reader, path: "test")
             }

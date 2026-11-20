@@ -11,10 +11,15 @@ import WebKit
 /// it, in the reading font, size and colour. Otherwise the source's card is drawn as authored,
 /// its canvas widened so its text matches the prose (`ReviewCardSVGMetrics`).
 enum ReviewCardRaster {
-    /// The reading text a card sits among.
+    /// The reading text a card sits among, and the page under it.
     struct Reader: Sendable {
         let font: UIFont
         let textColor: UIColor
+        /// The reading background. It, not the text colour, says whether the card is drawn
+        /// for night (FB-230: dimmed text on 黑色 flipped the cards to their day look).
+        let pageBackground: UIColor
+
+        var isNight: Bool { CommentBubbleSVGRecognizer.isNightPage(background: pageBackground) }
     }
 
     /// - Parameters:
@@ -38,7 +43,7 @@ enum ReviewCardRaster {
             return await SVGWebViewRasterizer.shared.renderCard(
                 svgString: templated,
                 width: columnWidth,
-                isNight: CommentBubbleSVGRecognizer.isNightTheme(themeTextColor: reader.textColor)
+                isNight: reader.isNight
             )
         }
         let drawn: String
@@ -91,7 +96,7 @@ enum ReviewCardRaster {
     /// a source's to redraw. In the template its kind wears, else the built-in one.
     @MainActor
     static func image(card: ReviewCardContent, columnWidth: CGFloat, reader: Reader) async -> UIImage? {
-        let isNight = CommentBubbleSVGRecognizer.isNightTheme(themeTextColor: reader.textColor)
+        let isNight = reader.isNight
         var source = ReviewCardTemplate.builtinSource(for: card.kind)
         var customColor: String?
         if case .custom(let style)? = GlobalSettings.snapshot.wornCommentCardTemplate(for: card.kind) {
@@ -144,7 +149,7 @@ enum ReviewCardRaster {
 
         let source: String
         let customColor: String?
-        let isNight = CommentBubbleSVGRecognizer.isNightTheme(themeTextColor: reader.textColor)
+        let isNight = reader.isNight
         switch worn {
         case .builtin:
             source = ReviewCardTemplate.builtinSource(for: card.kind)
@@ -181,7 +186,7 @@ enum ReviewCardRaster {
             fontFaceCSS: fonts.fontFace,
             textColorHex: CommentBubbleSVGRecognizer.hexString(reader.textColor),
             accentHex: CommentBubbleSVGRecognizer.hexString(theme.commentCardAccent),
-            isNight: CommentBubbleSVGRecognizer.isNightTheme(themeTextColor: reader.textColor)
+            isNight: reader.isNight
         )
     }
 }

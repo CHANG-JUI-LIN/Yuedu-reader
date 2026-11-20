@@ -120,7 +120,8 @@ struct ReaderCommentPieces {
         let font = UIFont(name: UserReaderFontResolver.selectedPostScriptName ?? "", size: settings.fontSize)
             ?? .systemFont(ofSize: settings.fontSize)
         guard let image = await ReviewCardRaster.image(card: content, columnWidth: columnWidth,
-                                                       reader: .init(font: font, textColor: textColor)) else {
+                                                       reader: .init(font: font, textColor: textColor,
+                                                                     pageBackground: settings.backgroundColor)) else {
             return NSAttributedString()
         }
         return await renderer(image: image).render([
