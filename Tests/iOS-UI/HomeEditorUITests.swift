@@ -935,6 +935,45 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-banner-cards-named")
     }
 
+    /// 新增欄目 in a layout of lists where Gutenberg is not offered (the China storefront, FB-227):
+    /// the form has no list chosen for it, and its preview is 加入清單 alone, which opens 選擇內容來源.
+    /// Before, the form showed 標題 and 副標題 and nothing to add a list with.
+    @MainActor
+    func testNewListSectionOffersAddListWithoutGutenberg() throws {
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 3, "sections": [Any]()])
+            .write(to: home)
+        let app = XCUIApplication()
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES",
+                               "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES",
+                               "-book-source-store-dir", directory.appendingPathComponent("sources").path,
+                               "-reset-public-library-explore", "-explore-home-file", home.path,
+                               "-debug-storefront-country", "CHN"]
+        app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = directory.path
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let addSection = app.buttons["home.addSection"].firstMatch
+        XCTAssertTrue(addSection.waitForExistence(timeout: 15), app.debugDescription)
+        addSection.tap()
+
+        XCTAssertTrue(app.buttons["homeNewSection.layout.row"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        let style = app.buttons["homeNewSection.layout.categoryCards"].firstMatch
+        for _ in 0..<12 where !style.isHittable { app.swipeUp() }
+        XCTAssertTrue(style.isHittable, app.debugDescription)
+        style.tap()
+        XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["homeSection.add"].firstMatch.isEnabled, "nothing to add before a list")
+
+        let addList = app.buttons["homeSection.lists.add"].firstMatch
+        XCTAssertTrue(addList.waitForExistence(timeout: 5), "加入清單 with no list chosen: \(app.debugDescription)")
+        attach(app, "home-new-list-section-china")
+        addList.tap()
+        XCTAssertTrue(app.navigationBars["加入清單"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
     /// 新增欄目 from 編輯首頁: a layout, then the form, whose 資料來源 opens 選擇內容來源. A library's
     /// list and a book source's category each become a section at the end of the home.
     @MainActor

@@ -8,9 +8,10 @@ import SwiftUI
 // - On top, a preview: one real page of the section in its layout, loaded as the home loads
 //   it. Then 標題 and 副標題 (empty follows what it shows), 呈現方式, 資料來源 (opens 選擇內容來源),
 //   and for a section on the home, 在首頁顯示 and 刪除.
-// - In a layout of lists (maintainer, 2026-10-27), 清單 in place of 資料來源: the section's
-//   cards, from any sources (`HomeListCards.swift`), each with a page of its own parameters;
-//   加入清單 opens 選擇內容來源, where a source's 全部清單 adds every list it offers.
+// - In a layout of lists (maintainer, 2026-10-27; one card at a time since 2026-11-16), the
+//   preview's cards are picked and edited in place of 資料來源; its last card, 加入清單, opens
+//   選擇內容來源, where a source's 全部清單 adds every list it offers. With no card yet (a new
+//   section where Gutenberg's lists are not chosen for it, FB-227) the preview is 加入清單 alone.
 
 // MARK: - A section on the home
 
@@ -84,8 +85,8 @@ private struct HomeNewSectionFlow: View {
             HomeLayoutGallery(choices: HomeLayoutStyle.allCases, sample: .standard,
                               identifierPrefix: "homeNewSection.layout") { style in
                 let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
-                // Gutenberg's lists, chosen already where they are offered; 清單 can still
-                // change them, to any source's.
+                // Gutenberg's lists, chosen already where they are offered; the form can still
+                // change them, to any source's. Elsewhere the form starts at 加入清單.
                 if style.drawsLists, availability.isAvailable { editor.choose(.gutenbergLists) }
                 self.editor = editor
                 showsForm = true
@@ -232,6 +233,14 @@ struct HomeSectionForm: View {
                     await preview.sync(with: page, hiddenFromLatest: editor.hiddenFromLatest)
                     // The reader's own tap: the page loads whatever its source's policy.
                     for row in preview.rows { preview.load(row.id) }
+                }
+            } else if let addListCard {
+                // A layout of lists with no list yet (FB-227: 新增欄目 where Gutenberg's lists are
+                // not chosen for it, as in China): no section to preview, so its one card, 加入清單.
+                Section {
+                    addListOnly(addListCard)
+                } header: {
+                    Text(localized("預覽"))
                 }
             }
             Section {
@@ -700,6 +709,9 @@ struct HomeSectionForm: View {
             // The stored list, as the home draws it; the preview never asks the AI service.
             AIRecommendationRow(section: HomeSection(layout: draft.layout, binding: .aiRecommendations),
                                 title: localized("AI 推薦"), canGenerate: false, open: { _, _ in })
+        } else if drawsLists, editor.listCards.isEmpty, let addListCard {
+            // A section of lists none of which this build draws: nothing to pick, so 加入清單.
+            addListOnly(addListCard)
         } else if !preview.isReady {
             ProgressView().frame(maxWidth: .infinity)
         } else if let group = previewGroup, drawsLists || !group.isSettledEmpty {
@@ -715,6 +727,15 @@ struct HomeSectionForm: View {
                 .foregroundStyle(DSColor.textSecondary)
                 .frame(maxWidth: .infinity)
         }
+    }
+
+    /// The preview of a layout of lists with no card yet: the same 加入清單 its row ends with, alone.
+    private func addListOnly(_ action: HomeAddListCard) -> some View {
+        HomeAddListTile(action: action)
+            .frame(height: DSLayout.homeCategoryCardHeight)
+            .padding(.horizontal, DSSpacing.lg)
+            .listRowInsets(EdgeInsets(top: DSSpacing.md, leading: 0, bottom: DSSpacing.md, trailing: 0))
+            .listRowBackground(Color.clear)
     }
 
     /// The section as the home groups it; a layout of lists with every card, to be picked.
@@ -845,6 +866,17 @@ extension HomeContentOwner {
                 store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
                 preview: .preview(shelf: BookStore())),
             isInSheet: false)
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("新增分類卡片，還沒有清單") {
+    NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                newSectionIn: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                layout: HomeSectionLayout(style: .categoryCards), preview: .preview(shelf: BookStore())),
+            isInSheet: true)
     }
     .environmentObject(BookStore())
 }
