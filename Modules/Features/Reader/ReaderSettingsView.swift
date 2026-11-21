@@ -99,6 +99,7 @@ struct ReaderSettingsView: View {
                     }
 
                     brightnessSection
+                    autoResumeSection
 
                     readerSettingsBackupSection
                 }
@@ -809,6 +810,20 @@ struct ReaderSettingsView: View {
                 .foregroundStyle(DSColor.textSecondary)
         } footer: {
             Text(localized("只防止自動鎖定，會比較耗電；按下電源鍵仍可鎖定螢幕。"))
+                .dsSectionFooter()
+        }
+        .interfaceSectionSurface()
+    }
+
+    // MARK: - 自動接續閱讀
+
+    private var autoResumeSection: some View {
+        Section {
+            Toggle(isOn: $settings.readerAutoResume) {
+                SettingsRowLabel(localized("自動接續閱讀"), systemImage: "book")
+            }
+        } footer: {
+            Text(localized("離開 App 時如果正在閱讀，下次打開會直接回到那本書。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()

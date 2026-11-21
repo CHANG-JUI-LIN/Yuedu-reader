@@ -168,6 +168,7 @@ struct ReaderSettingsExportTests {
         behavior.followsSystemBrightness = false
         behavior.brightness = 0.4
         behavior.keepsScreenAwake = true
+        behavior.autoResume = true
         return behavior
     }
 

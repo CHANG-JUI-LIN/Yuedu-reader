@@ -127,6 +127,8 @@ struct ReaderBehaviorSettings: Codable, Equatable, Sendable {
     var brightness: Double?
     /// 閱讀時螢幕常亮.
     var keepsScreenAwake: Bool?
+    /// 自動接續閱讀.
+    var autoResume: Bool?
 
     static let brightnessRange: ClosedRange<Double> = 0.05...1.0
 

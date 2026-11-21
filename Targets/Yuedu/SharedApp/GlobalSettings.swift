@@ -1053,6 +1053,11 @@ class GlobalSettings {
     var readerSwipeUpToExit: Bool {
         didSet { UserDefaults.standard.set(readerSwipeUpToExit, forKey: "yd_reader_swipe_up_exit") }
     }
+    /// 自動接續閱讀: a cold launch reopens the book that was on screen when the app was
+    /// last left (`AutoResumeReading`). Defaults OFF.
+    var readerAutoResume: Bool {
+        didSet { UserDefaults.standard.set(readerAutoResume, forKey: "yd_reader_auto_resume") }
+    }
     /// Paged mode only: pulling down shows a bookmark pill and releasing past the
     /// commit point bookmarks this page — or removes the bookmark, when the page
     /// already has one. Defaults ON; scroll mode never installs the gesture, where
@@ -2381,6 +2386,7 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_reader_swipe_up_exit") as? Bool) ?? true
         readerPullDownToBookmark =
             (UserDefaults.standard.object(forKey: "yd_reader_pull_down_bookmark") as? Bool) ?? true
+        readerAutoResume = UserDefaults.standard.bool(forKey: "yd_reader_auto_resume")
         readerFollowSystemTheme = Self.startingReaderFollowsDevice(
             stored: UserDefaults.standard.object(forKey: "yd_reader_follow_system_theme") as? Bool,
             hasPickedBackground: ReaderTheme.hasPersistedChoice

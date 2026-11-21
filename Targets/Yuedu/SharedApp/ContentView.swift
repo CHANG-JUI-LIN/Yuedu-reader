@@ -16,6 +16,7 @@ struct ContentView: View {
     /// 探索's browser, which 資源庫's pages open too: one browser, left as it was.
     @StateObject private var browser = BrowserState()
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
+    @ObservedObject private var autoResume = AutoResumeReading.shared
     /// Whether any screen is hiding the tab bar — answered from every tab, not only the
     /// screen's own (`RootTabBarVisibility`).
     @StateObject private var rootTabBar = RootTabBarVisibility()
@@ -132,10 +133,16 @@ struct ContentView: View {
         .overlay(alignment: .topLeading) { RootTabSidebarGate(visibility: rootTabBar) }
         .background {
             ImportedBookPresentation(
-                request: importDrainer.lastOutcome == nil ? importDrainer.readerRequest : nil,
+                // A book handed to the app comes before the one 自動接續閱讀 reopens.
+                request: importDrainer.lastOutcome == nil
+                    ? importDrainer.readerRequest ?? autoResume.request : nil,
                 store: store,
                 subscriptionStore: subscriptionStore,
-                didPresent: importDrainer.didPresentReader(requestID:),
+                didPresent: { requestID in
+                    importDrainer.didPresentReader(requestID: requestID)
+                    autoResume.didPresent(requestID: requestID)
+                },
+                animatesReader: importDrainer.readerRequest != nil,
                 customizationRequest: importDrainer.lastOutcome == nil ? importDrainer.customizationRequest : nil,
                 didPresentCustomization: importDrainer.didPresentCustomization(requestID:),
                 readCustomization: { [importDrainer] document in
@@ -242,7 +249,17 @@ struct ContentView: View {
                                          tint: appearanceTheme?.accentColor))
         // Cold-launch splash: sits above every tab/overlay and fades out.
         .overlay {
-            LaunchImageSplashOverlay()
+            LaunchImageSplashOverlay(onFinished: {
+                guard TestFlightAccessController.shared.state.allowsUse else { return }
+                autoResume.resumeAtLaunch(
+                    isEnabled: gs.readerAutoResume,
+                    bookExists: { store.readingBook(id: $0) != nil }
+                )
+            })
+        }
+        .onChange(of: importDrainer.readerRequest) { _, request in
+            // The imported book's reader is the one to open; not a second one above it.
+            if request != nil { autoResume.cancel() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .bookSourceRequestedSearch)) { note in
             guard let keyword = note.userInfo?["keyword"] as? String,

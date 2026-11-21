@@ -20,6 +20,7 @@ extension GlobalSettings {
         value.followsSystemBrightness = followSystemBrightness
         value.brightness = readerBrightness
         value.keepsScreenAwake = readerKeepsScreenAwake
+        value.autoResume = readerAutoResume
         return value
     }
 
@@ -47,5 +48,6 @@ extension GlobalSettings {
         assign(\.followSystemBrightness, behavior.followsSystemBrightness)
         assign(\.readerBrightness, behavior.brightness)
         assign(\.readerKeepsScreenAwake, behavior.keepsScreenAwake)
+        assign(\.readerAutoResume, behavior.autoResume)
     }
 }

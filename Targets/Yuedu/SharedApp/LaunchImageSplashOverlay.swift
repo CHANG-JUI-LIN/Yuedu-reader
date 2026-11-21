@@ -9,6 +9,9 @@ struct LaunchImageSplashOverlay: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var visible = true
+    /// The launch has nothing left to show over the app: there is no image, or it has
+    /// started fading. What opens by itself at launch (自動接續閱讀) waits for this.
+    var onFinished: () -> Void = {}
 
     /// Latches after the first appearance so returning from the background or a
     /// theme change never replays the splash.
@@ -38,11 +41,14 @@ struct LaunchImageSplashOverlay: View {
         .task {
             guard !Self.hasPlayed else {
                 visible = false
+                onFinished()
                 return
             }
             Self.hasPlayed = true
 
             let hasImage = currentImage != nil
+            // No image means no splash, however the entitlement wait below turns out.
+            if !hasImage { onFinished() }
 
             // Wait for the entitlement gate to settle so we know whether to
             // hold the splash or dismiss fast. The image (if any) is already
@@ -73,6 +79,7 @@ struct LaunchImageSplashOverlay: View {
                 try? await Task.sleep(nanoseconds: minimalHoldDuration)
             }
             visible = false
+            onFinished()
         }
     }
 

@@ -23,6 +23,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
     case bookSpacing
     case pagingGestures
     case brightness
+    case autoResume
 
     var titleKey: String {
         switch self {
@@ -42,6 +43,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
         case .bookSpacing: return "套用書本間距"
         case .pagingGestures: return "翻頁與手勢"
         case .brightness: return "亮度"
+        case .autoResume: return "自動接續閱讀"
         }
     }
 
@@ -59,7 +61,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
         case .dialogueBubble: return [.dialogueBubble]
         case .regexHighlights: return [.regexHighlight]
         case .textDecoration: return [.textColor, .textUnderline]
-        case .textConversion, .bookSpacing, .pagingGestures, .brightness: return []
+        case .textConversion, .bookSpacing, .pagingGestures, .brightness, .autoResume: return []
         }
     }
 
@@ -82,6 +84,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
         case .bookSpacing: return "text.book.closed"
         case .pagingGestures: return "hand.tap"
         case .brightness: return "sun.max"
+        case .autoResume: return "book"
         }
     }
 
@@ -106,6 +109,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
             || behavior.keepsScreenAwake != nil {
             parts.append(.brightness)
         }
+        if behavior.autoResume != nil { parts.append(.autoResume) }
         return parts
     }
 

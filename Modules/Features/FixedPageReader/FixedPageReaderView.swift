@@ -531,6 +531,12 @@ struct FixedPageReaderSettingsView: View {
                             .dsSectionFooter()
                     }
                 }
+                Section {
+                    Toggle(localized("自動接續閱讀"), isOn: $globalSettings.readerAutoResume)
+                } footer: {
+                    Text(localized("離開 App 時如果正在閱讀，下次打開會直接回到那本書。"))
+                        .dsSectionFooter()
+                }
                 if configuration.layout == .paged {
                     Section {
                         if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsTouchZoneEditor {

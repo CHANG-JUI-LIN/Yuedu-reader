@@ -149,6 +149,8 @@ private struct BookReaderContent: View {
         }
         .onAppear {
             ReadingResourceUsage.shared.retain(bookID: bookId, ownerID: resourceOwnerID)
+            // Not a reader on its way to the now-playing bar, which closes as it appears.
+            if !playsUnderNowPlayingBar { AutoResumeReading.shared.readerAppeared(bookID: bookId) }
             if let book {
                 CrashContext.setKey("current_book", "\(book.title) [\(book.id.uuidString.prefix(8))]")
                 CrashContext.setKey("current_book_kind", "\(book.resolvedPipelineKind)")
@@ -167,6 +169,7 @@ private struct BookReaderContent: View {
         }
         .onChange(of: isAudiobook) { _, _ in handAudiobookToNowPlayingBar() }
         .onDisappear {
+            AutoResumeReading.shared.readerDisappeared(bookID: bookId)
             let releasedLastReader = ReadingResourceUsage.shared.release(bookID: bookId, ownerID: resourceOwnerID)
             if holdsCache {
                 RemoteLibraryCache.shared.release(bookId)
