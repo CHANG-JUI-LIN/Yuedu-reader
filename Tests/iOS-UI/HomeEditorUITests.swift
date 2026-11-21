@@ -884,8 +884,11 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(name.placeholderValue, "中文書籍")
         let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.collection.gutenberg."))
-        XCTAssertTrue(cards.element(boundBy: 3).waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(cards.count, 4, app.debugDescription)
+        // The row is a lazy stack a card a screen wide: the cards past the first screen are made
+        // as it scrolls to them, so the fourth, 兒童與青少年 (English books, last in a Chinese
+        // reader's order), is looked for once the row has been dragged to 加入清單, below.
+        XCTAssertTrue(cards.element(boundBy: 2).waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(cards.allElementsBoundByIndex.prefix(3).map(\.label), ["中文書籍", "小說與文學", "思想與歷史"])
         let first = cards.element(boundBy: 0)
         XCTAssertEqual(first.label, "中文書籍")
         XCTAssertTrue(first.isSelected, app.debugDescription)
@@ -916,6 +919,7 @@ final class HomeEditorUITests: XCTestCase {
                 .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: cardsY)))
         }
         XCTAssertTrue(add.isHittable, app.debugDescription)
+        XCTAssertTrue(app.buttons["home.collection.gutenberg.children"].firstMatch.exists, "every list a card: \(app.debugDescription)")
         add.tap()
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Project Gutenberg")).firstMatch.tap()
         let popular = app.buttons["homePicker.item.熱門"].firstMatch
