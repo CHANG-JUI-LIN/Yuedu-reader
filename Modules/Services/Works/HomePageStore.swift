@@ -359,20 +359,24 @@ final class HomePageStore: ObservableObject {
     // MARK: - iCloud sync
 
     /// A home saved before 2026-11-21 does not say whether its 預設 is the reader's
-    /// (`HomeConfigurations.defaultsUntouched`): it is the app's when it is today's defaults for
-    /// this reader, section for section. Looked at once, here, where the mode, the region and
-    /// the languages are known; until then the sync leaves the home alone. Returns whether it
-    /// was noted now.
+    /// (`HomeConfigurations.defaultsUntouched`): it is the app's when it is the defaults, section
+    /// for section, for this reader now or for whomever they could have been made for
+    /// (`HomeDefaultsRhythmMigration.contexts`) — a 預設 keeps the order of the day it was made,
+    /// before the first 來源配置 was imported or the region was known, and that one is not the
+    /// reader's either. Looked at once, after the migrations, which leave an untouched 預設 as
+    /// today's page; until then the sync leaves the home alone. Returns whether it was noted now.
     private func noteWhetherDefaultsAreUntouched(in home: inout HomeConfigurations, context: HomePageDefaults.Context) -> Bool {
         guard !isReadOnly, home.defaultsUntouched == nil else { return false }
         let id = UUID()
-        let made = HomePageDefaults.page(for: context, makeID: { id }).sections
         let saved = home.sections.map { section -> HomeSection in
             var section = section
             section.id = id
             return section
         }
-        home.defaultsUntouched = !home.defaultsDeleted && saved == made
+        let isAsMade = ([context] + HomeDefaultsRhythmMigration.contexts).contains {
+            HomePageDefaults.page(for: $0, makeID: { id }).sections == saved
+        }
+        home.defaultsUntouched = !home.defaultsDeleted && isAsMade
         AppLogger.cache("⟐ 預設 looked at for the sync", context: ["untouched": "\(home.defaultsUntouched == true)"])
         return true
     }

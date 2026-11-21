@@ -29,9 +29,13 @@ struct ExploreHomeSyncTests {
             store = HomePageStore(fileURL: folder.appendingPathComponent("explore_home.json"), defaults: defaults)
         }
 
-        /// The home made, as opening 探索 makes it.
+        var mode = ExploreMode.publicLibraries
+        var languages = ["zh"]
+
+        /// The home made, as opening 探索 makes it — and as it reads it again after each change
+        /// (`ExploreHome.syncKey`).
         @MainActor @discardableResult func open() -> HomePage {
-            store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
+            store.pageOrDefaults(mode: mode, publicLibrariesAvailable: true, languages: languages)
         }
 
         /// A relaunch: the home read back from its file.
@@ -106,6 +110,8 @@ struct ExploreHomeSyncTests {
             }
             if moved { device.applies += 1 }
         }
+        // The home draws what arrived, and with it follows the language again.
+        device.open()
         return !refused
     }
 
@@ -192,6 +198,39 @@ struct ExploreHomeSyncTests {
         try forget()
         device.open()
         #expect(try device.store.syncItems()?.map(\.id) == [HomeConfigurationID.defaults.rawValue])
+    }
+
+    @Test("defaults made for another mode, before the first 來源配置 was imported, are still the app's")
+    func defaultsOfAnotherContextAreUntouched() throws {
+        let device = try Device("iPhone")
+        device.open()
+        device.store.waitForPendingWritesForTesting()
+        let file = device.folder.appendingPathComponent("explore_home.json")
+        var object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        object["defaultsUntouched"] = nil
+        try JSONSerialization.data(withJSONObject: object).write(to: file)
+        device.relaunch()
+
+        device.mode = .bookSources
+        device.open()
+        #expect(try device.store.syncItems() == [])
+    }
+
+    @Test("devices in two languages settle: the reader's 預設 is the same on both, and nothing keeps moving")
+    func twoLanguagesSettle() throws {
+        let cloud = Cloud(), phone = try Device("iPhone"), pad = try Device("iPad")
+        pad.languages = ["en"]
+        phone.open()
+        pad.open()
+        rename(phone, to: "我的")
+        for step in 0..<4 { try Self.pass(step % 2 == 0 ? phone : pad, cloud: cloud, now: Self.day + Double(step) * 10) }
+        #expect(titles(pad).first == "我的")
+        #expect(phone.store.home?.sections == pad.store.home?.sections)
+
+        let (uploads, applies) = (phone.uploads + pad.uploads, phone.applies + pad.applies)
+        for step in 4..<8 { try Self.pass(step % 2 == 0 ? phone : pad, cloud: cloud, now: Self.day + Double(step) * 10) }
+        #expect(phone.uploads + pad.uploads == uploads, "no device swaps the other's lists back")
+        #expect(phone.applies + pad.applies == applies)
     }
 
     // MARK: The reader's own
