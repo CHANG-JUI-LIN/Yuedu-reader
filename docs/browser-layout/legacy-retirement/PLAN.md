@@ -142,3 +142,4 @@ EPUB 啟動時不再建立舊引擎；`BrowserLayoutPageEngine` 自己持有版�
 | 2026-11-22 | 1-6a 空 svg、空白頁、空區塊邊距折疊：套件 0.24.0 | `collapse-after` |
 | 2026-11-22 | 直排捲動的圖片不超過一個螢幕：套件 0.24.1 | 模擬器截圖 |
 | 2026-11-22 | 1-5b 絕對定位、box-sizing：套件 0.25.0 | `positioned-after`、`positioned-gd2` |
+| 2026-11-22 | 套件 0.25.1：0.25.0 讓 CI 的除錯版在 512 KB 執行緒上堆疊溢位（樣式結構多了 64 bytes）；定位欄位移出樣式結構、建盒樹每層 57 KB → 2 KB、排版每層 36 KB → 20 KB。**未解**：最底層排一行約 190 KB（`InlineRun` 2.4 KB、`ComputedStyle` 1 KB 在除錯版每讀一次就整份複製），要把兩者改成複製只佔一個指標才算根治 | 套件測試 `NestingStackTests` |
