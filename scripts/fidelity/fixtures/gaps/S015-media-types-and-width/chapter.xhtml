@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>給不同裝置的樣式</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<h2>給不同裝置的樣式</h2>
+<p class="kindle">這一段在 Kindle 專用的區塊裡被設成不顯示。閱讀器不是 Kindle，所以這一段要照常出現，字也不是紅的。</p>
+<p class="other">這一段在「不是 Kindle」的區塊裡被加了三個字寬的左邊距，所以它應該比上一段往右縮。</p>
+<p class="narrow">這一段在「畫面寬度不超過 512」的區塊裡左右各加了兩個字寬的邊距。手機大小的畫面符合這個條件，所以這一段兩邊都要縮進來；另一個「畫面寬度至少 2000」的區塊不符合，不該生效。</p>
+<p class="hover">這一段在「滑鼠可以停在上面」的區塊裡被加了六個字寬的左邊距。觸控螢幕不符合，所以這一段不該縮排。</p>
+<p>最後一段沒有任何類別。列印專用的區塊把所有段落都設成不顯示，那個區塊也不該生效。</p>
+</body>
+</html>

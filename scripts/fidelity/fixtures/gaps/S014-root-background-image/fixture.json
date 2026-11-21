@@ -1,0 +1,6 @@
+{
+ "title": "S014 整頁背景圖的大小、位置與重複",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S014: every path that paints the html/body background image drew it as `cover` at the start edge, whatever the book declared. Chapter 1: contain + repeat-y + left (a wide ornament strip that should tile down both sides). Chapter 2: no size, position or repeat (the image's own size, repeated both ways). Chapter 3: cover + center on an image wider than the page (the middle of the image should show)."
+}

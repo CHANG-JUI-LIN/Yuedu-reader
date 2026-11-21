@@ -175,10 +175,10 @@ enum LexborComputedStyleAdapter {
             style.backgroundImage?.positionY = position.1
         case "background-repeat":
             switch value {
-            case "repeat", "repeat repeat": style.backgroundImage?.repeatMode = .repeat
+            case "repeat", "repeat repeat": style.backgroundImage?.repeatsX = true; style.backgroundImage?.repeatsY = true
             case "no-repeat", "no-repeat no-repeat":
                 if style.backgroundImage == nil { gap("Background component without an image cannot be retained for inheritance") }
-                style.backgroundImage?.repeatMode = .noRepeat
+                style.backgroundImage?.repeatsX = false; style.backgroundImage?.repeatsY = false
             default: gap()
             }
         case "background-attachment":
@@ -312,7 +312,9 @@ enum LexborComputedStyleAdapter {
         case "background-position":
             style.backgroundImage?.positionX = source.backgroundImage?.positionX ?? .percent(0)
             style.backgroundImage?.positionY = source.backgroundImage?.positionY ?? .percent(0)
-        case "background-repeat": style.backgroundImage?.repeatMode = source.backgroundImage?.repeatMode ?? .repeat
+        case "background-repeat":
+            style.backgroundImage?.repeatsX = source.backgroundImage?.repeatsX ?? true
+            style.backgroundImage?.repeatsY = source.backgroundImage?.repeatsY ?? true
         case "background-attachment": style.backgroundImage?.attachment = source.backgroundImage?.attachment ?? .scroll
         case "white-space": style.whiteSpace = source.whiteSpace
         case "text-align": style.textAlign = source.textAlign
@@ -372,12 +374,12 @@ enum LexborComputedStyleAdapter {
         if parts.count == 1 { parts = ["top", "bottom"].contains(parts[0]) ? ["center", parts[0]] : [parts[0], "center"] }
         if ["top", "bottom"].contains(parts[0]) || ["left", "right"].contains(parts[1]) { parts.swapAt(0, 1) }
         func component(_ value: String, horizontal: Bool) -> BackgroundImageStyle.BackgroundPosition? {
-            if value == "center" { return .keyword(0.5) }
-            if value == (horizontal ? "left" : "top") { return .keyword(0) }
-            if value == (horizontal ? "right" : "bottom") { return .keyword(1) }
+            if value == "center" { return .percent(0.5) }
+            if value == (horizontal ? "left" : "top") { return .percent(0) }
+            if value == (horizontal ? "right" : "bottom") { return .percent(1) }
             guard let parsed = length(value, allowAuto: false, allowNegative: true) else { return nil }
             if case .percent(let fraction) = parsed { return .percent(fraction) }
-            return CSSLengthResolver.resolve(parsed, emBase: style.fontSize, remBase: config.rootFontSize, percentBase: 0).map { .length($0) }
+            return .length(parsed, fromEnd: false)
         }
         guard let x = component(parts[0], horizontal: true), let y = component(parts[1], horizontal: false) else { return nil }
         return (x, y)

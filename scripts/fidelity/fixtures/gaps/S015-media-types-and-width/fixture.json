@@ -1,0 +1,6 @@
+{
+ "title": "S015 媒體類型與寬度的 @media",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S015: any @media in a linked stylesheet sent the chapter to the fallback engine, and the parser dropped every block but the dark palette's. This stylesheet has a vendor media type (amzn-kf8) that must not apply, a `screen and (max-width: 512px)` block that applies on a phone-sized page, a `not amzn-kf8` block that applies, and `(hover: hover)` that does not."
+}

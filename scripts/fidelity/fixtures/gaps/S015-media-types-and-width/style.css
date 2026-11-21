@@ -1,0 +1,8 @@
+p { margin: 0 0 1em 0; }
+p.narrow { margin-left: 0; }
+@media amzn-kf8 { p.kindle { display: none; } p { color: #c00; } }
+@media not amzn-kf8 { p.other { margin-left: 3em; } }
+@media screen and (max-width: 512px), amzn-et { p.narrow { margin-left: 2em; margin-right: 2em; } }
+@media screen and (min-width: 2000px) { p.narrow { margin-left: 9em; } }
+@media (hover: hover) { p.hover { margin-left: 6em; } }
+@media print { p { display: none; } }

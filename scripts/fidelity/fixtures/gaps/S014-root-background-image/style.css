@@ -1,0 +1,4 @@
+body.strip { background-image: url(strip.png); background-repeat: repeat-y; background-position: left; background-size: contain; }
+body.strip p { margin-left: 2em; margin-right: 2em; }
+body.tile { background-image: url(tile.png); }
+body.cover { background-image: url(wide.png); background-size: cover; background-position: center; background-repeat: no-repeat; }

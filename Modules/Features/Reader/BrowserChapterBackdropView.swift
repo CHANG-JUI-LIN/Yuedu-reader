@@ -8,8 +8,8 @@ import YueduCoreText
 /// - It is on screen with the chapter. Fragments are painted off the main thread
 ///   and may arrive late; per the 2026-09-21 choice text may be late, the
 ///   background may not.
-/// - Its image is sized against one screen, as paged mode sizes it against one
-///   page. A `fixed` one stays put while the text scrolls; otherwise one page of
+/// - Its image is sized, placed and repeated against one screen, as paged mode
+///   does against one page (`BrowserPageBackground.imageTiling`). A `fixed` one stays put while the text scrolls; otherwise one page of
 ///   artwork per screen height scrolls with the chapter, as a CoreText chapter's
 ///   does (`CoreTextChunkBackdropView`).
 /// Layer contents only: nothing is drawn, and every layer shares the one decoded image.
@@ -39,7 +39,16 @@ final class BrowserChapterBackdropView: UIView {
             return showPages(at: [], image: nil, rect: .zero, contentsRect: .zero)
         }
         let page = CGRect(origin: .zero, size: viewport.size)
-        let drawn = background.imageRect(for: image.size, onPageOf: page.size)
+        guard let tiling = background.imageTiling(for: image.size, onPageOf: page.size) else {
+            return showPages(at: [], image: nil, rect: .zero, contentsRect: .zero)
+        }
+        // An image that repeats is composed once into one page of artwork, so
+        // a page stays one layer however small the tile is.
+        let repeats = tiling.repeatsX || tiling.repeatsY
+        guard let artwork = repeats ? tiledPage(tiling, image: image, pageSize: page.size) : cgImage else {
+            return showPages(at: [], image: nil, rect: .zero, contentsRect: .zero)
+        }
+        let drawn = repeats ? page : tiling.tile
         let rect = drawn.intersection(page)
         guard !rect.isNull, rect.width > 0, rect.height > 0 else {
             return showPages(at: [], image: nil, rect: .zero, contentsRect: .zero)
@@ -60,7 +69,24 @@ final class BrowserChapterBackdropView: UIView {
                 tops = (first..<last).map { CGFloat($0) * page.height }
             }
         }
-        showPages(at: tops, image: cgImage, rect: rect, contentsRect: contentsRect)
+        showPages(at: tops, image: artwork, rect: rect, contentsRect: contentsRect)
+    }
+
+    private var tiledPageCache: (tiling: BackgroundTiling, image: UIImage, pageSize: CGSize, page: CGImage)?
+
+    /// One page of `image` laid out as `tiling` says, kept until any of them changes.
+    private func tiledPage(_ tiling: BackgroundTiling, image: UIImage, pageSize: CGSize) -> CGImage? {
+        if let cached = tiledPageCache, cached.tiling == tiling, cached.image === image, cached.pageSize == pageSize {
+            return cached.page
+        }
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = false
+        let composed = UIGraphicsImageRenderer(size: pageSize, format: format).image { _ in
+            for tile in tiling.tiles() { image.draw(in: tile) }
+        }
+        guard let page = composed.cgImage else { return nil }
+        tiledPageCache = (tiling, image, pageSize, page)
+        return page
     }
 
     private func showPages(at tops: [CGFloat], image: CGImage?, rect: CGRect, contentsRect: CGRect) {

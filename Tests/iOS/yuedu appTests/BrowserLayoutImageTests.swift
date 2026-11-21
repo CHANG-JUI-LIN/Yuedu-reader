@@ -481,8 +481,13 @@ struct BrowserLayoutImageTests {
             images.first(where: { $0.source == authored }),
             "no background image fragment — the style tree asked for a different source than authored"
         )
-        #expect(background.rect.width >= 300 * 0.99)
-        #expect(background.rect.height >= 400 * 0.99)
+        // With no `background-size` the image keeps its own size and repeats
+        // over the whole page.
+        #expect(background.rect.size == CGSize(width: 40, height: 40))
+        let tiling = try #require(background.tiling)
+        #expect(tiling.repeatsX && tiling.repeatsY)
+        #expect(tiling.clip.width >= 300 * 0.99)
+        #expect(tiling.clip.height >= 400 * 0.99)
     }
 
     /// Same invariant through the `background` SHORTHAND — 红楼梦's main

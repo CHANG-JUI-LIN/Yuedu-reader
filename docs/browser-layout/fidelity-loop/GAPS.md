@@ -1,6 +1,6 @@
 ---
 title: 渲染相似度的已知差距
-updated: 2026-11-01
+updated: 2026-11-21
 tags: [yuedu, browser-layout, fidelity-loop]
 ---
 
@@ -104,6 +104,13 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 完成的樣子：測試書的 background 扣分歸零；the-deal:12 ≥ 82.1
 - **2026-11-01：整合分支 `2910434` 修好（還沒發佈成套件版本）。** inline-block 照 §9.2.2 做成原子盒：自己排版、寬度 auto 時 shrink-to-fit、坐在最後一行的基線上；放得進一頁就整個換頁，比一頁高才在它自己的行之間分頁；捲動模式只在它那一行要排字時才排它。測試書 66.9 → 97.4、the-deal:12 74.0 → 99.3、the-deal:23 91.6 → 99.4（run `ib-after-gaps`、`ib-after-base`，對 `fix-after-*`）；orv:5 的泡泡同時是 float，走 float 的路，沒變。其他新引擎章節變動都在 0.3 以內
 - 還沒做：`vertical-align` 只支援相對基線的位移，`middle`／`top`／`bottom` 還沒有（語料裡沒有 inline-block 用到）；shrink-to-fit 沒有 min-content 下限（CSS 會讓放不進一行、又不能斷開的內容把泡泡撐得比容器寬；我們的泡泡最寬就是行寬）；直排章節裡有非圖片的 inline-block 時整章交給舊引擎
+
+### S014 — 整頁背景圖一律被當成 `cover`
+- 測試書：[`s014-root-background-image`](../../../scripts/fidelity/fixtures/gaps/S014-root-background-image/)（還沒量；量法自己畫整頁背景時只畫一格，見下面）
+- 依據：使用者回報（2026-11-21，三國演義注評版「版本說明」頁）：整頁被幾條又粗又糊的黑條蓋住
+- 根因（已確認）：`#b { background-image: url(back2.png); background-repeat: repeat-y; background-position: left; background-size: contain }`，圖是 1024×57 的花邊。套件裡畫整頁背景的四個地方（分頁 `injectBodyBackground`、整批分頁、整章文件、捲動宿主用的 `BrowserPageBackground.imageRect`）都呼叫 `coverRect` 而沒帶模式，等於一律 `cover`；`background-repeat` 解析了但沒有任何地方讀。57 點高的圖被放大約 15 倍去蓋滿頁高。另外兩個同源的錯：`cover` 溢出的那一軸一律貼齊起點（寫 `center` 也不置中）；`background-size` 等屬性寫在 `background-image` 前面時整個被丟掉
+- 修法：套件分支 `background-geometry`。新增 `BackgroundImageGeometry`，照 CSS Backgrounds 3 §3 算第一格的大小與位置、兩軸各自是否重複；四個地方都改走它。`background-size` 支援 `auto`／`cover`／`contain`／長度與百分比，`background-position` 支援一到四個值，`background-repeat` 支援 `repeat-x`／`repeat-y` 與兩值寫法，`background` 簡寫會重設沒寫到的屬性。捲動宿主把會重複的圖先合成一頁再貼
+- 還沒做：量法（`RenderFidelityOracleTests`，鎖定）畫整頁背景時用的是 `imageRect`，只會畫第一格，所以這本測試書的第 1、2 章現在量不準；要照「改量法」的程序改。直排整章路徑的定位範圍仍是整章而不是一頁（原本就是這樣，沒動）
 
 還沒細查的：flex／grid 與 `position`（orv 10 章、game-designer:10）；整頁背景圖的大小與位置（guimi:64、redchamber:305）；行內小圖相對容器左移沒有生效（game-designer:58）；版面相關的 `@media`（寬度查詢）求值。
 
