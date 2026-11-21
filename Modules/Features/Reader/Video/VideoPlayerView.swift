@@ -57,7 +57,7 @@ struct VideoPlayerView: View {
                         .transition(.opacity)
                 }
                 if controller.isLongPressing {
-                    longPressBadge
+                    longPressBadge(controller.effectiveRate)
                 }
                 if let pan, pan.kind == .seek, let range = controller.seekableRange {
                     VideoSeekBadge(time: pan.value, end: range.upperBound, delta: pan.value - pan.origin)
@@ -203,15 +203,19 @@ struct VideoPlayerView: View {
         }
     }
 
-    private var longPressBadge: some View {
+    /// The speed the long press actually plays at: 2× on a stream (`VideoPlaybackRate`).
+    private func longPressBadge(_ rate: Float) -> some View {
         VStack {
-            Label(VideoPlayerFormat.rate(VideoPlaybackController.longPressRate), systemImage: "forward.fill")
+            Label(VideoPlayerFormat.rate(rate), systemImage: "forward.fill")
                 .font(DSFont.subheadline.weight(.semibold))
                 .foregroundStyle(DSColor.textOnFixedFill)
                 .padding(.horizontal, DSSpacing.md)
                 .padding(.vertical, DSSpacing.xs)
                 .background(DSColor.videoControlScrim, in: Capsule())
                 .padding(.top, DSSpacing.xl)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(localized("倍速"))
+                .accessibilityValue(VideoPlayerFormat.rate(rate))
             Spacer()
         }
         .allowsHitTesting(false)
@@ -324,22 +328,28 @@ struct VideoPlayerView: View {
 
     private func speedMenu(_ controller: VideoPlaybackController) -> some View {
         Menu {
-            Picker(localized("倍速"), selection: Binding(
-                get: { controller.rate },
-                set: { controller.setRate($0); touched() }
-            )) {
-                ForEach(VideoPlaybackController.rates, id: \.self) { rate in
-                    Text(VideoPlayerFormat.rate(rate)).tag(rate)
+            Section {
+                Picker(localized("倍速"), selection: Binding(
+                    get: { controller.playingRate },
+                    set: { controller.setRate($0); touched() }
+                )) {
+                    ForEach(controller.offeredRates, id: \.self) { rate in
+                        Text(VideoPlayerFormat.rate(rate)).tag(rate)
+                    }
+                }
+            } header: {
+                if controller.isStream != false {
+                    Text(localized("串流影片最快 2×，再快會沒有聲音"))
                 }
             }
         } label: {
-            Text(VideoPlayerFormat.rate(controller.rate))
+            Text(VideoPlayerFormat.rate(controller.playingRate))
                 .font(DSFont.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
         }
         .accessibilityLabel(localized("倍速"))
-        .accessibilityValue(VideoPlayerFormat.rate(controller.rate))
+        .accessibilityValue(VideoPlayerFormat.rate(controller.playingRate))
     }
 
     private func centerControls(_ controller: VideoPlaybackController) -> some View {

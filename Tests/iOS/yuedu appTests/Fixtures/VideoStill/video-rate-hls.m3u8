@@ -1,0 +1,17 @@
+#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:4
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXT-X-MAP:URI="video-rate-hls-init.mp4"
+#EXTINF:4.000000,
+video-rate-hls-0.m4s
+#EXTINF:4.000000,
+video-rate-hls-1.m4s
+#EXTINF:4.000000,
+video-rate-hls-2.m4s
+#EXTINF:4.000000,
+video-rate-hls-3.m4s
+#EXTINF:4.000000,
+video-rate-hls-4.m4s
+#EXT-X-ENDLIST

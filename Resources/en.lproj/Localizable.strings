@@ -351,6 +351,8 @@
 "只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。" = "This only prevents auto-lock. You can still lock the screen with the side or top button, and reading aloud continues.";
 "閱讀時螢幕常亮" = "Keep Screen On While Reading";
 "只防止自動鎖定，會比較耗電；按下電源鍵仍可鎖定螢幕。" = "This only prevents auto-lock and uses more battery. You can still lock the screen with the side or top button.";
+"自動接續閱讀" = "Resume Reading on Launch";
+"離開 App 時如果正在閱讀，下次打開會直接回到那本書。" = "If you leave the app while reading, it reopens that book the next time you open it.";
 "朗讀失敗：%@" = "Couldn't read aloud: %@";
 "第 %d 段語音無法下載：%@" = "Couldn't download audio segment %d: %@";
 "第 %d 段語音無法播放" = "Couldn't play audio segment %d.";
@@ -4624,3 +4626,5 @@
 "江蘇" = "Jiangsu";
 "清除滑桿與開關" = "Clear Sliders and Switches";
 "清除滑桿與開關會保留樣式表；重設連樣式表一起清掉。" = "Clearing sliders and switches keeps the stylesheet; resetting clears it too.";
+
+"串流影片最快 2×，再快會沒有聲音" = "Streamed videos play up to 2×; faster would have no sound";

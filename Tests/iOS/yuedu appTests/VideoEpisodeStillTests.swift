@@ -175,7 +175,7 @@ struct VideoEpisodeStillTests {
 /// A loopback CDN for the stills' fixtures that refuses (403) any request without the expected
 /// Referer, as the sources' video CDNs do, and serves byte ranges. Readiness is signalled by
 /// Network.framework, never by sleeping.
-private final class VideoStillFixtureServer: @unchecked Sendable {
+final class VideoStillFixtureServer: @unchecked Sendable {
     struct Request: CustomStringConvertible {
         let path: String
         let referer: String?

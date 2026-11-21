@@ -22,11 +22,6 @@ final class VideoPlaybackController {
         case failed(String)
     }
 
-    /// Speeds the speed menu offers (legado-E / MD3: 0.5–3.0).
-    static let rates: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
-    /// legado-E's long-press speed default (`longPressSpeed` 30 = 3.0×).
-    static let longPressRate: Float = 3
-
     let player = AVPlayer()
     let guide: VideoEpisodeGuide
     private(set) var book: ReadingBook
@@ -40,6 +35,9 @@ final class VideoPlaybackController {
     /// The speed the player keeps; a long press only lends it another for a while.
     private(set) var rate: Float = 1
     private(set) var isLongPressing = false
+    /// Whether the episode is an HLS stream, which AVFoundation cannot play past 2× with its sound
+    /// (`VideoPlaybackRate`); `nil` until its asset has said.
+    private(set) var isStream: Bool?
     /// The picture's size once the stream reports it; the player turns to match it.
     private(set) var pictureSize: CGSize?
 
@@ -57,6 +55,7 @@ final class VideoPlaybackController {
     private var statusObservation: NSKeyValueObservation?
     private var sizeObservation: NSKeyValueObservation?
     private var timelineObservations: [NSKeyValueObservation] = []
+    private var streamKindTask: Task<Void, Never>?
     /// Where the episode being loaded opens, applied once it is ready to play.
     private var pendingSeek: Double = 0
     /// The episode whose link was already resolved again after failing to play: legado
@@ -130,6 +129,8 @@ final class VideoPlaybackController {
         statusObservation = nil
         sizeObservation = nil
         timelineObservations = []
+        streamKindTask?.cancel()
+        streamKindTask = nil
         nowPlayingSession = nil
         pictureInPicture = nil
     }
@@ -173,6 +174,9 @@ final class VideoPlaybackController {
         statusObservation = nil
         sizeObservation = nil
         timelineObservations = []
+        streamKindTask?.cancel()
+        streamKindTask = nil
+        isStream = nil
         pictureSize = nil
         phase = .loading
         currentTime = time
@@ -253,6 +257,26 @@ final class VideoPlaybackController {
             item.observe(\.seekableTimeRanges, options: [.new]) { item, _ in timelineChanged(item) },
         ]
         player.replaceCurrentItem(with: item)
+        let asset = item.asset
+        streamKindTask = Task { [weak self] in
+            do {
+                let isStream = try await VideoPlaybackRate.isStream(asset)
+                try Task.checkCancellation()
+                self?.streamKindKnown(isStream, of: identity)
+            } catch is CancellationError {
+                return
+            } catch {
+                // The item's own status reports a stream that cannot load; the speed stays at
+                // what every kind plays with its sound.
+                AppLogger.error("[Video] could not tell the episode's kind", error: error)
+            }
+        }
+    }
+
+    private func streamKindKnown(_ isStream: Bool, of item: ObjectIdentifier) {
+        guard player.currentItem.map(ObjectIdentifier.init) == item else { return }
+        self.isStream = isStream
+        applyRate()
     }
 
     private func itemStatusChanged(_ status: AVPlayerItem.Status, error: String?, of item: ObjectIdentifier) {
@@ -316,7 +340,8 @@ final class VideoPlaybackController {
     }
 
     func resume() {
-        player.playImmediately(atRate: isLongPressing ? Self.longPressRate : rate)
+        player.defaultRate = playingRate
+        player.playImmediately(atRate: effectiveRate)
         phase = .playing
     }
 
@@ -342,17 +367,33 @@ final class VideoPlaybackController {
         seek(to: currentTime + seconds)
     }
 
+    /// The speeds the menu offers for this episode.
+    var offeredRates: [Float] { VideoPlaybackRate.offered(isStream: isStream) }
+
+    /// The chosen speed as this episode plays it.
+    var playingRate: Float { VideoPlaybackRate.playable(rate, isStream: isStream) }
+
+    /// The speed the picture moves at now, a long press included.
+    var effectiveRate: Float {
+        VideoPlaybackRate.playable(isLongPressing ? VideoPlaybackRate.longPress : rate, isStream: isStream)
+    }
+
     func setRate(_ rate: Float) {
         self.rate = rate
-        player.defaultRate = rate
-        if phase == .playing, !isLongPressing { player.rate = rate }
+        applyRate()
     }
 
     /// legado-E's long press: a faster speed while the finger stays down.
     func setLongPressing(_ pressing: Bool) {
         guard pressing != isLongPressing else { return }
         isLongPressing = pressing
-        if phase == .playing { player.rate = pressing ? Self.longPressRate : rate }
+        applyRate()
+    }
+
+    /// Every speed change reaches the player here, so none can ask for more than the episode plays.
+    private func applyRate() {
+        player.defaultRate = playingRate
+        if phase == .playing { player.rate = effectiveRate }
     }
 
     // MARK: Observation
@@ -463,6 +504,43 @@ final class VideoPlaybackController {
         album.value = book.title as NSString
         album.extendedLanguageTag = "und"
         return [title, album]
+    }
+}
+
+/// The speeds a video plays at (FB-231).
+///
+/// AVFoundation plays an HLS item past 2× by scanning: it disables the item's audio and video
+/// tracks and shows a few frames a second — measured 2026-11-21 on one clip at 3×: 6 frames in
+/// 3 s, both tracks disabled; with an I-frame playlist (`canPlayFastForward` true) it scans the
+/// I-frames at ~2 fps, still silent. The same clip as an MP4 file plays 3× at its full frame rate
+/// with its sound. legado's ExoPlayer has no such limit, so its 3× long press is kept for files
+/// and held to 2× for streams.
+enum VideoPlaybackRate {
+    /// Speeds the speed menu offers (legado-E / MD3: 0.5–3.0).
+    static let menu: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
+    /// legado-E's long-press speed default (`longPressSpeed` 30 = 3.0×).
+    static let longPress: Float = 3
+
+    /// The fastest an HLS stream plays with its sound.
+    static let streamCeiling: Float = 2
+
+    /// `requested`, held to 2× for a stream and for an episode not yet known to be a file:
+    /// starting at 2× and rising once the file is known is never heard; starting silent is.
+    static func playable(_ requested: Float, isStream: Bool?) -> Float {
+        isStream == false ? requested : min(requested, streamCeiling)
+    }
+
+    static func offered(isStream: Bool?) -> [Float] {
+        isStream == false ? menu : menu.filter { $0 <= streamCeiling }
+    }
+
+    /// An HLS asset lists no tracks of its own — its media is described by playlists, and only
+    /// the player item finds the tracks — while a file's asset reads them from the file itself.
+    /// Measured 2026-11-21: a media playlist and a multivariant one both load 0 tracks, an MP4
+    /// loads its 2. Neither `canPlayFastForward` (true for HLS with I-frames, which still plays
+    /// 3× silent) nor the URL's extension (sources serve playlists from any path) tells them apart.
+    @MainActor static func isStream(_ asset: AVAsset) async throws -> Bool {
+        try await asset.load(.tracks).isEmpty
     }
 }
 
