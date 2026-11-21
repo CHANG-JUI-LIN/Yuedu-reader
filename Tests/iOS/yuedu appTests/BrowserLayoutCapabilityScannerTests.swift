@@ -77,7 +77,9 @@ struct BrowserLayoutCapabilityScannerTests {
 
     @Test func rejectsMathMLAndScript() {
         #expect(scan("<html><body><math><mi>x</mi></math></body></html>").unsupportedFeatures.contains(.mathML))
-        #expect(scan("<html><body><script>alert(1)</script></body></html>").unsupportedFeatures.contains(.scriptedInteractive))
+        // A script is never run and displays nothing: no reason to fall back (0.21.0).
+        #expect(scan("<html><body><script>alert(1)</script></body></html>").supported)
+        #expect(scan("<html><body><canvas></canvas></body></html>").unsupportedFeatures.contains(.scriptedInteractive))
     }
 
     @Test func acceptsSupportedHorizontalRubySubset() {
@@ -129,9 +131,10 @@ struct BrowserLayoutCapabilityScannerTests {
         #expect(result.unsupportedFeatures.contains(.table))
     }
 
-    @Test func rejectsMediaQueriesAndCalc() {
+    @Test func evaluatesMediaQueriesAndRejectsCalc() {
+        // `@media` is evaluated since YueduCoreText 0.21.0; a block is judged by what it declares.
         let media = ["@media screen { p { font-size: 20px } }"]
-        #expect(scan("<html><body><p>x</p></body></html>", media).unsupportedFeatures.contains(.mediaQueries))
+        #expect(scan("<html><body><p>x</p></body></html>", media).supported)
         let calc = ["p { width: calc(100% - 10px) }"]
         #expect(scan("<html><body><p>x</p></body></html>", calc).unsupportedFeatures.contains(.calcOrModernFunctions))
     }

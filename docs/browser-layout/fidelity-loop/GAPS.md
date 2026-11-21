@@ -112,6 +112,24 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 修法：套件分支 `background-geometry`。新增 `BackgroundImageGeometry`，照 CSS Backgrounds 3 §3 算第一格的大小與位置、兩軸各自是否重複；四個地方都改走它。`background-size` 支援 `auto`／`cover`／`contain`／長度與百分比，`background-position` 支援一到四個值，`background-repeat` 支援 `repeat-x`／`repeat-y` 與兩值寫法，`background` 簡寫會重設沒寫到的屬性。捲動宿主把會重複的圖先合成一頁再貼
 - 還沒做：量法（`RenderFidelityOracleTests`，鎖定）畫整頁背景時用的是 `imageRect`，只會畫第一格，所以這本測試書的第 1、2 章現在量不準；要照「改量法」的程序改。直排整章路徑的定位範圍仍是整章而不是一頁（原本就是這樣，沒動）
 
+### S015 — 樣式表裡有 `@media` 就整章回退（S001 的通用解法）
+- 測試書：[`s015-media-types-and-width`](../../../scripts/fidelity/fixtures/gaps/S015-media-types-and-width/)（還沒量）；配色查詢見 `s001a-dark-media-query`
+- 依據：基線 `phaseout-baseline-ios27-2026-11-21` 回退原因 media-queries 48 章（AI 術語詞典、Yesteryear、Thinking, Fast and Slow）。三本書用到的查詢：`(prefers-color-scheme: dark)`、Kindle 的媒體類型（`amzn-kf8`、`amzn-mobi`、`amzn-et`、`not amzn-kf8`）、`screen and (max-width: 512px)`、`(hover: hover)`
+- 根因（已確認）：掃描器看到 `@media` 就拒絕；解析器只留深色區塊，其他區塊整個丟掉，所以光是放行會漏掉手機寬度下該生效的規則
+- **2026-11-21：YueduCoreText 0.21.0 修好。** `CSSMediaQuery` 照實際頁面求值；規則解析時保留條件、排版時才過濾（一次解析仍供各種頁面尺寸共用）。AI 術語詞典 81.7 → 97.8、Thinking, Fast and Slow 75.2 → 89.3、Yesteryear 85.6 → 91.2，48 章全部走新引擎，沒有章節下降（run `phaseout-1-1-1-2-after`）
+- 還沒做：範圍語法（`width <= 512px`）、`aspect-ratio`、`or` 一律當不符合；`<link media>` 屬性仍只接受空值與 `all`；`@supports` 區塊仍整個丟掉
+
+### S016 — 直排章節因為被覆蓋掉的橫排宣告、`em` 寬度、SVG 封面而回退
+- 依據：基線回退原因 vertical-writing-mode 29 章。逐章查的結果：紅樓夢脂評 93 章有 83 章只因為行內小圖 `img { width: 1em }`；ナミヤ雑貨店の奇蹟每一章都因為範本的 `html { writing-mode: horizontal-tb }`（同一個 `<html class="vrtl">` 上被 `.vrtl` 覆蓋），封面頁另外因為 `<svg><image/></svg>`；有 4 章因為 `-webkit-text-combine-upright: all`
+- 根因（已確認）：直排准入看的是「有沒有出現過」非 `vertical-rl` 的宣告，不看層疊後誰贏；寬度只收 `auto` 與 px；`svg` 一律拒絕；`-webkit-text-combine-upright` 沒被當成 `text-combine-upright` 的別名
+- **2026-11-21：YueduCoreText 0.21.0 修好。** 紅樓夢脂評直排 75.4 → 78.9（16 章全走新引擎）、ナミヤ 36.6 → 57.5（量測時別名還沒修，14 章裡 8 章走新引擎）
+- 還沒做：ナミヤ的封面、版權頁在 WebView 是橫排（那幾個檔沒有宣告書寫方向），App 依書的方向排成直排，26–53 分；草枕封面的 `min-width`、float 圖、非圖片的 inline-block 仍回退
+
+### S017 — 有 `<script>` 的章節一律回退
+- 依據：全書普查（2026-11-21，12,984 章）回退 679 章，其中 590 章是波西傑克森系列與迷霧之子系列：每章 `<head>` 都掛 `<script src="../Misc/main.js">`，檔案只有 3 個位元組
+- 根因（已確認）：准入把 `script` 和 `iframe`、`canvas` 等放在同一條。腳本兩個引擎都不執行，舊引擎直接略過這個元素，回退沒有換到任何東西
+- **2026-11-21：YueduCoreText 0.21.0 修好。** `iframe`、`object`、`embed`、`canvas`、`audio` 仍回退。這兩本書不在當時的量測語料裡，還沒量過分數
+
 還沒細查的：flex／grid 與 `position`（orv 10 章、game-designer:10）；整頁背景圖的大小與位置（guimi:64、redchamber:305）；行內小圖相對容器左移沒有生效（game-designer:58）；版面相關的 `@media`（寬度查詢）求值。
 
 ## 舊引擎
