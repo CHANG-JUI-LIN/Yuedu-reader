@@ -1,0 +1,6 @@
+{
+ "title": "S018 合併邊框的表格與另外三種表格寫法",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S018: four table shapes fell back to the legacy engine. Chapter 1: border-collapse: collapse with cell, row and table borders of different widths, and a 25% date column beside a long text column. Chapter 2: a lone display: table-cell box, an inline-table around plain text, and a table with <colgroup>."
+}

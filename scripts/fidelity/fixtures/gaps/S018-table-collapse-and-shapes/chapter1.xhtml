@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>合併邊框</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<h2>合併邊框</h2>
+<p>下面這張表寫了 border-collapse: collapse。相鄰的儲存格共用一條邊框，表格外框是兩點寬，裡面的格線是一點寬，第一欄右邊那條是三點寬的紅線。</p>
+<table class="grid">
+<thead><tr><th>年號</th><th>在位</th><th>備註</th></tr></thead>
+<tbody>
+<tr><td class="thick">洪武</td><td>三十一年</td><td>開國</td></tr>
+<tr><td class="thick">建文</td><td>四年</td><td>靖難</td></tr>
+<tr><td class="thick">永樂</td><td>二十二年</td><td>遷都</td></tr>
+</tbody>
+</table>
+<p>下面這張是年表。左邊的日期欄寫了寬度百分之二十五，右邊是很長的說明。日期欄要保持四分之一寬，日期不該被擠成一個字一行；兩欄之間有一條直線，每一列下面有一條虛線。</p>
+<table class="timeline">
+<tbody>
+<tr><td class="date">洪武十年</td><td class="what">一歲，出生，為朱標次子。這一欄的說明故意寫得很長，長到一行放不下，要折成好幾行才看得出左邊那一欄有沒有被擠扁。</td></tr>
+<tr><td class="date">洪武二十五年</td><td class="what">十六歲，四月，太子朱標病故；九月，被立為皇太孫。</td></tr>
+<tr><td class="date">建文元年</td><td class="what">二十三歲，重用齊泰、黃子澄、方孝孺等，進行削藩。</td></tr>
+</tbody>
+</table>
+<p>最後一段。</p>
+</body>
+</html>

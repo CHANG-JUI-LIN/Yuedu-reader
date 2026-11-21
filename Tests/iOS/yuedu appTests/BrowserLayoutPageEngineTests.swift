@@ -206,7 +206,7 @@ struct BrowserLayoutPageEngineTests {
         let (engine, _, _) = await makeEngine(chapters: [
             plainChapter(String(repeating: "每一頁的起點必須屬於該頁，點擊翻頁不能返回原頁。", count: 120)),
             .init(title: "Table fallback", href: "chapter1.xhtml",
-                  html: "<html><body><table style=\"border-collapse: collapse\"><tr><td>Fallback content</td></tr></table></body></html>", css: []),
+                  html: "<html><body><table><caption>legacy</caption><tr><td>Fallback content</td></tr></table></body></html>", css: []),
             plainChapter(String(repeating: "Browser prose after the fallback chapter. ", count: 60), index: 2)
         ])
         _ = await engine.preloadChapter(at: 1)
@@ -233,7 +233,7 @@ struct BrowserLayoutPageEngineTests {
         let (engine, _, delegate) = await makeEngine(chapters: [
             plainChapter(String(repeating: "Browser has more pages than its legacy test builder. ", count: 120)),
             .init(title: "Fallback", href: "chapter1.xhtml",
-                  html: "<html><body><table style=\"border-collapse: collapse\"><tr><td>Link destination</td></tr></table></body></html>", css: [])
+                  html: "<html><body><table><caption>legacy</caption><tr><td>Link destination</td></tr></table></body></html>", css: [])
         ])
         _ = await engine.preloadChapter(at: 1)
         let position = CoreTextReadingPosition.chapterStart(1)

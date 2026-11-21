@@ -1,0 +1,12 @@
+p { margin: 0 0 1em 0; }
+table.grid { border-collapse: collapse; width: 100%; margin: 1em 0; border: 2px solid #111; }
+table.grid td, table.grid th { border: 1px solid #111; padding: 0.4em; text-align: center; }
+table.grid th { background-color: #e6e6e6; }
+table.grid td.thick { border-right: 3px solid #a33; }
+table.timeline { border-collapse: collapse; width: 100%; margin: 1em 0; }
+table.timeline td { padding: 0.6em 0.4em; }
+table.timeline td.date { width: 25%; text-align: right; padding-right: 1em; }
+table.timeline td.what { border-left: 1px solid #111; padding-left: 1em; }
+table.timeline tr { border-bottom: 1px dashed #888; }
+div.cell { display: table-cell; margin: 3em; padding: 0.5em; background-color: #e6e6e6; }
+span.bubble { display: inline-table; padding: 0.4em 0.8em; background-color: #cfe3ff; border-radius: 5px; }

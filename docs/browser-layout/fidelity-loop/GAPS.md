@@ -130,6 +130,14 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 根因（已確認）：准入把 `script` 和 `iframe`、`canvas` 等放在同一條。腳本兩個引擎都不執行，舊引擎直接略過這個元素，回退沒有換到任何東西
 - **2026-11-21：YueduCoreText 0.21.0 修好。** `iframe`、`object`、`embed`、`canvas`、`audio` 仍回退。這兩本書不在當時的量測語料裡，還沒量過分數
 
+### S018 — 合併邊框的表格與另外三種表格寫法（S006 的後續）
+- 測試書：[`s018-table-collapse-and-shapes`](../../../scripts/fidelity/fixtures/gaps/S018-table-collapse-and-shapes/)（還沒量）
+- 依據：全書普查（2026-11-21）回退原因 table 共 64 章：`border-collapse: collapse` 36 章（洪武大帝、Thinking, Fast and Slow、哈利波特、全知讀者視角、全能遊戲設計師、Atomic Habits）、`display: inline-table` 19 章（全能遊戲設計師的聊天氣泡）、沒有表格包著的 `display: table-cell` 10 章（三國演義注評版的 `div.tupian`）、`<colgroup>` 2 章
+- 根因（已確認）：表格子集只收分離邊框模型，其餘在准入就拒絕
+- **2026-11-21：YueduCoreText 0.22.0 修好。** 合併邊框照 CSS 2.1 §17.6.2：每條格線選一個贏家，置中畫在格線上、每條只畫一次，儲存格各佔一半寬度。匿名表格盒（§17.2.1）、包著一般內容的 inline-table 當行內區塊、`colgroup`／`col` 略過。六本書有表格的 35 章全部改走新引擎、沒有章節下降（run `tables-after` 對 `tables-before`）：洪武大帝 48.8 → 85.6、全能遊戲設計師 60.4 → 94.3、Thinking, Fast and Slow 64.7 → 88.3、哈利波特 66.3 → 89.6、三國演義注評版 67.0 → 89.7、Atomic Habits 65.1 → 87.2。「改之前」偏低有一部分是量法看不到舊引擎畫成圖的表格（見「雜訊」）
+- 一併修的既有問題：寫了 `width` 的欄位（年表的 `width: 25%`）在表格寬度不夠時被和其他欄位一起等比例壓縮，日期欄剩一個字寬；儲存格自己的百分比寬度在欄位裡又被套一次
+- 還沒做：`rowspan`、巢狀表格、`<caption>` 仍回退（語料沒遇到）；`<col>` 的寬度不採用；虛線邊框跨多格時每格各自起算虛線；走新引擎後仍偏低的章節：哈利波特 251（61.8）、洪武大帝 43（67.3）、41（70.8），原因還沒查
+
 還沒細查的：flex／grid 與 `position`（orv 10 章、game-designer:10）；整頁背景圖的大小與位置（guimi:64、redchamber:305）；行內小圖相對容器左移沒有生效（game-designer:58）；版面相關的 `@media`（寬度查詢）求值。
 
 ## 舊引擎

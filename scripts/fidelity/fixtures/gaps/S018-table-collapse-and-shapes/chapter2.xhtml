@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>另外三種寫法</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<h2>另外三種寫法</h2>
+<p>下面的灰色方塊是一個沒有放在表格裡的 table-cell。它應該只有內容那麼寬、靠左，而且樣式表寫的邊距不會生效。</p>
+<div class="cell">孤零零的一格</div>
+<p>下面這一行裡有一個 inline-table 的氣泡：<span class="bubble">你好，這是氣泡</span>，氣泡應該跟文字排在同一行，寬度只包住裡面的字。</p>
+<p>最後這張表有 colgroup，欄寬由儲存格的內容決定。</p>
+<table>
+<colgroup><col></col><col></col><col></col></colgroup>
+<tbody>
+<tr><td>甲</td><td>乙丙</td><td>丁戊己</td></tr>
+<tr><td>一</td><td>二</td><td>三</td></tr>
+</tbody>
+</table>
+<p>最後一段。</p>
+</body>
+</html>

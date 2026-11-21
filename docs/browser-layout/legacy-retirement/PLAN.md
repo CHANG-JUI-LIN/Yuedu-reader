@@ -91,7 +91,7 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | 1-1 | `@media` 照實際畫面求值（媒體類型、寬高、方向、配色、hover／pointer）；解析時保留條件、排版時才過濾 | 套件 0.21.0。AI 術語詞典 81.7 → 97.8、Thinking, Fast and Slow 75.2 → 89.3、Yesteryear 85.6 → 91.2，48 章全部改走新引擎（run `phaseout-1-1-1-2-after`） |
 | 1-2 | 直排准入：`writing-mode` 依層疊結果判斷（日本出版社通用範本先寫橫排再用 class 覆蓋）；`em`／`rem`／`pt` 寬度；只包一張圖的 SVG 封面；`-webkit-text-combine-upright` 別名 | 套件 0.21.0。紅樓夢脂評直排 75.4 → 78.9（16 章全走新引擎）、ナミヤ 36.6 → 57.5（別名修正後剩下的 4 章也會走新引擎，還沒重量） |
 | 1-3 | `<script>` 不再是回退理由（兩個引擎都不執行腳本；兩本新書每章掛一個空的 `main.js`，590 章全部回退） | 套件 0.21.0 |
-| 1-4 | 表格：`border-collapse: collapse`、`inline-table`、沒有表格包著的 `table-cell`（匿名表格盒）、`colgroup`、巢狀表格、`rowspan` | 未開始，先寫設計。全書 64 章 |
+| 1-4 | 表格：`border-collapse: collapse`、`inline-table`、沒有表格包著的 `table-cell`（匿名表格盒）、`colgroup`；指定寬度的欄位保留寬度 | **完成**：套件 0.22.0。六本書有表格的 35 章全部走新引擎、沒有章節下降（run `tables-after` 對 `tables-before`）。巢狀表格、`rowspan`、`<caption>` 仍回退，語料沒遇到 |
 | 1-5 | flex（EPUB 用到的子集：置中、對齊）與 `position: absolute` | 未開始，先寫設計。全書 18＋9 章，集中在全知讀者視角、全能遊戲設計師 |
 | 1-6 | 有向量內容的 SVG（鬼吹燈 10 章）、`calc()`（1 章）、`audio`（1 章）、直排的 `min-width`（草枕封面 1 章）、MathML、`iframe` 等 | 未開始 |
 | 1-7 | 排版失敗與逾時不再回退：修掉原因，或顯示錯誤頁 | 未開始 |
@@ -101,7 +101,7 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 
 | 還會回退的原因 | 章數 | 具體是什麼 |
 |---|---:|---|
-| 表格 | 64 | `border-collapse` 36、`display: inline-table` 19、沒有表格包著的 `table-cell` 10、`colgroup` 2（會重疊） |
+| ~~表格~~ | ~~64~~ | 0.22.0 已處理（S018） |
 | flex | 18 | `display: flex`＋`justify-content`／`align-items`；`inline-flex` 3 |
 | 有向量內容的 SVG | 10 | 鬼吹燈 |
 | `position: absolute` | 9 | 全能遊戲設計師 |
@@ -134,3 +134,5 @@ EPUB 啟動時不再建立舊引擎；`BrowserLayoutPageEngine` 自己持有版�
 | 2026-11-21 | 量了 33 本的基線（iOS 27.2 與 26.5 各一次）；盤點舊引擎還負責什麼 | `phaseout-baseline-ios27-2026-11-21` |
 | 2026-11-21 | 1-0 完成：套件 0.20.0、App `f23f5f4b` | `phaseout-1-0-after` |
 | 2026-11-21 | 全書不抽樣普查（35 本、12,984 章）；1-1、1-2、1-3 完成：套件 0.21.0 | `phaseout-1-1-1-2-after` |
+| 2026-11-21 | 套件 CI 修好（Swift 6.1 的隔離錯誤）；舊引擎的合成粗體、內嵌字體以私有名稱註冊（App `21e69741`、`02d7f9f2`） | — |
+| 2026-11-21 | 1-4 表格完成：套件 0.22.0 | `tables-after` |
