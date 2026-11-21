@@ -93,7 +93,7 @@ struct EPUBChapterFontSnapshotTests {
         }))
         let string = await chapter
         #expect(string.length > 0)
-        #expect(Self.postScriptNames(in: string) == ["Ahem"])
+        #expect(Self.isTheEmbeddedFace(Self.postScriptNames(in: string)))
         #expect(resolver.registeredFontFaces.count == rendered.count + registering.count)
     }
 
@@ -128,10 +128,10 @@ struct EPUBChapterFontSnapshotTests {
             }
             let longChapter = try await long.value
             #expect(longChapter.length > 0)
-            #expect(longChapter.faces == ["Ahem"])
+            #expect(Self.isTheEmbeddedFace(longChapter.faces))
             for chapter in others {
                 #expect(chapter.length > 0)
-                #expect(Self.postScriptNames(in: chapter) == ["Ahem"])
+                #expect(Self.isTheEmbeddedFace(Self.postScriptNames(in: chapter)))
             }
         }
     }
@@ -271,6 +271,12 @@ struct EPUBChapterFontSnapshotTests {
         func response(for requestURL: URL) async throws -> PublicationResourceResponse {
             PublicationResourceResponse(data: fontData, mimeType: "font/ttf", textEncodingName: nil)
         }
+    }
+
+    /// One face, and it is the book's: an embedded face is registered under a
+    /// private name, never under the name its file carries.
+    nonisolated static func isTheEmbeddedFace(_ names: Set<String>) -> Bool {
+        names.count == 1 && names.allSatisfy { $0.hasPrefix("YueduEmbedded-") }
     }
 
     private static func postScriptNames(in string: NSAttributedString) -> Set<String> {

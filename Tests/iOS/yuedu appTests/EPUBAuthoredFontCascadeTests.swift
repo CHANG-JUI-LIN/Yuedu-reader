@@ -80,7 +80,9 @@ struct EPUBAuthoredFontCascadeTests {
                 if let selected {
                     #expect(names.allSatisfy { $0 == selected }, "Actual glyph fonts: \(names)")
                 } else {
-                    #expect(names == ["Ahem", "TimesNewRomanPSMT"], "Actual glyph fonts: \(names)")
+                    // The book's face (registered under a private name), then the next authored family.
+                    #expect(names.count == 2 && names[0].hasPrefix("YueduEmbedded-") && names[1] == "TimesNewRomanPSMT",
+                            "Actual glyph fonts: \(names)")
                 }
             }
         }

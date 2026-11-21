@@ -70,9 +70,22 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
         data: Data,
         alias: String,
         digest: String,
-        existingTempURL: URL?
+        existingTempURL: URL?,
+        isNamespaced: Bool = false
     ) -> FontRegistrationResult? {
         _ = alias
+        // A font a book embeds is reachable only through the family its `@font-face`
+        // names, as in a browser. Registered under its own names it also answers to
+        // them, for every book and for the system lookup: 壹▪洪武大帝 sets its body in
+        // `"DK-SONGTI", "方正书宋_GBK", …`, meaning the device's font, and embeds a
+        // 65-character subset for one table whose own family name is 方正书宋_GBK. The
+        // body found the subset by name, drew what it holds in it and the rest in the
+        // fallback, and every line came out in two weights. So each face gets a private
+        // name before it is registered. A face that cannot be renamed (CFF, a
+        // collection) keeps its names; the collision check below still covers it.
+        if !isNamespaced, let isolated = EmbeddedTrueTypeFontIdentity.namespaced(data, digest: digest) {
+            return registerUncached(data: isolated, alias: alias, digest: digest, existingTempURL: nil, isNamespaced: true)
+        }
         let sourceFont: CTFont?
         if let provider = CGDataProvider(data: data as CFData),
            let cgFont = CGFont(provider) {
@@ -93,7 +106,7 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
                     AppLogger.render("[CoreTextEngine] unsupported embedded font name collision ps=\(name)")
                     return nil
                 }
-                return registerUncached(data: isolated, alias: alias, digest: digest, existingTempURL: nil)
+                return registerUncached(data: isolated, alias: alias, digest: digest, existingTempURL: nil, isNamespaced: true)
             }
 
             var graphicsError: Unmanaged<CFError>?

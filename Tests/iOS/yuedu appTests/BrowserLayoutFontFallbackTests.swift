@@ -41,7 +41,8 @@ struct BrowserLayoutFontFallbackTests {
         let lines = try layout(runs: [run("Browser", location: 0)])
         let physical = physicalRuns(in: try #require(lines.first?.ctLine))
 
-        #expect(physical.contains { $0.fontName == "Ahem" })
+        // The book's face, under the private name it is registered with.
+        #expect(physical.contains { $0.fontName.hasPrefix("YueduEmbedded-") })
         expectNoMissingGlyphs(physical)
     }
 
@@ -50,7 +51,7 @@ struct BrowserLayoutFontFallbackTests {
         let lines = try layout(runs: [run("A百B", location: 0)])
         let physical = physicalRuns(in: try #require(lines.first?.ctLine))
 
-        #expect(physical.contains { $0.fontName != "Ahem" })
+        #expect(physical.contains { !$0.fontName.hasPrefix("YueduEmbedded-") })
         expectNoMissingGlyphs(physical)
     }
 

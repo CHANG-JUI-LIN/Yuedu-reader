@@ -83,7 +83,7 @@ struct BrowserLayoutThreadSafetyTests {
         ]
         let onMain = try #require(adapter.fontResolver())
         let expected = tuples.map { onMain($0.0, $0.1, $0.2, $0.3).map(Self.describe) }
-        #expect(expected[0]?.hasPrefix("Ahem") == true, "the chapter's embedded face resolves: \(String(describing: expected[0]))")
+        #expect(expected[0]?.hasPrefix("YueduEmbedded-") == true, "the chapter's embedded face resolves: \(String(describing: expected[0]))")
         // A separate resolver, so nothing is served from the main thread's cache.
         let offMain = try #require(adapter.fontResolver())
         let (background, ranOffMain) = await withCheckedContinuation { continuation in

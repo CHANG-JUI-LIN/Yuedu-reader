@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import Testing
 import UIKit
+import YueduCoreText
 @testable import yuedu_app
 
 @Suite("User reader fonts", .serialized)
@@ -288,12 +289,14 @@ struct UserFontSettingsTests {
         let contentRange = try #require(result.attributedString.string.range(of: "這是一段粗體文字"))
         let index = NSRange(contentRange, in: result.attributedString.string).location
         let font = try #require(result.attributedString.askedFont(at: index))
-        let strokeWidth = try #require(
-            result.attributedString.attribute(.strokeWidth, at: index, effectiveRange: nil) as? NSNumber
+        // The second pass `SyntheticBoldPass` draws for this run: the glyphs again,
+        // moved along the line by this much.
+        let boldOffset = try #require(
+            result.attributedString.attribute(BrowserTextAttributes.syntheticBoldOffset, at: index, effectiveRange: nil) as? NSNumber
         )
 
         #expect(font.fontName == imported.postScriptName)
-        #expect(strokeWidth.doubleValue < 0)
+        #expect(boldOffset.doubleValue > 0)
     }
 
     @Test("regular-only custom font gains synthetic bold for online HTML strong text")
@@ -332,12 +335,14 @@ struct UserFontSettingsTests {
         let contentRange = try #require(result.attributedString.string.range(of: "線上粗體"))
         let index = NSRange(contentRange, in: result.attributedString.string).location
         let font = try #require(result.attributedString.askedFont(at: index))
-        let strokeWidth = try #require(
-            result.attributedString.attribute(.strokeWidth, at: index, effectiveRange: nil) as? NSNumber
+        // The second pass `SyntheticBoldPass` draws for this run: the glyphs again,
+        // moved along the line by this much.
+        let boldOffset = try #require(
+            result.attributedString.attribute(BrowserTextAttributes.syntheticBoldOffset, at: index, effectiveRange: nil) as? NSNumber
         )
 
         #expect(font.fontName == imported.postScriptName)
-        #expect(strokeWidth.doubleValue < 0)
+        #expect(boldOffset.doubleValue > 0)
     }
 
     @Test("native bold face does not receive synthetic stroke")
