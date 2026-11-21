@@ -1,4 +1,5 @@
 import Foundation
+import SwiftSoup
 import YueduCoreText
 
 /// Which way a book reads: a property of the book, fixed for the session.
@@ -99,6 +100,7 @@ final class BookWritingModes {
     private let styleInput: StyleInput?
     private var resolved: [Int: ReaderWritingMode] = [:]
     private var pending: [Int: Task<ReaderWritingMode, Never>] = [:]
+    private var scrollResolved: [Int: ReaderWritingMode] = [:]
 
     /// A book laid out in the user's 排版方向 (TXT, online, Aozora): every document in `mode`.
     init(uniform mode: ReaderWritingMode) {
@@ -151,6 +153,39 @@ final class BookWritingModes {
         resolved[spine] = mode
         pending[spine] = nil
         return mode
+    }
+
+    /// The mode scroll mode gives spine `spine`: its own, except that a document with no text takes the
+    /// book's. Scroll mode's axis is the mode's, so a vertical book whose cover and title page are
+    /// pictures in undeclared (horizontal) documents scrolled down through them and then cut to
+    /// scrolling sideways at the first page of text (maintainer, 2026-11-22). A picture has no writing
+    /// mode to keep; a horizontal document with text keeps its own, as in paged mode.
+    func scrollWritingMode(forSpine spine: Int) async -> ReaderWritingMode {
+        let own = await writingMode(forSpine: spine)
+        guard let styleInput, own != direction.principalMode else { return own }
+        if let mode = scrollResolved[spine] { return mode }
+        let mode: ReaderWritingMode
+        do {
+            mode = Self.hasNoText(try await styleInput(spine).html) ? direction.principalMode : own
+        } catch {
+            AppLogger.parse("Writing mode: the chapter could not be read for text; it scrolls in its own mode",
+                            context: ["spine": spine, "error": String(describing: error)])
+            return own
+        }
+        scrollResolved[spine] = mode
+        return mode
+    }
+
+    /// Whether a document's body holds no text: pictures and empty elements only.
+    nonisolated static func hasNoText(_ html: String) -> Bool {
+        do {
+            guard let body = try SwiftSoup.parse(html).body() else { return false }
+            return try body.text().allSatisfy { $0.isWhitespace || $0 == "\u{00A0}" || $0 == "\u{3000}" }
+        } catch {
+            AppLogger.parse("Writing mode: the chapter's markup could not be parsed for text",
+                            context: ["error": String(describing: error)])
+            return false
+        }
     }
 
     /// The mode of a spine already resolved, for a caller that cannot wait; `nil` until it is.

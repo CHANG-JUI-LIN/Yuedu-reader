@@ -60,6 +60,28 @@ struct BookWritingModesTests {
         #expect(!book.shelfIsRTL)
     }
 
+    @Test("in scroll mode a picture-only document takes the book's mode; one with text keeps its own")
+    func pictureOnlyDocumentsScrollTheBooksWay() async throws {
+        // ナミヤ雑貨店の奇蹟: a cover and a title page that are one picture each in documents that declare
+        // no mode, then vertical text. Scroll mode's axis follows the mode, and it turned after the cover.
+        let url = try await Self.epub(
+            language: "ja", progression: "rtl", css: ".vrtl { writing-mode: vertical-rl; }",
+            chapters: [#"<div><img src="cover.jpg" alt="表紙"/></div>"#, "<p>\u{3000}&#160; </p>",
+                       "<p>あばらやに行こう</p>", "<p>Colophon in a horizontal document</p>"],
+            bodyClasses: [2: "vrtl"])
+        let session = try await PublicationSession.open(sourceURL: url)
+        let modes = await BookWritingModes.resolve(session: session,
+                                                   resource: EPUBBrowserLayoutResourceAdapter(session: session))
+        #expect(modes.direction.principalMode == .verticalRTL)
+        var paged: [ReaderWritingMode] = [], scroll: [ReaderWritingMode] = []
+        for spine in session.chapters.indices {
+            paged.append(await modes.writingMode(forSpine: spine))
+            scroll.append(await modes.scrollWritingMode(forSpine: spine))
+        }
+        #expect(paged == [.horizontal, .horizontal, .verticalRTL, .horizontal], "paged mode lays each out as declared")
+        #expect(scroll == [.verticalRTL, .verticalRTL, .verticalRTL, .horizontal])
+    }
+
     @Test("a CSS-free Japanese book with right-to-left pages is vertical by its OPF")
     func opfInferenceWithoutCSS() async throws {
         let book = try await Self.resolve(try await Self.epub(language: "ja", progression: "rtl",

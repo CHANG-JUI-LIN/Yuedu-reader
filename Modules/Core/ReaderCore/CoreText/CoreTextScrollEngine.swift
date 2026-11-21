@@ -573,7 +573,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         if let writingModes {
             // A segment's mode changes only by a reslice, whose new engine finds its own boundaries:
             // the chapters it was asked to load and are of another mode.
-            let mode = await writingModes.writingMode(forSpine: chapterIndex)
+            let mode = await writingModes.scrollWritingMode(forSpine: chapterIndex)
             guard generation == resliceGeneration, !Task.isCancelled else { return }
             guard mode == renderSettings.writingMode else {
                 segmentBoundaries.insert(chapterIndex)

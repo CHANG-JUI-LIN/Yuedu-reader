@@ -455,7 +455,7 @@ final class EPUBPageRenderer: ObservableObject {
         guard let writingModes else { return .unchanged }
         scrollSegmentGeneration &+= 1
         let generation = scrollSegmentGeneration
-        let mode = await writingModes.modes.writingMode(forSpine: spine)
+        let mode = await writingModes.modes.scrollWritingMode(forSpine: spine)
         guard generation == scrollSegmentGeneration, self.writingModes?.session === writingModes.session else {
             return .superseded
         }
