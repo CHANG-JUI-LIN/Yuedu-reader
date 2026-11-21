@@ -93,7 +93,7 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | 1-3 | `<script>` 不再是回退理由（兩個引擎都不執行腳本；兩本新書每章掛一個空的 `main.js`，590 章全部回退） | 套件 0.21.0 |
 | 1-4 | 表格：`border-collapse: collapse`、`inline-table`、沒有表格包著的 `table-cell`（匿名表格盒）、`colgroup`；指定寬度的欄位保留寬度 | **完成**：套件 0.22.0。六本書有表格的 35 章全部走新引擎、沒有章節下降（run `tables-after` 對 `tables-before`）。巢狀表格、`rowspan`、`<caption>` 仍回退，語料沒遇到 |
 | 1-5a | flex 容器只包著文字（語料裡兩本書的用法都是這樣：置中標題或標籤）：當成一個貼合內容的項目，照 `justify-content`／`align-items` 擺位 | **完成**：套件 0.23.0。全知讀者視角 88.0 → 97.1，16 章全走新引擎、沒有章節下降（run `flex-after` 對 `flex-before`） |
-| 1-5b | `position: absolute`／`relative` 加位移（全能遊戲設計師的屬性面板 9 章，同時用了多項目以外的 flex）；有多個項目的 flex | 未開始，先寫設計 |
+| 1-5b | `position: absolute`（釘在已定位區塊裡、用 `top` 加 `left`／`right` 的區塊；全能遊戲設計師的屬性面板）、`box-sizing: border-box`（語料 3 本書） | **完成**：套件 0.25.0。用到絕對定位的 8 章全走新引擎，71.3 → 95.7（run `positioned-gd2`）；全語料沒有書下降，book-770f5d9a 61.4 → 82.0（run `positioned-after` 對 `collapse-after`）。未做：`z-index` 疊放順序（照文件順序畫）、`relative` 自身位移、`fixed`／`sticky`、有多個項目的 flex |
 | 1-6a | 空的 `<svg>`（只有 viewBox，沒有內容；鬼吹燈各卷首頁）畫成同比例的空白圖；整章沒有可畫的東西時新引擎自己出一張空白頁，不回退（語料裡這種章節有 123 個）；空的區塊照 CSS 2.1 §8.3.1 自己折疊上下邊距 | **完成**：套件 0.24.0。鬼吹燈 93.9 → 96.1、book-3804b2ae 95.0 → 96.6、book-d53a7692 91.8 → 92.8，沒有書下降（run `collapse-after` 對 `collapse-before`）。book-3804b2ae 有三章各降約 4：章首位移現在和 WebKit 一致（+0.8，原本 +43），露出的是原本就有、被錯誤位移遮住的行距漂移（每行 −0.25），另案處理 |
 | 1-6b | `calc()`（1 章，在絕對定位的規則裡）、`audio`（劍來 1 章，多看的朗讀元件）、直排的 `min-width`（草枕封面 1 章）、MathML、`iframe` 等 | 未開始 |
 | 1-7 | 排版失敗與逾時不再回退：修掉原因，或顯示錯誤頁 | 未開始 |
@@ -140,3 +140,5 @@ EPUB 啟動時不再建立舊引擎；`BrowserLayoutPageEngine` 自己持有版�
 | 2026-11-21 | 1-4 表格完成：套件 0.22.0 | `tables-after` |
 | 2026-11-21 | 1-5a 只包文字的 flex 容器：套件 0.23.0（同時修掉 0.22.0 讓套件 CI 的範例測試失敗的問題） | `flex-after` |
 | 2026-11-22 | 1-6a 空 svg、空白頁、空區塊邊距折疊：套件 0.24.0 | `collapse-after` |
+| 2026-11-22 | 直排捲動的圖片不超過一個螢幕：套件 0.24.1 | 模擬器截圖 |
+| 2026-11-22 | 1-5b 絕對定位、box-sizing：套件 0.25.0 | `positioned-after`、`positioned-gd2` |
