@@ -138,6 +138,12 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 一併修的既有問題：寫了 `width` 的欄位（年表的 `width: 25%`）在表格寬度不夠時被和其他欄位一起等比例壓縮，日期欄剩一個字寬；儲存格自己的百分比寬度在欄位裡又被套一次
 - 還沒做：`rowspan`、巢狀表格、`<caption>` 仍回退（語料沒遇到）；`<col>` 的寬度不採用；虛線邊框跨多格時每格各自起算虛線；走新引擎後仍偏低的章節：哈利波特 251（61.8）、洪武大帝 43（67.3）、41（70.8），原因還沒查
 
+### S019 — 只包著文字的 flex 容器
+- 測試書：沒有單獨的一本
+- 依據：全書普查回退原因 flex 18 章。全知讀者視角 10 章是 `h3 { display: flex; align-items: flex-start; justify-content: center }`，裡面只有標題文字；全能遊戲設計師 8 章的 flex 也只包文字，但同一批章節還用了 `position: absolute`
+- **2026-11-21：YueduCoreText 0.23.0 修好文字這一種。** 容器裡只有文字時是一個 flex 項目（Flexbox §4），等於一個行內區塊照 `justify-content` 擺在行上。全知讀者視角 88.0 → 97.1，16 章全走新引擎（run `flex-after` 對 `flex-before`）
+- 還沒做：容器裡有元素（多個項目）仍回退；固定高度容器的交叉軸對齊沒套用；`grid` 不排版
+
 還沒細查的：flex／grid 與 `position`（orv 10 章、game-designer:10）；整頁背景圖的大小與位置（guimi:64、redchamber:305）；行內小圖相對容器左移沒有生效（game-designer:58）；版面相關的 `@media`（寬度查詢）求值。
 
 ## 舊引擎

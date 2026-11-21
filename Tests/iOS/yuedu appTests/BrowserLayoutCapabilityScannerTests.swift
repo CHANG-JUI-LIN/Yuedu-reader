@@ -57,8 +57,11 @@ struct BrowserLayoutCapabilityScannerTests {
     }
 
     @Test func rejectsFlexGrid() {
-        let css = ["body { display: flex }"]
+        // Grid is not laid out. A flex container is judged by what it holds
+        // since YueduCoreText 0.23.0: more than one item still falls back.
+        let css = ["body { display: grid }"]
         #expect(scan("<html><body></body></html>", css).unsupportedFeatures.contains(.unknownBlockDisplay))
+        #expect(scan("<html><body><p>a</p><p>b</p></body></html>", ["body { display: flex }"]).unsupportedFeatures.contains(.flexGrid))
         // A rule must MATCH a real element to reject (DOM-aware scanning:
         // unmatched rules in a shared stylesheet must not reject a chapter).
         let css2 = [".x { grid-template-columns: 1fr }"]

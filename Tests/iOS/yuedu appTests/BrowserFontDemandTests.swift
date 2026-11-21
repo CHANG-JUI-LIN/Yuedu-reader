@@ -77,7 +77,7 @@ struct BrowserFontDemandTests {
     func rejectedChapterNeverPreparesBrowserFonts(scroll: Bool) async throws {
         let resource = MockBrowserLayoutResource(chapters: [.init(
             title: "Chapter", href: "chapter.xhtml", html: "<p>Text</p>",
-            css: ["p { display: flex; font-family: Unused }"])])
+            css: ["p { display: grid; font-family: Unused }"])])
         let settings = EPUBTestFixtures.renderSettings()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
