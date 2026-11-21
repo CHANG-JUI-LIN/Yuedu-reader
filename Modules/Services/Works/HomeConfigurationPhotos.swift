@@ -12,9 +12,9 @@ typealias HomeConfigurationPhotos = HomePhotoFolder<HomeConfigurationID>
 typealias HomeListCardPhotos = HomePhotoFolder<HomeListCardPhotoID>
 
 /// Photos the reader picks for the home: one JPEG per id, `<id>.jpg` in a folder beside
-/// `explore_home.json`, cut to one shape. They stay on this device: iCloud carries the
-/// home's 首頁配置 since 2026-11-21, not their photos, and WebDAV carries neither. Read when a
-/// page first asks, then kept.
+/// `explore_home.json`, cut to one shape. They follow the home over iCloud and into a WebDAV
+/// backup (2026-11-21; `storedPhotos`, `replaceStoredPhoto`). Read when a page first asks,
+/// then kept.
 @MainActor
 final class HomePhotoFolder<ID: RawRepresentable & Hashable & Sendable>: ObservableObject where ID.RawValue == String {
     enum PhotoError: Error {
@@ -26,7 +26,7 @@ final class HomePhotoFolder<ID: RawRepresentable & Hashable & Sendable>: Observa
 
     /// A photo's size in pixels: the picked image's middle cut to this shape, made no larger.
     let pixelSize: CGSize
-    private let directory: URL
+    nonisolated private let directory: URL
     private var isLoaded = false
 
     init(directory: URL, pixelSize: CGSize) {
@@ -141,6 +141,62 @@ final class HomePhotoFolder<ID: RawRepresentable & Hashable & Sendable>: Observa
         }
     }
 
+    // MARK: - Sync and backup
+
+    /// A photo on disk as the iCloud sync names it: what it belongs to, and its bytes' hash,
+    /// so a photo picked anew is another photo.
+    struct Stored: Sendable {
+        let name: String
+        let contentHash: String
+        let url: URL
+    }
+
+    /// The photos on disk among `names` (their files' names without `.jpg`), read off the main
+    /// actor. Only a folder not made yet is empty: any other failure throws, since a sync would
+    /// read "no photos" as every one of them removed here.
+    nonisolated func storedPhotos(named names: Set<String>) throws -> [Stored] {
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        } catch CocoaError.fileReadNoSuchFile {
+            return []
+        }
+        return try files.filter { $0.pathExtension == "jpg" && names.contains($0.deletingPathExtension().lastPathComponent) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { file in
+                let digest = SHA256.hash(data: try Data(contentsOf: file))
+                return Stored(name: file.deletingPathExtension().lastPathComponent,
+                              contentHash: digest.map { String(format: "%02x", $0) }.joined(), url: file)
+            }
+    }
+
+    /// Another device's photo, or a backup's, as `name`'s; nil removes it. `reloadFromDisk`
+    /// shows what changed.
+    nonisolated func replaceStoredPhoto(named name: String, with data: Data?) throws {
+        // A name is a file's: nothing that leaves the folder.
+        guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else { throw PhotoError.unreadable }
+        let url = directory.appendingPathComponent(name).appendingPathExtension("jpg")
+        guard let data else {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch CocoaError.fileNoSuchFile {
+                // It had none.
+            }
+            return
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// The photos read again, after a sync or a restore changed the folder.
+    func reloadFromDisk() {
+        guard isLoaded else { return }
+        isLoaded = false
+        // `loadIfNeeded` leaves what it held when the folder is gone.
+        images = [:]
+        loadIfNeeded()
+    }
+
     private func fileURL(for id: ID) -> URL {
         // 預設's `default`, a 空白 kept from before 2026-10-23, a UUID, or a card's
         // `HomeListCardPhotoID`: nothing a file name cannot hold.
@@ -237,4 +293,22 @@ struct HomeListCardPhotoID: RawRepresentable, Hashable, Sendable {
         let digest = SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
         rawValue = "\(section.uuidString)-\(digest)"
     }
+}
+
+/// One of the home's photos as the iCloud sync lists it; the picture itself is a file record
+/// named for `contentHash`.
+struct HomePhotoSyncItem: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        /// A 首頁配置's (`HomeConfigurationPhotos`).
+        case configuration
+        /// A 大圖卡片 card's (`HomeListCardPhotos`).
+        case card
+    }
+
+    let kind: Kind
+    /// The photo's file name without `.jpg`: the 首頁配置's id, or the card's `HomeListCardPhotoID`.
+    let name: String
+    let contentHash: String
+
+    var id: String { "\(kind.rawValue)/\(name)" }
 }

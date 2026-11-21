@@ -453,6 +453,67 @@ final class HomePageStore: ObservableObject {
         return true
     }
 
+    /// The order of 首頁配置's page, for the iCloud sync; nil when it leaves the home alone
+    /// (`syncItems`).
+    var syncOrder: HomeOrderSyncItem? {
+        guard let home, !isReadOnly, home.defaultsUntouched != nil else { return nil }
+        return HomeOrderSyncItem(order: home.listings.map(\.id.rawValue))
+    }
+
+    /// The order another device left. A 首頁配置 it names that is not here is skipped; one here
+    /// that it does not name comes after the rest.
+    func applyOrderFromSync(_ item: HomeOrderSyncItem) {
+        guard var home, !isReadOnly else { return }
+        let before = home
+        home.reorder(item.order.map(HomeConfigurationID.init(rawValue:)))
+        guard home != before else { return }
+        self.home = home
+        write()
+    }
+
+    /// The photos the home shows, by their file's name, for the iCloud sync and a backup: each
+    /// 首頁配置's, and each card's that a section still keeps. A photo left by something gone
+    /// (cleared at launch, `removePhotos(keeping:)`) is not among them. Nil when the sync
+    /// leaves the home alone (`syncItems`).
+    var photoScope: (configurations: Set<String>, cards: Set<String>)? {
+        home?.defaultsUntouched != nil ? photoNames : nil
+    }
+
+    /// The same for a backup, which takes the home whether or not the sync does yet; nil before
+    /// the home is made, and for a file this launch only reads.
+    var photoNames: (configurations: Set<String>, cards: Set<String>)? {
+        guard let home, !isReadOnly else { return nil }
+        return (Set(home.listings.map(\.id.rawValue)), Set(HomeListCardPhotoID.all(in: home).map(\.rawValue)))
+    }
+
+    // MARK: - Backup
+
+    /// The home as its file holds it, for a WebDAV backup; nil before it is made, and for a
+    /// file this launch only reads.
+    func backupData() throws -> Data? {
+        guard let home, !isReadOnly else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(home)
+    }
+
+    /// The home a backup holds, in place of this one. Returns false, changing nothing, for a
+    /// newer build's home, which this build would write back without what it cannot name, and
+    /// while this device's own file is read-only.
+    func restore(fromBackup data: Data) throws -> Bool {
+        guard !isReadOnly else { return false }
+        guard try JSONDecoder().decode(Version.self, from: data).schemaVersion <= HomePage.currentSchemaVersion else {
+            AppLogger.cache("⟐ a backup's explore home comes from a newer build; not restored")
+            return false
+        }
+        var restored = try JSONDecoder().decode(HomeConfigurations.self, from: data)
+        // This device's custom pages, moved in or not, are not the backup's to say.
+        restored.customPagesPending = home?.customPagesPending ?? false
+        home = restored
+        write()
+        return true
+    }
+
     /// Which 首頁配置 is shown, for the iCloud sync; nil when it leaves the home alone
     /// (`syncItems`).
     var syncSelection: HomeSelectionSyncItem? {

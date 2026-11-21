@@ -19,6 +19,7 @@ struct ExploreHomeSyncTests {
         private(set) var store: HomePageStore
         var shadow: [String: SyncShadowEntry] = [:]
         var selectionShadow: [String: SyncShadowEntry] = [:]
+        var orderShadow: [String: SyncShadowEntry] = [:]
         var uploads = 0
         var applies = 0
 
@@ -53,6 +54,7 @@ struct ExploreHomeSyncTests {
     final class Cloud {
         var configurations: Data?
         var selection: Data?
+        var order: Data?
     }
 
     /// One `mergeType` pass over one record, as `ICloudSyncManager` runs it.
@@ -106,6 +108,16 @@ struct ExploreHomeSyncTests {
                 id: { _ in "explore_home_selection" }, now: now
             ) { merged in
                 if let record = merged.first { device.store.applySelectionFromSync(record) }
+                return true
+            }
+            if moved { device.applies += 1 }
+        }
+        if let order = device.store.syncOrder {
+            let moved = try merge(
+                local: [order], blob: &cloud.order, shadow: &device.orderShadow, uploads: &device.uploads,
+                id: { _ in "explore_home_order" }, now: now
+            ) { merged in
+                if let record = merged.first { device.store.applyOrderFromSync(record) }
                 return true
             }
             if moved { device.applies += 1 }
@@ -269,6 +281,53 @@ struct ExploreHomeSyncTests {
         try Self.pass(pad, cloud: cloud, now: Self.day + 70)
         #expect(phone.uploads + pad.uploads == uploads, "a settled pass uploads nothing")
         #expect(phone.applies + pad.applies == applies, "a settled pass applies nothing")
+    }
+
+    @Test("the order of 首頁配置's page follows the reader, 預設 among their own")
+    func order() throws {
+        let cloud = Cloud(), phone = try Device("iPhone"), pad = try Device("iPad")
+        phone.open()
+        pad.open()
+        let context = HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
+        phone.store.createConfiguration(named: "通勤", from: .blank, defaults: context)
+        phone.store.createConfiguration(named: "睡前", from: .blank, defaults: context)
+        for step in 0..<3 { try Self.pass(step % 2 == 0 ? phone : pad, cloud: cloud, now: Self.day + Double(step) * 10) }
+        #expect(names(pad) == [localized("預設"), "通勤", "睡前"])
+
+        // 預設 moved last on the pad.
+        pad.store.moveConfigurations(fromOffsets: IndexSet(integer: 0), toOffset: 3)
+        try Self.pass(pad, cloud: cloud, now: Self.day + 40)
+        try Self.pass(phone, cloud: cloud, now: Self.day + 50)
+        #expect(names(phone) == ["通勤", "睡前", localized("預設")])
+
+        let (uploads, applies) = (phone.uploads + pad.uploads, phone.applies + pad.applies)
+        try Self.pass(pad, cloud: cloud, now: Self.day + 60)
+        try Self.pass(phone, cloud: cloud, now: Self.day + 70)
+        #expect(phone.uploads + pad.uploads == uploads)
+        #expect(phone.applies + pad.applies == applies)
+    }
+
+    @Test("a photo is listed by its bytes, only for what the home still holds; replaced and removed by name")
+    func photos() throws {
+        let device = try Device("iPhone")
+        device.open()
+        let photos = device.store.photos
+        try photos.replaceStoredPhoto(named: "default", with: Data([1, 2, 3]))
+        try photos.replaceStoredPhoto(named: "gone", with: Data([9]))
+        let scope = try #require(device.store.photoScope)
+        #expect(scope.configurations == ["default"])
+
+        let first = try photos.storedPhotos(named: scope.configurations)
+        #expect(first.map(\.name) == ["default"], "the photo of a 首頁配置 that is gone is not listed")
+        try photos.replaceStoredPhoto(named: "default", with: Data([4, 5, 6]))
+        let second = try photos.storedPhotos(named: scope.configurations)
+        #expect(second.first?.contentHash != first.first?.contentHash, "picked anew, it is another photo")
+        #expect(ICloudSyncManager.homePhotoRecordName(contentHash: second[0].contentHash)
+            != ICloudSyncManager.homePhotoRecordName(contentHash: first[0].contentHash))
+
+        try photos.replaceStoredPhoto(named: "default", with: nil)
+        #expect(try photos.storedPhotos(named: scope.configurations).isEmpty)
+        #expect(throws: (any Error).self) { try photos.replaceStoredPhoto(named: "../outside", with: Data([1])) }
     }
 
     @Test("an edit during the round trip is kept, and the merge waits for the next sync")

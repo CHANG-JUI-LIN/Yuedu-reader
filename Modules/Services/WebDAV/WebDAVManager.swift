@@ -168,7 +168,7 @@ final class WebDAVManager: @MainActor ObservableObject {
         }
     }
 
-    /// Back up three local data files to WebDAV, along with a manifest.json containing device info.
+    /// Back up the local data files to WebDAV, along with a manifest.json containing device info.
     ///
     /// File reading strategy:
     /// - If a file does not exist (not yet generated before first use), silently skip it.
@@ -198,7 +198,22 @@ final class WebDAVManager: @MainActor ObservableObject {
         let replaceURL = libDir.appendingPathComponent("replace_rules.json")
         try await backupFileIfExists(at: replaceURL, to: "/yuedu/replace_rules.json")
 
-        // 4. manifest.json (for conflict detection)
+        // 4. The modules, 探索's home with its photos, and the settings that shape it
+        //    (`WebDAVLibraryExtras`). A home not made yet has no file.
+        let (library, home, fillOrder, aggregation) = await MainActor.run {
+            (RuleModuleLibrary.shared, HomePageStore.shared, MetadataFillOrderStore.shared, AggregationSettingsStore.shared)
+        }
+        try await put(data: WebDAVLibraryExtras.modulesData(library: library), path: WebDAVLibraryExtras.modulesPath)
+        if let data = try await WebDAVLibraryExtras.homeData(home: home) {
+            try await put(data: data, path: WebDAVLibraryExtras.homePath)
+        }
+        if let data = try await WebDAVLibraryExtras.homePhotosData(home: home) {
+            try await put(data: data, path: WebDAVLibraryExtras.homePhotosPath)
+        }
+        try await put(data: WebDAVLibraryExtras.settingsData(fillOrder: fillOrder, aggregation: aggregation),
+                      path: WebDAVLibraryExtras.settingsPath)
+
+        // 5. manifest.json (for conflict detection)
         let deviceName = await MainActor.run { UIDevice.current.name }
         let manifest = SyncManifest(
             deviceId: Self.deviceId,
@@ -289,6 +304,25 @@ final class WebDAVManager: @MainActor ObservableObject {
         if let rulesData = try? await get(path: "/yuedu/replace_rules.json") {
             let url = libDir.appendingPathComponent("replace_rules.json")
             try rulesData.write(to: url, options: .atomic)
+        }
+
+        // The modules, the home, its photos and its settings. A backup from before
+        // 2026-11-21 has none of these files, which is all "not found" means here; any other
+        // failure — the connection, the sign-in, a file that does not decode — is thrown and
+        // shown, not read as "nothing to restore".
+        let (library, home, fillOrder, aggregation) = await MainActor.run {
+            (RuleModuleLibrary.shared, HomePageStore.shared, MetadataFillOrderStore.shared, AggregationSettingsStore.shared)
+        }
+        if let data = try await getIfPresent(path: WebDAVLibraryExtras.modulesPath) {
+            try await WebDAVLibraryExtras.restoreModules(data, library: library)
+        }
+        if let data = try await getIfPresent(path: WebDAVLibraryExtras.homePath),
+           try await WebDAVLibraryExtras.restoreHome(data, home: home),
+           let photos = try await getIfPresent(path: WebDAVLibraryExtras.homePhotosPath) {
+            try await WebDAVLibraryExtras.restoreHomePhotos(photos, home: home)
+        }
+        if let data = try await getIfPresent(path: WebDAVLibraryExtras.settingsPath) {
+            try await WebDAVLibraryExtras.restoreSettings(data, fillOrder: fillOrder, aggregation: aggregation)
         }
 
         // Reload the in-memory stores from the just-restored files so the
@@ -387,6 +421,15 @@ final class WebDAVManager: @MainActor ObservableObject {
         } catch {
             AppLogger.sync("GET \(path) failed: \(String(describing: (error as? URLError)?.code)) \(error.localizedDescription)", level: .error)
             throw error
+        }
+    }
+
+    /// The file at `path`, or nil when the server has none.
+    nonisolated private func getIfPresent(path: String) async throws -> Data? {
+        do {
+            return try await get(path: path)
+        } catch WebDAVError.fileNotFound {
+            return nil
         }
     }
 

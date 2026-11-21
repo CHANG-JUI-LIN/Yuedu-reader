@@ -193,6 +193,12 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let homeConfigurationsRecordName = "explore_home_configurations_v1"
     nonisolated private static let homeSelectionRecordName = "explore_home_selection_v1"
     nonisolated private static let homeSelectionRecordID = "explore_home_selection"
+    nonisolated private static let homeOrderRecordName = "explore_home_order_v1"
+    nonisolated private static let homeOrderRecordID = "explore_home_order"
+    /// The home's photos: the list of them, and each picture as a file record named for its
+    /// bytes, so a photo picked anew is a new record and the old one is never read as it.
+    nonisolated private static let homePhotosRecordName = "explore_home_photos_v1"
+    nonisolated private static let homePhotoPrefix = "homephoto_"
     nonisolated private static let metadataFillOrderRecordName = "metadata_fill_order_v1"
     nonisolated private static let metadataFillOrderRecordID = "metadata_fill_order"
     nonisolated private static let aggregationSettingsRecordName = "aggregation_settings_v1"
@@ -210,6 +216,7 @@ final class ICloudSyncManager: ObservableObject {
         readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName, readingPositionsRecordName,
         ruleModulesRecordName, ruleModulePreferencesRecordName, ruleModuleRepositoriesRecordName,
         homeConfigurationsRecordName, homeSelectionRecordName, metadataFillOrderRecordName, aggregationSettingsRecordName,
+        homeOrderRecordName, homePhotosRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
         "reader_background_choice", readerOverlayLayoutRecordID,
@@ -233,6 +240,8 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowRuleModuleRepositories = "icloud_ruleModuleRepositories_v1"
     nonisolated private static let shadowHomeConfigurations = "icloud_homeConfigurations_v1"
     nonisolated private static let shadowHomeSelection = "icloud_homeSelection_v1"
+    nonisolated private static let shadowHomeOrder = "icloud_homeOrder_v1"
+    nonisolated private static let shadowHomePhotos = "icloud_homePhotos_v1"
     nonisolated private static let shadowMetadataFillOrder = "icloud_metadataFillOrder_v1"
     nonisolated private static let shadowAggregationSettings = "icloud_aggregationSettings_v1"
     /// What this device synced through `books_meta` before the split: every book it had
@@ -958,6 +967,27 @@ final class ICloudSyncManager: ObservableObject {
                 )
                 uploaded = uploaded || selectionMerge.uploaded
             }
+
+            // The order of 首頁配置's page, after the 首頁配置 it orders. One record, always
+            // there while the home syncs: an empty local list would read as the record deleted
+            // here and take the order from the devices that set it (see step 3).
+            let localOrder = await onMain("sync.read.homeOrder", "", { home.syncOrder })
+            let orderMerge = try await mergeType(
+                recordName: Self.homeOrderRecordName,
+                shadowKey: Self.shadowHomeOrder,
+                local: localOrder.map { [$0] } ?? [],
+                id: { _ in Self.homeOrderRecordID },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { _ in Date.distantPast },
+                applyLocally: { merged in
+                    guard let record = merged.first else { return true }
+                    await onMain("sync.apply.homeOrder") { home.applyOrderFromSync(record) }
+                    return true
+                }
+            )
+            uploaded = uploaded || orderMerge.uploaded
+
+            uploaded = try await mergeHomePhotos(of: home) || uploaded
         } else {
             AppLogger.sync("merge \(Self.homeConfigurationsRecordName): the home is not made, not looked at, or read-only; left alone", level: .notice)
         }
@@ -999,6 +1029,89 @@ final class ICloudSyncManager: ObservableObject {
             AppLogger.sync("⟐ merge \(Self.aggregationSettingsRecordName): the stored settings cannot be read; left alone", level: .error)
         }
         return uploaded
+    }
+
+    /// The record a home photo's picture is kept under.
+    nonisolated static func homePhotoRecordName(contentHash: String) -> String {
+        homePhotoPrefix + String(contentHash.prefix(32))
+    }
+
+    /// The home's photos — each 首頁配置's and each 大圖卡片 card's — after the home they belong
+    /// to; true when anything was uploaded.
+    ///
+    /// The list is merged a photo an item, newest wins; the pictures are file records named
+    /// for their bytes. Each of this device's is sent before the list that names it, so no
+    /// device reads of a picture that is not there yet.
+    ///
+    /// Only the photos of what the home still holds are listed (`HomePageStore.photoScope`):
+    /// the home clears the others at launch, and one listed for a card this device does not
+    /// have would be cleared there and read as removed here — taking it from the device that
+    /// has the card. So what arrives is applied only once everything it names is on this home;
+    /// until then (the home's own merge was refused this pass) it waits for the next sync.
+    ///
+    /// A picture replaced or removed leaves its old file record in the account, a few hundred
+    /// kilobytes, until `deleteRemoteData`: no device can tell that every other has moved on.
+    nonisolated private func mergeHomePhotos(of home: HomePageStore) async throws -> Bool {
+        let (configurationPhotos, cardPhotos) = await MainActor.run { (home.photos, home.cardPhotos) }
+        func stored(in scope: (configurations: Set<String>, cards: Set<String>)) throws -> [(item: HomePhotoSyncItem, url: URL)] {
+            try configurationPhotos.storedPhotos(named: scope.configurations).map {
+                (HomePhotoSyncItem(kind: .configuration, name: $0.name, contentHash: $0.contentHash), $0.url)
+            } + cardPhotos.storedPhotos(named: scope.cards).map {
+                (HomePhotoSyncItem(kind: .card, name: $0.name, contentHash: $0.contentHash), $0.url)
+            }
+        }
+        guard let scope = await onMain("sync.read.homePhotoScope", "", { home.photoScope }) else { return false }
+        let local = try stored(in: scope)
+        var uploaded = false
+        for photo in local {
+            let file = ICloudSyncPayloadFile(recordName: Self.homePhotoRecordName(contentHash: photo.item.contentHash),
+                                             localURL: photo.url)
+            if try await uploadBookFileIfNeeded(file) { uploaded = true }
+        }
+        let localItems = local.map(\.item)
+        let merge = try await mergeType(
+            recordName: Self.homePhotosRecordName,
+            shadowKey: Self.shadowHomePhotos,
+            local: localItems,
+            id: { $0.id },
+            hash: { Self.stableHash($0) },
+            fallbackUpdatedAt: { _ in Date.distantPast },
+            applyLocally: { merged in
+                guard let scope = await onMain("sync.read.homePhotoScope", "", { home.photoScope }) else { return false }
+                // Changed during the round trip, or naming something this home does not hold yet.
+                guard try stored(in: scope).map(\.item) == localItems,
+                      merged.allSatisfy({ ($0.kind == .configuration ? scope.configurations : scope.cards).contains($0.name) })
+                else { return false }
+                let held = Dictionary(localItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                func replace(_ item: HomePhotoSyncItem, with data: Data?) throws {
+                    switch item.kind {
+                    case .configuration: try configurationPhotos.replaceStoredPhoto(named: item.name, with: data)
+                    case .card: try cardPhotos.replaceStoredPhoto(named: item.name, with: data)
+                    }
+                }
+                for item in merged where held[item.id] != item {
+                    let name = Self.homePhotoRecordName(contentHash: item.contentHash)
+                    let record = try await fetchRecord(CKRecord.ID(recordName: name))
+                    guard let asset = record[Field.asset] as? CKAsset, let assetURL = asset.fileURL else {
+                        throw ICloudSyncError.missingAsset(name)
+                    }
+                    let data = try Data(contentsOf: assetURL)
+                    try replace(item, with: data)
+                    // Held as sent, at its size: the next sync does not send it back.
+                    rememberUploadedBookFileMarker("\(name):\(data.count)")
+                }
+                let wanted = Set(merged.map(\.id))
+                for item in localItems where !wanted.contains(item.id) {
+                    try replace(item, with: nil)
+                }
+                await onMain("sync.apply.homePhotos", "count=\(merged.count)") {
+                    configurationPhotos.reloadFromDisk()
+                    cardPhotos.reloadFromDisk()
+                }
+                return true
+            }
+        )
+        return uploaded || merge.uploaded
     }
 
     /// Every saved position, merged newest-wins: each by when its file was saved here until a
@@ -1545,6 +1658,12 @@ final class ICloudSyncManager: ObservableObject {
             + Self.readerBackgroundPicturePayloads(localBackgrounds + remoteBackgrounds)
         for file in files {
             try await deleteRecordIfExists(CKRecord.ID(recordName: file.recordName))
+        }
+        // The home's photos the cloud's list still names. One replaced or removed before is
+        // named by nothing any more and stays (`mergeHomePhotos`).
+        let remoteHomePhotos = try await valuesNamedForDeletion(in: Self.homePhotosRecordName, as: HomePhotoSyncItem.self) { $0.id }
+        for photo in remoteHomePhotos {
+            try await deleteRecordIfExists(CKRecord.ID(recordName: Self.homePhotoRecordName(contentHash: photo.contentHash)))
         }
         for id in stylePictures {
             try await deleteRecordIfExists(CKRecord.ID(recordName: Self.readerStylePictureRecordName(id)))

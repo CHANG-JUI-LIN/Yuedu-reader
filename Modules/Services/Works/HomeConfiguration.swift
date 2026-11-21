@@ -214,6 +214,20 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         defaultsIndex = order.firstIndex(of: .defaults).flatMap { $0 == 0 ? nil : $0 }
     }
 
+    /// The list in the order another device left it (`HomePageStore.applyOrderFromSync`): the
+    /// ones it names that are here, in its order, then the ones it does not name, in theirs.
+    mutating func reorder(_ ids: [HomeConfigurationID]) {
+        let listed = listings.map(\.id)
+        let here = Set(listed)
+        var seen = Set<HomeConfigurationID>()
+        var order = ids.filter { here.contains($0) && seen.insert($0).inserted }
+        order += listed.filter { !seen.contains($0) }
+        guard order != listed else { return }
+        let own = Dictionary(configurations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        configurations = order.compactMap { own[$0] }
+        defaultsIndex = order.firstIndex(of: .defaults).flatMap { $0 == 0 ? nil : $0 }
+    }
+
     /// Any but the last one left. One of the reader's own: 預設 keeps its place in the list. 預設:
     /// its sections go, and it is listed no more. The one deleted, if selected, gives way to 預設,
     /// else to the first left.
@@ -322,6 +336,12 @@ struct HomeConfigurationSyncItem: Codable, Equatable, Sendable {
     func decodedSections() throws -> [HomeSection] {
         try JSONDecoder().decode([HomeSection].self, from: sections)
     }
+}
+
+/// The order 首頁配置's page lists them in, 預設 among the reader's own, as the iCloud sync
+/// carries it. Whole, since the order is the setting; newest edit wins.
+struct HomeOrderSyncItem: Codable, Equatable, Sendable {
+    let order: [String]
 }
 
 /// Which 首頁配置 is shown, as the iCloud sync carries it (maintainer, 2026-11-21: it follows
