@@ -2775,7 +2775,7 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
     }
 
     private func presentImagePreview(for attachment: CoreTextPaginator.RenderedAttachment) {
-        let controller = CoreTextImagePreviewController(attachment: attachment)
+        let controller = CoreTextImagePreviewController(attachment: attachment, pageColor: pageView.backgroundColor)
         present(controller, animated: true)
     }
 
@@ -2838,9 +2838,24 @@ final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelega
     private let attachment: CoreTextPaginator.RenderedAttachment
     private let scrollView = UIScrollView()
     private let imageView = UIImageView()
+    /// The colour of the page the picture was drawn on.
+    private let pageColor: UIColor?
 
-    init(attachment: CoreTextPaginator.RenderedAttachment) {
+    /// What goes behind the picture: the page's colour when the picture has
+    /// transparency, nothing otherwise. A map or a piece of calligraphy drawn
+    /// in black ink on a transparent ground is legible on the page and was
+    /// solid black on this screen's black background.
+    static func plate(for image: UIImage, pageColor: UIColor?) -> UIColor? {
+        guard let pageColor, let alpha = image.cgImage?.alphaInfo else { return nil }
+        switch alpha {
+        case .none, .noneSkipFirst, .noneSkipLast: return nil
+        default: return pageColor
+        }
+    }
+
+    init(attachment: CoreTextPaginator.RenderedAttachment, pageColor: UIColor? = nil) {
         self.attachment = attachment
+        self.pageColor = pageColor
         super.init(nibName: nil, bundle: nil)
         coversFullScreen()
     }
@@ -2866,6 +2881,7 @@ final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelega
         view.addSubview(scrollView)
 
         imageView.image = attachment.image
+        imageView.backgroundColor = Self.plate(for: attachment.image, pageColor: pageColor)
         imageView.contentMode = .scaleAspectFit
         imageView.isAccessibilityElement = true
         imageView.accessibilityLabel = attachment.alt ?? attachment.sourceHref ?? "Image"

@@ -942,7 +942,7 @@ final class BrowserLayoutPageViewController: UIViewController,
             linkHref: item.linkTarget,
             originalSize: item.image?.size
         )
-        let controller = CoreTextImagePreviewController(attachment: attachment)
+        let controller = CoreTextImagePreviewController(attachment: attachment, pageColor: pageView.backgroundColorFill)
         present(controller, animated: true)
     }
 

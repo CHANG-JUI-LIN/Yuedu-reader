@@ -2193,7 +2193,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 let attachment = CoreTextPaginator.RenderedAttachment(rect: item.rect.rawValue, image: image,
                     opacity: 1, sourceHref: item.source, alt: item.alt, linkHref: item.linkTarget,
                     originalSize: image.size)
-                let preview = CoreTextImagePreviewController(attachment: attachment)
+                let preview = CoreTextImagePreviewController(attachment: attachment, pageColor: view.backgroundColor)
                 present(preview, animated: true)
             }
             cell.configure(tile: tile, horizontalInset: sideInsets.left, leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,
