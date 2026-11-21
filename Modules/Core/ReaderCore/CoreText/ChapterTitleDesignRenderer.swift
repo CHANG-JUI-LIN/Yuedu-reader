@@ -601,6 +601,7 @@ enum ChapterTitleCanvasPainter {
             context.translateBy(x: 0, y: canvasHeight)
             context.scaleBy(x: 1, y: -1)
             CTFrameDraw(frame, context)
+            SyntheticBoldPass.draw(frame, in: context)
             context.restoreGState()
             return
         }
@@ -652,6 +653,7 @@ enum ChapterTitleCanvasPainter {
         context.translateBy(x: 0, y: canvasHeight)
         context.scaleBy(x: 1, y: -1)
         CTFrameDraw(frame, context)
+        SyntheticBoldPass.draw(frame, vertical: true, in: context)
         context.restoreGState()
     }
 

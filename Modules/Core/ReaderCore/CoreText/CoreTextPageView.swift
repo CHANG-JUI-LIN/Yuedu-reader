@@ -964,6 +964,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             ctx.scaleBy(x: 1, y: -1)
             ctx.textPosition = .zero
             CTLineDraw(line, ctx)
+            SyntheticBoldPass.draw(line, at: .zero, in: ctx)
             ctx.restoreGState()
         }
     }
@@ -1107,6 +1108,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         ctx.setFillColor(UIColor.clear.cgColor)
         guard !suppressedRanges.isEmpty else {
             CTFrameDraw(frame, ctx)
+            SyntheticBoldPass.draw(frame, vertical: true, in: ctx)
             return
         }
         let lines = CTFrameGetLines(frame) as! [CTLine]
@@ -1118,11 +1120,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             guard !suppressedRanges.contains(where: {
                 NSIntersectionRange($0, nsRange).length > 0
             }) else { continue }
-            ctx.textPosition = CGPoint(
+            let origin = CGPoint(
                 x: contentOffset.x + origins[index].x,
                 y: contentOffset.y + origins[index].y
             )
+            ctx.textPosition = origin
             CTLineDraw(line, ctx)
+            SyntheticBoldPass.draw(line, at: origin, vertical: true, in: ctx)
         }
     }
 
@@ -1373,6 +1377,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         ctx.translateBy(x: 0, y: boundsHeight)
         ctx.scaleBy(x: 1, y: -1)
         CTFrameDraw(frame, ctx)
+        SyntheticBoldPass.draw(frame, in: ctx)
         ctx.restoreGState()
     }
 

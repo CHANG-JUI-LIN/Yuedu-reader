@@ -269,11 +269,13 @@ enum ReaderDialogueBubbleRenderer {
 
         context.saveGState()
         context.textMatrix = .identity
-        context.textPosition = CGPoint(
+        let origin = CGPoint(
             x: originX,
             y: bubble.rect.maxY + descent + metrics.nameFontSize * 0.25
         )
+        context.textPosition = origin
         CTLineDraw(line, context)
+        SyntheticBoldPass.draw(line, at: origin, in: context)
         context.restoreGState()
     }
 

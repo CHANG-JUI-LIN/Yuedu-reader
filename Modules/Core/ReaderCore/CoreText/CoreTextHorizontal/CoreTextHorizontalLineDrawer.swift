@@ -162,6 +162,7 @@ enum CoreTextHorizontalLineDrawer {
             )
             ctx.textPosition = origin
             CTLineDraw(lineToDraw, ctx)
+            SyntheticBoldPass.draw(lineToDraw, at: origin, in: ctx)
             ReaderTextDecorationRenderer.drawHorizontal(
                 line: lineToDraw, origin: origin, attributedString: attrStr, range: boundedLineRange,
                 layer: .overText, context: ctx
