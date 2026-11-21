@@ -361,6 +361,8 @@ enum LexborComputedStyleAdapter {
         case .percent(let magnitude): guard allowPercent else { return nil }; number = magnitude
         case .px(let magnitude), .pt(let magnitude), .em(let magnitude), .rem(let magnitude),
              .vh(let magnitude), .vw(let magnitude): number = magnitude
+        // `parse` never makes one; this adapter takes no `calc()`.
+        case .calc: return nil
         }
         // CSSLengthResolver's legacy unitless-pixel allowance is not valid CSS.
         if let unitless = Double(value), unitless != 0 { return nil }

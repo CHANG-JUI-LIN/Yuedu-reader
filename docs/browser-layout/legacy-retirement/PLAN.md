@@ -95,7 +95,8 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | 1-5a | flex 容器只包著文字（語料裡兩本書的用法都是這樣：置中標題或標籤）：當成一個貼合內容的項目，照 `justify-content`／`align-items` 擺位 | **完成**：套件 0.23.0。全知讀者視角 88.0 → 97.1，16 章全走新引擎、沒有章節下降（run `flex-after` 對 `flex-before`） |
 | 1-5b | `position: absolute`（釘在已定位區塊裡、用 `top` 加 `left`／`right` 的區塊；全能遊戲設計師的屬性面板）、`box-sizing: border-box`（語料 3 本書） | **完成**：套件 0.25.0。用到絕對定位的 8 章全走新引擎，71.3 → 95.7（run `positioned-gd2`）；全語料沒有書下降，book-770f5d9a 61.4 → 82.0（run `positioned-after` 對 `collapse-after`）。未做：`z-index` 疊放順序（照文件順序畫）、`relative` 自身位移、`fixed`／`sticky`、有多個項目的 flex |
 | 1-6a | 空的 `<svg>`（只有 viewBox，沒有內容；鬼吹燈各卷首頁）畫成同比例的空白圖；整章沒有可畫的東西時新引擎自己出一張空白頁，不回退（語料裡這種章節有 123 個）；空的區塊照 CSS 2.1 §8.3.1 自己折疊上下邊距 | **完成**：套件 0.24.0。鬼吹燈 93.9 → 96.1、book-3804b2ae 95.0 → 96.6、book-d53a7692 91.8 → 92.8，沒有書下降（run `collapse-after` 對 `collapse-before`）。book-3804b2ae 有三章各降約 4：章首位移現在和 WebKit 一致（+0.8，原本 +43），露出的是原本就有、被錯誤位移遮住的行距漂移（每行 −0.25），另案處理 |
-| 1-6b | `calc()`（1 章，在絕對定位的規則裡）、`audio`（劍來 1 章，多看的朗讀元件）、直排的 `min-width`（草枕封面 1 章）、MathML、`iframe` 等 | 未開始 |
+| 1-6b | `calc()`：長度與百分比的加減，用在 `width`、`max-width`、左右 margin／padding、`left`／`right` | **完成**：套件 0.26.0。語料裡唯一用到的一章（全能遊戲設計師第 56 章）67.3 → 93.8，改走新引擎（run `calc-after` 對 `calc-before`）。乘除、巢狀函式、`min()`／`max()`／`clamp()`、其他屬性、直排仍回退 |
+| 1-6c | `audio`（劍來 1 章，多看的朗讀元件）、直排的 `min-width`（草枕封面 1 章）、MathML、`iframe` 等 | 未開始 |
 | 1-7 | 排版失敗與逾時不再回退：修掉原因，或顯示錯誤頁 | 未開始 |
 | 1-8 | 元素自己的背景圖。讀程式看起來新引擎不畫非根元素的 `background-image`，還沒用測試書確認 | 未開始 |
 
@@ -143,3 +144,5 @@ EPUB 啟動時不再建立舊引擎；`BrowserLayoutPageEngine` 自己持有版�
 | 2026-11-22 | 直排捲動的圖片不超過一個螢幕：套件 0.24.1 | 模擬器截圖 |
 | 2026-11-22 | 1-5b 絕對定位、box-sizing：套件 0.25.0 | `positioned-after`、`positioned-gd2` |
 | 2026-11-22 | 套件 0.25.1：0.25.0 讓 CI 的除錯版在 512 KB 執行緒上堆疊溢位（樣式結構多了 64 bytes）；定位欄位移出樣式結構、建盒樹每層 57 KB → 2 KB、排版每層 36 KB → 20 KB。**未解**：最底層排一行約 190 KB（`InlineRun` 2.4 KB、`ComputedStyle` 1 KB 在除錯版每讀一次就整份複製），要把兩者改成複製只佔一個指標才算根治 | 套件測試 `NestingStackTests` |
+| 2026-11-22 | 0.25.1 全語料複測：567 章對照 `positioned-after` 通過，只有全能遊戲設計師上升 | `release-0251` |
+| 2026-11-22 | 1-6b `calc()`：套件 0.26.0 | `calc-after` |
