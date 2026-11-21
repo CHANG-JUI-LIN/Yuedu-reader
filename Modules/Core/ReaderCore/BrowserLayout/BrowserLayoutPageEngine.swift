@@ -888,21 +888,36 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // FIRST PAGE: publish immediately — the rest of the chapter is NOT
             // laid out yet.
             let firstPageStart = SourcePerfTrace.now
-            let firstPage = try await withTimeout(nanos: chapterTimeoutNanos) {
+            let laidOutFirstPage = try await withTimeout(nanos: chapterTimeoutNanos) {
                 try await owner.layoutNextPage()
             }
             SourcePerfTrace.record("browser.firstPage", "spine=\(spineIndex)", since: firstPageStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
-            guard let firstPage else {
+            let firstPage: PageFragments
+            if let laidOutFirstPage {
+                firstPage = laidOutFirstPage
+            } else {
                 // A chapter that produced zero pages: distinguish an image-only
                 // document (DOM has <img> but no text rendered by us) from a
                 // truly empty document.
                 let hasImageMarkup = html.contains("<img") || html.contains("<svg")
-                await fallbackToLegacy(
-                    spineIndex,
-                    reason: hasImageMarkup ? .imageOnlyDocument : .emptyRenderableContent
-                )
-                return
+                // A chapter with nothing in it to draw — no picture either, such as a
+                // cover whose `<svg>` was left empty — is one blank page, and it is
+                // this engine's page: handing it to the legacy engine draws the same
+                // nothing. A chapter that names a picture and still came out empty
+                // keeps the fallback, since the picture may be something only the
+                // legacy engine shows; so does forced mode, which reports on its
+                // own diagnostic page.
+                let namesAPicture = html.contains("<img") || html.contains("<image")
+                guard mode == .browserAuto, !namesAPicture else {
+                    await fallbackToLegacy(
+                        spineIndex,
+                        reason: hasImageMarkup ? .imageOnlyDocument : .emptyRenderableContent
+                    )
+                    return
+                }
+                firstPage = PageFragments(index: 0, pageRect: PageLocalRect(rawValue: CGRect(origin: .zero, size: renderSize)),
+                                          fragments: [])
             }
             browserSessions[spineIndex] = owner
             var layout = BrowserChapterLayout(
@@ -971,7 +986,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return
         }
         guard isCurrentWork(generation), var layout = browserChapters[spineIndex] else { return }
-        layout.pages = pages
+        // A chapter with nothing to draw has no page of the session's: it keeps the
+        // one blank page it was published with.
+        if !pages.isEmpty { layout.pages = pages }
         layout.refreshFragmentBytes()
         browserChapters[spineIndex] = layout
         browserSessions.removeValue(forKey: spineIndex)

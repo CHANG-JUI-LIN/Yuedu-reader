@@ -229,6 +229,32 @@ struct BrowserLayoutPageEngineTests {
         }
     }
 
+    /// A chapter with nothing in it to draw — a cover whose `<svg>` was left empty —
+    /// is one blank page of the browser engine. It used to go to the legacy engine,
+    /// which drew the same nothing: ten such chapters in one test book.
+    @Test func aChapterWithNothingToDrawIsOneBlankBrowserPage() async throws {
+        let blank = MockBrowserLayoutResource.Chapter(
+            title: "cover", href: "c0.xhtml",
+            html: "<html><body><div><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 563 751\"></svg></div></body></html>",
+            css: [])
+        let next = MockBrowserLayoutResource.Chapter(
+            title: "ch1", href: "c1.xhtml", html: "<html><body><p>Real chapter text.</p></body></html>", css: [])
+        let resource = MockBrowserLayoutResource(chapters: [blank, next])
+        let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-blank-\(UUID().uuidString)"))
+        let settings = makeSettings()
+        let delegate = CoreTextPageEngine(attributedBuilder: MockAttributedStringBuilder(texts: ["cover", "next1"]),
+                                          renderSettings: settings, offsetStore: store)
+        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings, mode: .browserAuto)
+        await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "blank")
+        _ = await engine.preloadChapter(at: 1)
+
+        #expect(engine.choice(for: 0)?.isBrowser == true, "an empty chapter stays on the browser engine")
+        #expect(engine.testLayout(for: 0)?.pages.count == 1)
+        #expect(engine.choice(for: 1)?.isBrowser == true)
+        // One page for the blank chapter, then the next chapter's.
+        #expect(engine.totalPages >= 2)
+    }
+
     @Test func fallbackNavigationCallbacksTranslateDelegatePageSpace() async throws {
         let (engine, _, delegate) = await makeEngine(chapters: [
             plainChapter(String(repeating: "Browser has more pages than its legacy test builder. ", count: 120)),

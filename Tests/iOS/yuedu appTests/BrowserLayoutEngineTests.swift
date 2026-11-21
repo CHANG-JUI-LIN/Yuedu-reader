@@ -200,16 +200,21 @@ extension BlockLayoutTests {
     @Test func siblingMarginsCollapse() {
         var s1 = style(); s1.marginTop = .px(10); s1.marginBottom = .px(30)
         var s2 = style(); s2.marginTop = .px(20); s2.marginBottom = .px(5)
-        let childA = BlockBox(style: s1, boxType: .block)
-        let childB = BlockBox(style: s2, boxType: .block)
+        // Each holds a line: a box with nothing in it has adjoining margins of
+        // its own (CSS 2.1 §8.3.1), which is not what this checks.
+        func line() -> LayoutLine {
+            LayoutLine(runs: [], height: 40, ascent: 30, descent: 10, top: 0, baseline: 30, contentX: 0, ctLine: nil)
+        }
+        let childA = BlockBox(style: s1, boxType: .block, lines: [line()])
+        let childB = BlockBox(style: s2, boxType: .block, lines: [line()])
         _ = BlockLayout.layOut(root: childA, containerWidth: 200)
         _ = BlockLayout.layOut(root: childB, containerWidth: 200)
         let root = BlockBox(style: style(), boxType: .block, children: [childA, childB])
         _ = BlockLayout.layOut(root: root, containerWidth: 200)
         // A bottom (30) and B top (20) collapse to 30; B starts 30 after A's bottom.
         #expect(childB.frame.minY == childA.frame.maxY + 30)
-        #expect(childA.frame.maxY == 0)   // A has 0 content and its top margin collapsed into the box
-        #expect(childB.frame.minY == 30)
+        #expect(childA.frame.maxY == 40)  // A's top margin collapsed into the box
+        #expect(childB.frame.minY == 70)
     }
 
     @Test func collapsedChildHeightInParent() {
