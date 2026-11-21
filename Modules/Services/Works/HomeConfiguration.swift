@@ -77,6 +77,12 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
     /// languages, base codes, its defaults or its last swap were for. Nil in a file saved before
     /// 2026-10-27, whose lists say it instead.
     var defaultsLanguages: [String]?
+    /// Whether 預設 is still as the app made it: its defaults, or what a migration of them or the
+    /// language made of those. False once the reader changes it, or once another device's 預設
+    /// arrives; only then does the iCloud sync carry it, so a new device's untouched defaults
+    /// never stand against the 預設 the reader built. Nil in a file saved before 2026-11-21,
+    /// until the home has looked (`HomePageStore.pageOrDefaults`).
+    var defaultsUntouched: Bool?
 
     init(sections: [HomeSection], configurations: [HomeConfiguration] = [], selected: HomeConfigurationID? = nil,
          defaultsIndex: Int? = nil, defaultsDeleted: Bool = false, customPagesPending: Bool = false) {
@@ -90,7 +96,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, sections, configurations, selected, defaultsIndex, defaultsDeleted, customPagesPending
-        case defaultsLanguages
+        case defaultsLanguages, defaultsUntouched
     }
 
     init(from decoder: Decoder) throws {
@@ -102,6 +108,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         defaultsDeleted = try container.decodeIfPresent(Bool.self, forKey: .defaultsDeleted) ?? false
         customPagesPending = try container.decodeIfPresent(Bool.self, forKey: .customPagesPending) ?? false
         defaultsLanguages = try container.decodeIfPresent([String].self, forKey: .defaultsLanguages)
+        defaultsUntouched = try container.decodeIfPresent(Bool.self, forKey: .defaultsUntouched)
         retireBlank()
     }
 
@@ -115,6 +122,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         if defaultsDeleted { try container.encode(true, forKey: .defaultsDeleted) }
         if customPagesPending { try container.encode(true, forKey: .customPagesPending) }
         try container.encodeIfPresent(defaultsLanguages, forKey: .defaultsLanguages)
+        try container.encodeIfPresent(defaultsUntouched, forKey: .defaultsUntouched)
     }
 
     /// 空白 is no longer built in (maintainer, 2026-10-23). One the reader filled stays, as
@@ -165,6 +173,8 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
 
     mutating func setSections(_ newSections: [HomeSection], of id: HomeConfigurationID) {
         if id == .defaults {
+            // The reader's change: the app's own (a migration, the language) set `sections`.
+            if sections != newSections { defaultsUntouched = false }
             sections = newSections
         } else if let index = configurations.firstIndex(where: { $0.id == id }) {
             configurations[index].sections = newSections
@@ -231,6 +241,13 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         sections(of: id).contains { $0.keptCategories.contains(reference) }
     }
 
+    /// `newSections` kept as one of the reader's own, last, under a name not taken; what is
+    /// shown stays as it is. The 預設 another device's replaced on the first sync
+    /// (`HomePageStore.applyFromSync`).
+    mutating func keepAsOwn(named name: String, sections newSections: [HomeSection], makeID: () -> UUID = UUID.init) {
+        configurations.append(HomeConfiguration(id: HomeConfigurationID(makeID()), name: uniqueName(name), sections: newSections))
+    }
+
     private func uniqueName(_ base: String) -> String {
         let taken = Set(configurations.map(\.name) + [localized("預設")])
         guard taken.contains(base) else { return base }
@@ -278,4 +295,37 @@ extension HomeSection {
         return [HomeSection(id: component.id, layout: layout, title: component.title,
                             binding: .sourceCategories(component.categories))]
     }
+}
+
+// MARK: - iCloud sync
+
+/// One 首頁配置 as the iCloud sync carries it: 預設 under `HomeConfigurationID.defaults`, once
+/// the reader has changed it. Its sections go as bytes with the schema they were written in, so
+/// a build that cannot read a newer section never fails on the whole record — it leaves the
+/// home alone until it is updated (`HomePageStore.canRead`), as it does a newer build's file.
+struct HomeConfigurationSyncItem: Codable, Equatable, Sendable {
+    let id: String
+    let schemaVersion: Int
+    let name: String
+    /// `[HomeSection]` as JSON, keys sorted: the same sections are the same bytes on every device.
+    let sections: Data
+
+    init(id: HomeConfigurationID, name: String, sections: [HomeSection]) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        self.id = id.rawValue
+        schemaVersion = HomePage.currentSchemaVersion
+        self.name = name
+        self.sections = try encoder.encode(sections)
+    }
+
+    func decodedSections() throws -> [HomeSection] {
+        try JSONDecoder().decode([HomeSection].self, from: sections)
+    }
+}
+
+/// Which 首頁配置 is shown, as the iCloud sync carries it (maintainer, 2026-11-21: it follows
+/// the reader). Nil is 預設.
+struct HomeSelectionSyncItem: Codable, Equatable, Sendable {
+    let selected: String?
 }

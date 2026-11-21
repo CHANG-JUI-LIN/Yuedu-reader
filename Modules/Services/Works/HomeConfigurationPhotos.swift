@@ -12,8 +12,9 @@ typealias HomeConfigurationPhotos = HomePhotoFolder<HomeConfigurationID>
 typealias HomeListCardPhotos = HomePhotoFolder<HomeListCardPhotoID>
 
 /// Photos the reader picks for the home: one JPEG per id, `<id>.jpg` in a folder beside
-/// `explore_home.json`, cut to one shape. Like that file they stay on this device: neither
-/// iCloud nor WebDAV carries the home. Read when a page first asks, then kept.
+/// `explore_home.json`, cut to one shape. They stay on this device: iCloud carries the
+/// home's 首頁配置 since 2026-11-21, not their photos, and WebDAV carries neither. Read when a
+/// page first asks, then kept.
 @MainActor
 final class HomePhotoFolder<ID: RawRepresentable & Hashable & Sendable>: ObservableObject where ID.RawValue == String {
     enum PhotoError: Error {

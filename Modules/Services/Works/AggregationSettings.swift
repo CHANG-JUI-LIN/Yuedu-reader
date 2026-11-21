@@ -76,6 +76,9 @@ final class AggregationSettingsStore: ObservableObject {
 
     private let defaults: UserDefaults
     static let defaultsKey = "yd_aggregation_settings"
+    /// Whether what is stored could not be read, so `settings` are the defaults in its place:
+    /// the iCloud sync then sends nothing, or it would send those defaults as the reader's.
+    private(set) var storedIsUnreadable = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -87,6 +90,7 @@ final class AggregationSettingsStore: ObservableObject {
                 // until the reader changes something, so a later build can still read it.
                 AppLogger.cache("⟐ aggregation settings unreadable", context: ["error": "\(error)"])
                 settings = AggregationSettings()
+                storedIsUnreadable = true
             }
         } else {
             settings = AggregationSettings()
@@ -172,6 +176,38 @@ final class AggregationSettingsStore: ObservableObject {
         edit { $0.hiddenFromLatest = keys }
     }
 
+    // MARK: - iCloud sync
+
+    /// What the reader set, a setting an item, for the iCloud sync: 中繼資料語言偏好推薦, 隱藏已讀,
+    /// and each library or module turned off in 顯示在最新 and in 搜尋來源 — so a module unchecked
+    /// here and another unchecked there are both unchecked after. The fields kept only for
+    /// older builds stay on this device. Nil while what is stored cannot be read.
+    var syncItems: [AggregationSettingSyncItem]? {
+        guard !storedIsUnreadable else { return nil }
+        var items: [AggregationSettingSyncItem] = []
+        if let language = settings.metadataLanguage {
+            items.append(AggregationSettingSyncItem(kind: .metadataLanguage, text: language))
+        }
+        if let hides = settings.hidesRead { items.append(AggregationSettingSyncItem(kind: .hidesRead, flag: hides)) }
+        items += (settings.hiddenFromLatest ?? []).map { AggregationSettingSyncItem(kind: .hiddenFromLatest, key: $0) }
+        items += (settings.hiddenFromSearch ?? []).map { AggregationSettingSyncItem(kind: .hiddenFromSearch, key: $0) }
+        return items
+    }
+
+    /// The settings as a sync merged them. A list no device has set stays unset.
+    func applyFromSync(_ items: [AggregationSettingSyncItem]) {
+        func keys(_ kind: AggregationSettingSyncItem.Kind, unlessSet current: [SourceInstanceKey]?) -> [SourceInstanceKey]? {
+            let keys = items.filter { $0.kind == kind }.compactMap(\.key)
+            return keys.isEmpty && current == nil ? nil : keys
+        }
+        edit { settings in
+            if let language = items.first(where: { $0.kind == .metadataLanguage })?.text { settings.metadataLanguage = language }
+            if let hides = items.first(where: { $0.kind == .hidesRead })?.flag { settings.hidesRead = hides }
+            settings.hiddenFromLatest = keys(.hiddenFromLatest, unlessSet: settings.hiddenFromLatest)
+            settings.hiddenFromSearch = keys(.hiddenFromSearch, unlessSet: settings.hiddenFromSearch)
+        }
+    }
+
     private func edit(_ change: (inout AggregationSettings) -> Void) {
         var changed = settings
         change(&changed)
@@ -182,5 +218,32 @@ final class AggregationSettingsStore: ObservableObject {
         } catch {
             AppLogger.cache("⟐ aggregation settings not saved", context: ["error": "\(error)"])
         }
+    }
+}
+
+/// One of 聚合設定's settings as the iCloud sync carries it (`AggregationSettingsStore.syncItems`).
+struct AggregationSettingSyncItem: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case metadataLanguage, hidesRead, hiddenFromLatest, hiddenFromSearch
+    }
+
+    let kind: Kind
+    /// 中繼資料語言偏好推薦's choice.
+    var text: String?
+    /// 隱藏已讀.
+    var flag: Bool?
+    /// The library or module turned off.
+    var key: SourceInstanceKey?
+
+    init(kind: Kind, text: String? = nil, flag: Bool? = nil, key: SourceInstanceKey? = nil) {
+        self.kind = kind
+        self.text = text
+        self.flag = flag
+        self.key = key
+    }
+
+    /// The setting, or the setting and the place it turns off.
+    var id: String {
+        key.map { "\(kind.rawValue)/\($0.type.rawValue)/\($0.id)" } ?? kind.rawValue
     }
 }

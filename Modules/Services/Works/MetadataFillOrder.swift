@@ -109,6 +109,22 @@ final class MetadataFillOrderStore: ObservableObject {
         defaults.set(raw, forKey: Self.defaultsKey)
     }
 
+    /// The order as it is stored, for the iCloud sync: every entry as written, a place this
+    /// build does not know included, so another device's newer module place is not dropped on
+    /// its way through this one. Nil while the reader has set none; throws when what is stored
+    /// is not a list of entries, which `read` would show as a shorter list.
+    func syncRecord() throws -> MetadataFillOrderSyncRecord? {
+        guard let raw = defaults.array(forKey: Self.defaultsKey) else { return nil }
+        guard let entries = raw as? [[String: String]] else { throw CocoaError(.coderInvalidValue) }
+        return entries.isEmpty ? nil : MetadataFillOrderSyncRecord(entries: entries)
+    }
+
+    /// The order another device left.
+    func applyFromSync(_ record: MetadataFillOrderSyncRecord) {
+        defaults.set(record.entries, forKey: Self.defaultsKey)
+        stored = Self.read(defaults)
+    }
+
     private static func read(_ defaults: UserDefaults) -> [MetadataFillOrder.Entry] {
         guard let raw = defaults.array(forKey: defaultsKey) else { return [] }
         return raw.compactMap { item in
@@ -123,6 +139,13 @@ final class MetadataFillOrderStore: ObservableObject {
             return MetadataFillOrder.Entry(place: place, isEnabled: item["enabled"] != "0")
         }
     }
+}
+
+/// 自動補齊's list of places as the iCloud sync carries it: whole, since its order is the
+/// setting. Newest edit wins.
+struct MetadataFillOrderSyncRecord: Codable, Equatable, Sendable {
+    /// Each entry as `MetadataFillOrderStore` stores it: `place` and `enabled`.
+    let entries: [[String: String]]
 }
 
 extension MetadataFillOrder {

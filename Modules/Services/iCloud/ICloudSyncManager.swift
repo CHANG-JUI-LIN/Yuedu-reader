@@ -188,6 +188,14 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let ruleModulesRecordName = "rule_modules_v1"
     nonisolated private static let ruleModulePreferencesRecordName = "rule_module_preferences_v1"
     nonisolated private static let ruleModuleRepositoriesRecordName = "rule_module_repositories_v1"
+    /// 探索's home and the settings that shape it (2026-11-21): each 首頁配置, which one is
+    /// shown, 自動補齊's order of places, and 聚合設定.
+    nonisolated private static let homeConfigurationsRecordName = "explore_home_configurations_v1"
+    nonisolated private static let homeSelectionRecordName = "explore_home_selection_v1"
+    nonisolated private static let homeSelectionRecordID = "explore_home_selection"
+    nonisolated private static let metadataFillOrderRecordName = "metadata_fill_order_v1"
+    nonisolated private static let metadataFillOrderRecordID = "metadata_fill_order"
+    nonisolated private static let aggregationSettingsRecordName = "aggregation_settings_v1"
     /// The shelf as builds from before the split sync it.
     nonisolated private static let olderBuildsBooksRecordName = "books_meta"
 
@@ -201,6 +209,7 @@ final class ICloudSyncManager: ObservableObject {
         bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
         readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName, readingPositionsRecordName,
         ruleModulesRecordName, ruleModulePreferencesRecordName, ruleModuleRepositoriesRecordName,
+        homeConfigurationsRecordName, homeSelectionRecordName, metadataFillOrderRecordName, aggregationSettingsRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
         "reader_background_choice", readerOverlayLayoutRecordID,
@@ -222,6 +231,10 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowRuleModules = "icloud_ruleModules_v1"
     nonisolated private static let shadowRuleModulePreferences = "icloud_ruleModulePreferences_v1"
     nonisolated private static let shadowRuleModuleRepositories = "icloud_ruleModuleRepositories_v1"
+    nonisolated private static let shadowHomeConfigurations = "icloud_homeConfigurations_v1"
+    nonisolated private static let shadowHomeSelection = "icloud_homeSelection_v1"
+    nonisolated private static let shadowMetadataFillOrder = "icloud_metadataFillOrder_v1"
+    nonisolated private static let shadowAggregationSettings = "icloud_aggregationSettings_v1"
     /// What this device synced through `books_meta` before the split: every book it had
     /// there, and every one it deleted. Only read, to tell a book an older build added from
     /// one this device already knew (`adoptBooksAddedByOlderBuilds`).
@@ -789,6 +802,18 @@ final class ICloudSyncManager: ObservableObject {
             }
 
             try Task.checkCancellation()
+            // 5d. 探索's home and its settings, after the modules their sections draw from.
+            //     Held as 5c is, and for its reason.
+            var homeError: Error?
+            do {
+                changedRemote = try await mergeExploreHome() || changedRemote
+            } catch {
+                if Task.isCancelled { throw error }
+                AppLogger.sync("sync(\(reason)): the explore home failed, continuing with the book files: \(error.localizedDescription)", level: .error)
+                homeError = error
+            }
+
+            try Task.checkCancellation()
             // 6. Binary book files (EPUB/TXT content + cover images).
             let uploadedBookFileCount = try await uploadBookFiles()
             changedRemote = changedRemote || uploadedBookFileCount > 0
@@ -806,6 +831,7 @@ final class ICloudSyncManager: ObservableObject {
             // failure it is and the last-sync date stays where it was.
             if let stylePictureError { throw stylePictureError }
             if let moduleError { throw moduleError }
+            if let homeError { throw homeError }
             await onMain("sync.done") {
                 lastSyncDate = date
                 statusMessage = localized("iCloud 同步成功")
@@ -880,6 +906,101 @@ final class ICloudSyncManager: ObservableObject {
         return moduleMerge.uploaded || preferenceMerge.uploaded || repositoryMerge.uploaded
     }
 
+    /// 探索's home, then the settings that shape it; true when any was uploaded.
+    ///
+    /// - Each 首頁配置 is an item, so one made here and one made there are both kept. 預設 is
+    ///   among them only once the reader has changed it (`HomeConfigurations.defaultsUntouched`).
+    ///   Nothing of the home is merged before it has been made and looked at, or while its file
+    ///   is read-only (`HomePageStore.syncItems`).
+    /// - Which one is shown, and 自動補齊's order, are one record each, newest edit wins.
+    /// - 聚合設定 is an item a setting.
+    /// None has a clock of its own: an edit is stamped when a sync first sees it, and on a
+    /// device's first merge the cloud's copy of the same item wins.
+    nonisolated private func mergeExploreHome() async throws -> Bool {
+        var uploaded = false
+        let home = await MainActor.run { HomePageStore.shared }
+        if let localConfigurations = try await onMain("sync.read.home", "", { try home.syncItems() }) {
+            // This device's 預設 has never met the cloud's: if the cloud's takes its place, it
+            // is kept as one of the reader's own.
+            let defaultsNeverMerged = SyncShadowStore.load(Self.shadowHomeConfigurations)[HomeConfigurationID.defaults.rawValue] == nil
+            let deviceName = await MainActor.run { UIDevice.current.name }
+            let configurationMerge = try await mergeType(
+                recordName: Self.homeConfigurationsRecordName,
+                shadowKey: Self.shadowHomeConfigurations,
+                local: localConfigurations,
+                id: { $0.id },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { _ in Date.distantPast },
+                leavesAlone: { !HomePageStore.canRead($0) },
+                applyLocally: { merged in
+                    try await onMain("sync.apply.home", "count=\(merged.count)") {
+                        try home.applyFromSync(merged, expecting: localConfigurations,
+                                               keepsDisplacedDefaults: defaultsNeverMerged, deviceName: deviceName)
+                    }
+                }
+            )
+            uploaded = uploaded || configurationMerge.uploaded
+
+            // After the 首頁配置, so the one another device shows is here to be shown.
+            if let selection = await onMain("sync.read.homeSelection", "", { home.syncSelection }) {
+                let selectionMerge = try await mergeType(
+                    recordName: Self.homeSelectionRecordName,
+                    shadowKey: Self.shadowHomeSelection,
+                    local: [selection],
+                    id: { _ in Self.homeSelectionRecordID },
+                    hash: { Self.stableHash($0) },
+                    fallbackUpdatedAt: { _ in Date.distantPast },
+                    applyLocally: { merged in
+                        guard let record = merged.first else { return true }
+                        await onMain("sync.apply.homeSelection") { home.applySelectionFromSync(record) }
+                        return true
+                    }
+                )
+                uploaded = uploaded || selectionMerge.uploaded
+            }
+        } else {
+            AppLogger.sync("merge \(Self.homeConfigurationsRecordName): the home is not made, not looked at, or read-only; left alone", level: .notice)
+        }
+
+        let fillOrder = await MainActor.run { MetadataFillOrderStore.shared }
+        let localFillOrder = try await onMain("sync.read.fillOrder") { try fillOrder.syncRecord() }
+        let fillOrderMerge = try await mergeType(
+            recordName: Self.metadataFillOrderRecordName,
+            shadowKey: Self.shadowMetadataFillOrder,
+            // None until the reader sets an order, and never none again after.
+            local: localFillOrder.map { [$0] } ?? [],
+            id: { _ in Self.metadataFillOrderRecordID },
+            hash: { Self.stableHash($0) },
+            fallbackUpdatedAt: { _ in Date.distantPast },
+            applyLocally: { merged in
+                guard let record = merged.first else { return true }
+                await onMain("sync.apply.fillOrder") { fillOrder.applyFromSync(record) }
+                return true
+            }
+        )
+        uploaded = uploaded || fillOrderMerge.uploaded
+
+        let aggregation = await MainActor.run { AggregationSettingsStore.shared }
+        if let localSettings = await onMain("sync.read.aggregation", "", { aggregation.syncItems }) {
+            let settingsMerge = try await mergeType(
+                recordName: Self.aggregationSettingsRecordName,
+                shadowKey: Self.shadowAggregationSettings,
+                local: localSettings,
+                id: { $0.id },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { _ in Date.distantPast },
+                applyLocally: { merged in
+                    await onMain("sync.apply.aggregation", "count=\(merged.count)") { aggregation.applyFromSync(merged) }
+                    return true
+                }
+            )
+            uploaded = uploaded || settingsMerge.uploaded
+        } else {
+            AppLogger.sync("⟐ merge \(Self.aggregationSettingsRecordName): the stored settings cannot be read; left alone", level: .error)
+        }
+        return uploaded
+    }
+
     /// Every saved position, merged newest-wins: each by when its file was saved here until a
     /// sync has seen it, then by the merge's own clock. All of them, not only those of books on
     /// this shelf: a position this device did not hold would be read as one it deleted, and
@@ -921,9 +1042,17 @@ final class ICloudSyncManager: ObservableObject {
         fallbackUpdatedAt: @escaping (T) -> Date,
         kept: ([T]) -> [T] = { $0 },
         firstMergeKeepsRemote: ((_ local: T, _ remote: T) -> Bool)? = nil,
+        leavesAlone: (([T]) -> Bool)? = nil,
         applyLocally: ([T]) async throws -> Bool
     ) async throws -> CloudSyncMergeResult<T> {
         let remote = try await downloadRecords(recordName, as: T.self, id: id, fallbackUpdatedAt: fallbackUpdatedAt)
+        // What the cloud holds is a newer build's, which this one would write back without
+        // what it cannot name (`leavesAlone`): nothing is merged, uploaded or applied until
+        // this device is updated.
+        if let leavesAlone, leavesAlone(remote.records.compactMap(\.value)) {
+            AppLogger.sync("⟐ merge \(recordName): the cloud's is a newer build's; left alone", level: .notice)
+            return CloudSyncMergeResult(values: local, uploaded: false)
+        }
         let loadedShadow = SyncShadowStore.load(shadowKey)
         let result = Self.resolveMerge(
             local: local,

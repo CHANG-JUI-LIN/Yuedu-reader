@@ -105,7 +105,10 @@ final class HomePageStore: ObservableObject {
             let restocked = applyStoreDefaultsOnce(to: &home, context: context)
             // After it: a 預設 it just made is today's page already, which this does not recognise.
             let genres = applyGenresDefaultsOnce(to: &home, context: context)
-            if followLanguage(in: &home, context: context) || restocked || genres {
+            let followed = followLanguage(in: &home, context: context)
+            // After them: a 預設 they just made or swapped is still the app's.
+            let looked = noteWhetherDefaultsAreUntouched(in: &home, context: context)
+            if followed || restocked || genres || looked {
                 self.home = home
                 write()
             }
@@ -121,6 +124,7 @@ final class HomePageStore: ObservableObject {
         }
         var made = HomeConfigurations(sections: defaultPage.sections)
         made.defaultsLanguages = languages
+        made.defaultsUntouched = true
         if !isReadOnly { moveCustomPages(into: &made) }
         home = made
         write()
@@ -316,6 +320,7 @@ final class HomePageStore: ObservableObject {
         let before = home.sections.count
         home.sections = HomePageDefaults.page(for: context).sections
         home.defaultsLanguages = context.languages
+        home.defaultsUntouched = true
         AppLogger.cache("⟐ 預設 becomes the 2026-11-14 page", context: [
             "before": "\(before)", "sections": "\(home.sections.count)", "mode": context.mode.rawValue,
             "language": context.languages.joined(separator: ","),
@@ -343,11 +348,128 @@ final class HomePageStore: ObservableObject {
         let before = home.sections.count
         home.sections = HomePageDefaults.page(for: context).sections
         home.defaultsLanguages = context.languages
+        home.defaultsUntouched = true
         AppLogger.cache("⟐ 預設 becomes the 2026-11-15 page", context: [
             "before": "\(before)", "sections": "\(home.sections.count)", "mode": context.mode.rawValue,
             "language": context.languages.joined(separator: ","),
         ])
         return true
+    }
+
+    // MARK: - iCloud sync
+
+    /// A home saved before 2026-11-21 does not say whether its 預設 is the reader's
+    /// (`HomeConfigurations.defaultsUntouched`): it is the app's when it is today's defaults for
+    /// this reader, section for section. Looked at once, here, where the mode, the region and
+    /// the languages are known; until then the sync leaves the home alone. Returns whether it
+    /// was noted now.
+    private func noteWhetherDefaultsAreUntouched(in home: inout HomeConfigurations, context: HomePageDefaults.Context) -> Bool {
+        guard !isReadOnly, home.defaultsUntouched == nil else { return false }
+        let id = UUID()
+        let made = HomePageDefaults.page(for: context, makeID: { id }).sections
+        let saved = home.sections.map { section -> HomeSection in
+            var section = section
+            section.id = id
+            return section
+        }
+        home.defaultsUntouched = !home.defaultsDeleted && saved == made
+        AppLogger.cache("⟐ 預設 looked at for the sync", context: ["untouched": "\(home.defaultsUntouched == true)"])
+        return true
+    }
+
+    /// Every 首頁配置 for the iCloud sync: the reader's own, and 預設 once it is theirs. Nil when
+    /// the sync leaves the home alone: before it is made (its defaults need the home's
+    /// context), before an older file's 預設 has been looked at, and while the file is one this
+    /// launch only reads — a newer build's, read without the sections this build cannot name.
+    func syncItems() throws -> [HomeConfigurationSyncItem]? {
+        guard let home, !isReadOnly, let untouched = home.defaultsUntouched else { return nil }
+        var items = try home.configurations.map {
+            try HomeConfigurationSyncItem(id: $0.id, name: $0.name, sections: $0.sections)
+        }
+        if !untouched, !home.defaultsDeleted {
+            items.append(try HomeConfigurationSyncItem(id: .defaults, name: "", sections: home.sections))
+        }
+        return items
+    }
+
+    /// Whether this build reads everything the cloud holds: a newer build's 首頁配置 is left
+    /// there, and nothing of this device's is merged with it.
+    nonisolated static func canRead(_ items: [HomeConfigurationSyncItem]) -> Bool {
+        items.allSatisfy { $0.schemaVersion <= HomePage.currentSchemaVersion }
+    }
+
+    /// Makes the home what a sync merged. Returns false, changing nothing, when it is not
+    /// `local` any more: edited during the round trip, which the next sync carries.
+    ///
+    /// - The reader's own are replaced, added (last) and removed by id. Their order stays this
+    ///   device's.
+    /// - 預設 becomes the merged one. When it is gone from the merge, deleted on another device,
+    ///   it is deleted here; an untouched one, which the sync never carried, stays.
+    /// - `keepsDisplacedDefaults`: this device's 預設 has never been merged. When the cloud's
+    ///   takes its place, the reader's is kept as one of their own, named for `deviceName`
+    ///   (maintainer, 2026-11-21: nothing is lost on the first sync).
+    func applyFromSync(_ items: [HomeConfigurationSyncItem], expecting local: [HomeConfigurationSyncItem],
+                       keepsDisplacedDefaults: Bool, deviceName: String) throws -> Bool {
+        guard var home, !isReadOnly, try syncItems() == local else { return false }
+        let defaultsID = HomeConfigurationID.defaults.rawValue
+        // Read before anything changes: one that does not decode stops the apply whole.
+        let merged = try items.map { (item: $0, sections: try $0.decodedSections()) }
+        let mine = local.first { $0.id == defaultsID }
+        var displaced: [HomeSection]?
+        if let theirs = merged.first(where: { $0.item.id == defaultsID }) {
+            if keepsDisplacedDefaults, let mine, mine != theirs.item { displaced = home.sections }
+            home.sections = theirs.sections
+            home.defaultsDeleted = false
+            home.defaultsUntouched = false
+        } else if mine != nil {
+            home.delete(.defaults)
+        }
+        let wanted = Set(merged.map(\.item.id))
+        for id in home.configurations.map(\.id) where !wanted.contains(id.rawValue) {
+            home.delete(id)
+            // The last one left is kept (`HomeConfigurations.delete`).
+            if !home.configurations.contains(where: { $0.id == id }) { photos.removePhoto(for: id) }
+        }
+        for (item, sections) in merged where item.id != defaultsID {
+            let id = HomeConfigurationID(rawValue: item.id)
+            if let index = home.configurations.firstIndex(where: { $0.id == id }) {
+                home.configurations[index].name = item.name
+                home.configurations[index].sections = sections
+            } else {
+                home.configurations.append(HomeConfiguration(id: id, name: item.name, sections: sections))
+            }
+        }
+        // Last: it is not among the merged ones, which the loop above would take it for removed.
+        if let displaced {
+            home.keepAsOwn(named: "\(localized("預設")) – \(deviceName)", sections: displaced)
+            AppLogger.cache("⟐ 預設 kept as the reader's own: another device's takes its place")
+        }
+        self.home = home
+        write()
+        return true
+    }
+
+    /// Which 首頁配置 is shown, for the iCloud sync; nil when it leaves the home alone
+    /// (`syncItems`).
+    var syncSelection: HomeSelectionSyncItem? {
+        guard let home, !isReadOnly, home.defaultsUntouched != nil else { return nil }
+        return HomeSelectionSyncItem(selected: home.selected?.rawValue)
+    }
+
+    /// Shows the 首頁配置 another device chose. One this device does not have — 預設 deleted
+    /// here, or one of the reader's own not arrived — is not shown: what is shown stays.
+    func applySelectionFromSync(_ selection: HomeSelectionSyncItem) {
+        guard var home, !isReadOnly else { return }
+        let id = selection.selected.map(HomeConfigurationID.init(rawValue:)).flatMap { $0 == .defaults ? nil : $0 }
+        if let id {
+            guard home.configurations.contains(where: { $0.id == id }) else { return }
+        } else if home.defaultsDeleted {
+            return
+        }
+        guard home.selected != id else { return }
+        home.selected = id
+        self.home = home
+        write()
     }
 
     // MARK: - The language
