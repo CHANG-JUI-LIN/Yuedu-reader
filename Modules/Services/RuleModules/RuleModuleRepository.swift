@@ -18,6 +18,10 @@ struct RuleModuleRepositoryIndex: Equatable, Sendable {
         let version: String
         /// The module file, resolved against the index's address.
         let url: URL
+        /// The file is on the repository's own host. A repository the reader keeps on their own
+        /// network (a NAS at `http://192.168.…`) lists files beside it, and those are read as
+        /// the repository's address is; a private address on any other host is never requested.
+        let isOnRepositoryHost: Bool
     }
 
     let name: String
@@ -58,7 +62,8 @@ struct RuleModuleRepositoryIndex: Equatable, Sendable {
             }
             guard seen.insert(id).inserted else { throw .duplicateID(id) }
             modules.append(Entry(id: id, title: title, description: trimmed(fields["description"]), author: trimmed(fields["author"]),
-                                 version: version, url: url))
+                                 version: version, url: url,
+                                 isOnRepositoryHost: url.host?.lowercased() == address.host?.lowercased()))
         }
         return RuleModuleRepositoryIndex(name: name, modules: modules)
     }
@@ -237,13 +242,17 @@ final class RuleModuleRepositoryModel: ObservableObject {
 
     private let store: RuleModuleRepositoryStore
     let library: RuleModuleLibrary
+    /// A module a repository lists: public hosts only.
     private let download: (String) async throws -> (data: Data, url: URL)
+    /// The repository's own address, which the reader subscribed to: their own network too.
+    private let downloadOwn: (String) async throws -> (data: Data, url: URL)
 
     init(store: RuleModuleRepositoryStore = RuleModuleRepositoryStore(), library: RuleModuleLibrary? = nil,
-         download: @escaping (String) async throws -> (data: Data, url: URL) = { try await RuleModuleClient.download($0) }) {
+         download: ((String) async throws -> (data: Data, url: URL))? = nil) {
         self.store = store
         self.library = library ?? .shared
-        self.download = download
+        self.download = download ?? { try await RuleModuleClient.download($0) }
+        self.downloadOwn = download ?? { try await RuleModuleClient.download($0, reachesLocalNetwork: true) }
     }
 
     func status(of entry: RuleModuleRepositoryIndex.Entry) -> RuleModuleRepositoryStatus {
@@ -310,7 +319,7 @@ final class RuleModuleRepositoryModel: ObservableObject {
             case .notInstalled, .updateAvailable: break
             }
             do {
-                let file = try await download(entry.url.absoluteString)
+                let file = try await (entry.isOnRepositoryHost ? downloadOwn : download)(entry.url.absoluteString)
                 let module = try RuleModuleValidator.validate(file.data)
                 guard module.id == entry.id else {
                     throw RuleModuleRepositoryError.differentModule(listed: entry.id, file: module.id)
@@ -354,7 +363,7 @@ final class RuleModuleRepositoryModel: ObservableObject {
 
     private func read(_ url: URL) async -> State {
         do {
-            let file = try await download(url.absoluteString)
+            let file = try await downloadOwn(url.absoluteString)
             return .loaded(try RuleModuleRepositoryIndex.parse(file.data, from: file.url))
         } catch let error as RuleModuleRepositoryError {
             AppLogger.info("module repository refused", context: ["address": url.absoluteString, "reason": error.message])

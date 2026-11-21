@@ -42,13 +42,17 @@ final class RuleModuleImportModel: ObservableObject {
 
     private let library: RuleModuleLibrary
     private let repositories: RuleModuleRepositoryModel
+    /// An address a link or a repository names: public hosts only.
     private let download: (String) async throws -> (data: Data, url: URL)
+    /// An address the reader entered or kept (從網址, 從剪貼簿, 檢查更新): their own network too.
+    private let downloadOwn: (String) async throws -> (data: Data, url: URL)
 
     init(library: RuleModuleLibrary? = nil, repositories: RuleModuleRepositoryModel? = nil,
-         download: @escaping (String) async throws -> (data: Data, url: URL) = { try await RuleModuleClient.download($0) }) {
+         download: ((String) async throws -> (data: Data, url: URL))? = nil) {
         self.library = library ?? .shared
         self.repositories = repositories ?? .shared
-        self.download = download
+        self.download = download ?? { try await RuleModuleClient.download($0) }
+        self.downloadOwn = download ?? { try await RuleModuleClient.download($0, reachesLocalNetwork: true) }
     }
 
     var isLoading: Bool { phase == .loading }
@@ -62,12 +66,14 @@ final class RuleModuleImportModel: ObservableObject {
     // MARK: Reading
 
     /// 從網址: a module, or a repository's index (M6), told apart by the file itself.
-    func fetch() async {
+    /// `linked`: the address came in a `yuedu://module` link rather than from the reader's hand,
+    /// so it is held to public hosts.
+    func fetch(linked: Bool = false) async {
         let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else { return }
         phase = .loading
         do {
-            let file = try await download(address)
+            let file = try await (linked ? download : downloadOwn)(address)
             if RuleModuleRepositoryIndex.isIndex(file.data) {
                 do {
                     phase = .repository(RepositoryPreview(index: try RuleModuleRepositoryIndex.parse(file.data, from: file.url),
@@ -118,7 +124,7 @@ final class RuleModuleImportModel: ObservableObject {
         guard let subscription = installed.subscriptionURL else { return }
         phase = .loading
         do {
-            let file = try await download(subscription.absoluteString)
+            let file = try await downloadOwn(subscription.absoluteString)
             show(file.data, from: subscription, replacing: installed)
         } catch {
             fail(downloading: error)
@@ -130,7 +136,7 @@ final class RuleModuleImportModel: ObservableObject {
     func offer(_ entry: RuleModuleRepositoryIndex.Entry) async {
         phase = .loading
         do {
-            let file = try await download(entry.url.absoluteString)
+            let file = try await (entry.isOnRepositoryHost ? downloadOwn : download)(entry.url.absoluteString)
             let installed = library.installed(id: entry.id).flatMap { $0.isOfficial ? nil : $0 }
             show(file.data, from: entry.url, replacing: installed, listedAs: entry.id)
         } catch {

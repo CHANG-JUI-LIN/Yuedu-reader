@@ -65,6 +65,6 @@ enum RuleModuleLinkPresenter {
         model.address = address.absoluteString
         top.present(UIHostingController(rootView: RuleModuleImportSheet(model: model, title: localized("新增模組"))),
                     animated: true)
-        Task { await model.fetch() }
+        Task { await model.fetch(linked: true) }
     }
 }

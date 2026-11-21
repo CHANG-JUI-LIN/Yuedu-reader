@@ -34,6 +34,20 @@ struct RuleModuleRepositoryTests {
 
     // MARK: - Index
 
+    @Test("a module beside a repository on the reader's own network is read as the repository is; another private host is not")
+    func entriesOnTheRepositoryHost() throws {
+        let nas = try #require(URL(string: "http://192.168.1.20:5000/modules/index.json"))
+        let kept = try RuleModuleRepositoryIndex.parse(
+            index(entry("a.one") + "," + entry("b.two", url: "http://192.168.1.1/b.json") + "," + entry("c.three", url: "https://cdn.example/c.json")),
+            from: nas).modules
+        #expect(kept[0].url.absoluteString == "http://192.168.1.20:5000/modules/a.one.json")
+        #expect(kept.map(\.isOnRepositoryHost) == [true, false, false])
+
+        let shared = try RuleModuleRepositoryIndex.parse(index(entry("a.one") + "," + entry("b.two", url: "http://192.168.1.1/b.json")),
+                                                        from: Self.base).modules
+        #expect(shared.map(\.isOnRepositoryHost) == [true, false], "a public repository cannot send the app to a private address")
+    }
+
     @Test("an index names itself and its modules; a relative address is the index's neighbour")
     func parse() throws {
         let parsed = try RuleModuleRepositoryIndex.parse(index(entry("a.one") + "," + entry("b.two", url: "https://cdn.example/b.json")),

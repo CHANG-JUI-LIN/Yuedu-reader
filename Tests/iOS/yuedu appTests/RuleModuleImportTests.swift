@@ -176,4 +176,31 @@ struct RuleModuleImportTests {
         }
         await #expect(throws: SourceFailure.self) { try await RuleModuleClient.download("file:///etc/hosts", fetcher: fetcher) }
     }
+
+    @Test("download: an address the reader entered may be on their own network; a link's may not")
+    func downloadFromLocalNetwork() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ModuleStub.self]
+        let fetcher = WebFetcher(session: URLSession(configuration: configuration))
+        ModuleStub.install([
+            "192.168.1.20/m.json": .json(String(data: moduleJSON(), encoding: .utf8)!),
+            "192.168.1.20/old.json": .redirect("http://192.168.1.20/m.json"),
+            "192.168.1.20/elsewhere.json": .redirect("http://192.168.1.1/m.json"),
+        ])
+        await #expect(throws: SourceFailure.self) { try await RuleModuleClient.download("http://192.168.1.20/m.json", fetcher: fetcher) }
+        #expect(!ModuleStub.urls.contains { $0.contains("192.168.1.20") }, "a linked or listed private address is never requested")
+
+        let file = try await RuleModuleClient.download("http://192.168.1.20/m.json", reachesLocalNetwork: true, fetcher: fetcher)
+        #expect(try RuleModuleValidator.validate(file.data, appVersion: "2.0.8").id == "test.module")
+        let moved = try await RuleModuleClient.download("http://192.168.1.20/old.json", reachesLocalNetwork: true, fetcher: fetcher)
+        #expect(try RuleModuleValidator.validate(moved.data, appVersion: "2.0.8").id == "test.module", "a redirect within the entered host is followed")
+
+        await #expect(throws: SourceFailure.self) {
+            try await RuleModuleClient.download("http://192.168.1.20/elsewhere.json", reachesLocalNetwork: true, fetcher: fetcher)
+        }
+        #expect(!ModuleStub.urls.contains { $0.contains("192.168.1.1/") }, "a redirect to another private host is never followed")
+        await #expect(throws: SourceFailure.self) {
+            try await RuleModuleClient.download("file:///etc/hosts", reachesLocalNetwork: true, fetcher: fetcher)
+        }
+    }
 }

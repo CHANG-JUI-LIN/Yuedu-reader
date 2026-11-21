@@ -373,14 +373,25 @@ struct RuleModuleClient: Sendable {
     /// A module file, for 新增模組 and 檢查更新: through the same `WebFetcher` path as the
     /// module's own requests, `safeURL` on the address and on every redirect (a refused redirect
     /// is never sent). Any host: the module's `hosts` bind its requests, not where it is shared.
-    nonisolated static func download(_ address: String, fetcher: WebFetcher = .shared) async throws -> (data: Data, url: URL) {
+    ///
+    /// `reachesLocalNetwork`: the address is one the reader entered or kept themselves, so it may
+    /// be a private one (a file on their own NAS, `http://192.168.…`), and may redirect within
+    /// that same host. An address a link or a repository's list names is never read this way:
+    /// a page could otherwise make the app request a device on the reader's network.
+    nonisolated static func download(_ address: String, reachesLocalNetwork: Bool = false,
+                                     fetcher: WebFetcher = .shared) async throws -> (data: Data, url: URL) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = safeURL(string: trimmed) else {
+        guard let url = safeURL(string: trimmed, allowsLocalNetwork: reachesLocalNetwork) else {
             throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(trimmed))
         }
+        let ownHost = reachesLocalNetwork ? url.host?.lowercased() : nil
         let page = try await fetcher.fetchPage(url: url, method: "GET", body: nil,
                                                headers: ["Accept": "application/json, text/plain, */*"], baseURL: "",
-                                               redirect: { safeURL(string: $0.absoluteString) != nil })
+                                               redirect: { next in
+            if safeURL(string: next.absoluteString) != nil { return true }
+            guard let ownHost, next.host?.lowercased() == ownHost else { return false }
+            return safeURL(string: next.absoluteString, allowsLocalNetwork: true) != nil
+        })
         let status = page.statusCode
         if (300...399).contains(status) {
             let location = (page.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location") ?? ""

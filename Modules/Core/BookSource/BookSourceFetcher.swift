@@ -26,7 +26,9 @@ final class RuntimeVariableBox: @unchecked Sendable {
 
 /// Safely creates a request URL, as OkHttp reads it (`AnalyzeUrl.requestURL`).
 /// Also filters dangerous schemes (file://, javascript:, etc.) and private IPs to prevent book source SSRF.
-func safeURL(string raw: String) -> URL? {
+/// `allowsLocalNetwork`: only for an address the reader entered themselves (a module file on
+/// their own NAS); a private address a source, a module, a link or a redirect names stays refused.
+func safeURL(string raw: String, allowsLocalNetwork: Bool = false) -> URL? {
     func validate(_ url: URL) -> URL? {
         let scheme = url.scheme?.lowercased() ?? ""
         // Only allow whitelisted schemes
@@ -35,7 +37,7 @@ func safeURL(string raw: String) -> URL? {
             return nil
         }
         // Block private/reserved IPs (SSRF prevention)
-        if let host = url.host, isPrivateOrReservedHost(host) {
+        if !allowsLocalNetwork, let host = url.host, isPrivateOrReservedHost(host) {
             AppLogger.security("Book source URL points to reserved IP range", context: ["url": raw, "host": host])
             return nil
         }
