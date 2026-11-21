@@ -1,4 +1,5 @@
 import YueduCoreText
+import YueduCoreTextTypography
 import SwiftUI
 import UIKit
 
@@ -59,6 +60,43 @@ extension ReaderView {
         epubRenderer.decorationSource = commentDecorator
     }
 
+    /// Before the first layout: the book's 排版基準 for the rows left on 自動, and the
+    /// book's own reading setup (只套用到這本書) when it has one.
+    func installReadingSetupForBook() {
+        guard let baseline = bookReadingBaseline else { return }
+        let bookStore = store
+        let id = bookId
+        // The baseline first, unwritten: the override's sync below wears both at once.
+        settings.readingBaseline = baseline
+        settings.setBookReadingOverride(
+            bookStore.readerSettings.readingOverride(for: id), bookID: id
+        ) { bookStore.readerSettings.setReadingOverride($0, for: id) }
+    }
+
+    /// The book's 排版基準: the one its first open worked out, kept with the book so every
+    /// later open sets it the same way, turned to the way it is being read now.
+    var bookReadingBaseline: ReadingBaseline? {
+        guard let book else { return nil }
+        let isVertical = bookDirection.principalMode.isVertical
+        if let kept = store.readerSettings.readingBaseline(for: bookId) {
+            return kept.oriented(vertical: isVertical)
+        }
+        let resolved = resolvedReadingBaseline(of: book, isVertical: isVertical)
+        store.readerSettings.setReadingBaseline(resolved, for: bookId)
+        return resolved
+    }
+
+    private func resolvedReadingBaseline(of book: ReadingBook, isVertical: Bool) -> ReadingBaseline {
+        // Text that shows the book's language without reading a chapter: its title and
+        // its chapters' titles. What its chapters already decided this session wins.
+        let titles = book.onlineChapters?.prefix(40).map(\.title) ?? spineChapters.prefix(40).map(\.title)
+        let sample = ([book.title, book.author] + titles).joined(separator: "\n")
+        let decided = book.aozora != nil
+            ? CJKTypographyStyle.japanese
+            : CJKTypographyStyleResolver.shared.decidedStyle(book: bookId, conversion: settings.textConversion)
+        return ReadingBaseline.resolve(sample: sample, decided: decided, isVertical: isVertical)
+    }
+
     func readerRenderSettings(for mode: ReaderDisplayMode) -> ReaderRenderSettings {
         let input = ReaderRenderSettingsSnapshotInput(
             theme: readerTheme.epubJSName,
@@ -89,7 +127,9 @@ extension ReaderView {
             translation: effectiveReaderTranslation,
             bookID: bookId,
             bottomJustify: settings.readerBottomJustify,
-            usesBookSpacing: settings.readerUsesBookSpacing
+            usesBookSpacing: settings.readerUsesBookSpacing,
+            firstLineIndentEm: settings.readerFirstLineIndent,
+            bodyTextAlignment: settings.readerTextAlignment
         )
 
         let sideMargins = pageSideMargins(for: mode)

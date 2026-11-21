@@ -4355,7 +4355,7 @@
 "設定分組：支援" = "サポート";
 "這裡列出你已有的來源；要新增來源配置、模組或遠端書庫，請到設定。" = "追加したソースはここに表示されます。ソース、モジュール、リモートライブラリの追加は「設定」から行えます。";
 "套用書本間距" = "書籍の行間を使用";
-"ReaderSettings.BookSpacing.Footer" = "オフにすると、行間と段落間隔は書籍独自のレイアウトではなく、常に上の設定が使われます。";
+"ReaderSettings.BookSpacing.Footer" = "オフにすると、行間・段落間隔・字下げは書籍独自のレイアウトではなく、常にここの設定が使われます。";
 "沒有「%@」的結果" = "“%@”の結果はありません";
 "請檢查拼字或嘗試新的搜尋。" = "スペルを確認するか、新しい検索を試してください。";
 
@@ -4630,3 +4630,50 @@
 "清除滑桿與開關會保留樣式表；重設連樣式表一起清掉。" = "スライダーとスイッチのクリアではスタイルシートは残り、リセットではそれも消えます。";
 
 "串流影片最快 2×，再快會沒有聲音" = "ストリーミング動画は 2× まで。それ以上は音が出ません";
+
+/* 閱讀設定 › 排版：段首縮排、對齊 */
+"段首縮排" = "字下げ";
+"ReaderSettings.TextAlignment" = "行揃え";
+"ReaderSettings.TextAlignment.Justified" = "両端揃え";
+"ReaderSettings.TextAlignment.Start" = "行頭揃え";
+"ReaderSettings.FirstLineIndent.Value" = "%@ 字";
+
+/* 閱讀樣式 */
+"閱讀樣式" = "読書スタイル";
+"內建多套排版，也能把自己的設定存成樣式" = "組版スタイルを内蔵、自分の設定もスタイルとして保存";
+"一鍵換上整套排版" = "ワンタップで組版をまるごと切り替え";
+"依語言調好的內建樣式，還能把你調好的設定存成自己的樣式。" = "言語ごとに整えた内蔵スタイルに加え、自分の設定もスタイルとして保存できます。";
+"ReadingStyle.Current" = "現在のスタイル";
+"ReadingStyle.None" = "なし";
+"ReadingStyle.Modified" = "変更済み";
+"ReadingStyle.ModifiedFormat" = "%@（変更済み）";
+"ReadingStyle.Restore" = "「%@」に戻す";
+"ReadingStyle.SaveNew" = "新しいスタイルとして保存";
+"ReadingStyle.Name.Prompt" = "スタイル名";
+"ReadingStyle.Mine" = "マイスタイル";
+"ReadingStyle.Mine.Footer" = "現在の組版と外観を保存します。このデバイスにのみ保存されます。";
+"ReadingStyle.ThisBookOnly" = "この本だけに適用";
+"ReadingStyle.ThisBookOnly.Footer" = "オンの間、スタイルと変更した設定はこの本だけのものになります。オフにすると破棄されます。";
+"ReadingStyle.Automatic.Title" = "自動";
+"ReadingStyle.Automatic.Footer" = "オンの項目は本の言語と現在のスタイルに従い、手動で調整するとオフになります。現在の基準：%@。";
+"ReadingBaseline.Chinese" = "中国語";
+"ReadingBaseline.English" = "英語";
+"ReadingBaseline.JapaneseHorizontal" = "日本語（横組み）";
+"ReadingBaseline.JapaneseVertical" = "日本語（縦組み）";
+"ReadingBaseline.Korean" = "韓国語";
+"ReadingStyle.Language.zhHant" = "繁体字中国語";
+"ReadingStyle.Language.zhHans" = "簡体字中国語";
+"ReadingStyle.Language.ja" = "日本語";
+"ReadingStyle.Language.ko" = "韓国語";
+"ReadingStyle.Language.en" = "英語";
+"ReadingStyle.zhHant.book" = "書巻";
+"ReadingStyle.zhHant.airy" = "清朗";
+"ReadingStyle.zhHans.web" = "ウェブ小説（中国）";
+"ReadingStyle.zhHans.print" = "出版";
+"ReadingStyle.ja.bunko" = "文庫";
+"ReadingStyle.ja.yoko" = "横組み";
+"ReadingStyle.ko.book" = "単行本";
+"ReadingStyle.ko.web" = "ウェブ小説（韓国）";
+"ReadingStyle.en.paperback" = "ペーパーバック";
+"ReadingStyle.en.modern" = "モダン";
+"ReadingStyle.Remove" = "スタイルを解除";

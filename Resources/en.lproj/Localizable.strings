@@ -4353,7 +4353,7 @@
 "設定分組：支援" = "Support";
 "這裡列出你已有的來源；要新增來源配置、模組或遠端書庫，請到設定。" = "Everything you've added is listed here. To add a source, a module or a remote library, go to Settings.";
 "套用書本間距" = "Use Book Spacing";
-"ReaderSettings.BookSpacing.Footer" = "When off, line and paragraph spacing always use the settings above instead of the book's own layout.";
+"ReaderSettings.BookSpacing.Footer" = "When off, line spacing, paragraph spacing and first-line indent always use the settings here instead of the book's own layout.";
 "沒有「%@」的結果" = "No Results for “%@”";
 "請檢查拼字或嘗試新的搜尋。" = "Check the spelling or try a new search.";
 
@@ -4628,3 +4628,50 @@
 "清除滑桿與開關會保留樣式表；重設連樣式表一起清掉。" = "Clearing sliders and switches keeps the stylesheet; resetting clears it too.";
 
 "串流影片最快 2×，再快會沒有聲音" = "Streamed videos play up to 2×; faster would have no sound";
+
+/* 閱讀設定 › 排版：段首縮排、對齊 */
+"段首縮排" = "First-Line Indent";
+"ReaderSettings.TextAlignment" = "Alignment";
+"ReaderSettings.TextAlignment.Justified" = "Justified";
+"ReaderSettings.TextAlignment.Start" = "Start";
+"ReaderSettings.FirstLineIndent.Value" = "%@ em";
+
+/* 閱讀樣式 */
+"閱讀樣式" = "Reading Styles";
+"內建多套排版，也能把自己的設定存成樣式" = "Built-in page styles, and your own setup saved as a style";
+"一鍵換上整套排版" = "A whole page style in one tap";
+"依語言調好的內建樣式，還能把你調好的設定存成自己的樣式。" = "Built-in styles tuned for each language, and your own setup saved as a style.";
+"ReadingStyle.Current" = "Current Style";
+"ReadingStyle.None" = "None";
+"ReadingStyle.Modified" = "Modified";
+"ReadingStyle.ModifiedFormat" = "%@ (Modified)";
+"ReadingStyle.Restore" = "Restore “%@”";
+"ReadingStyle.SaveNew" = "Save as New Style";
+"ReadingStyle.Name.Prompt" = "Style Name";
+"ReadingStyle.Mine" = "My Styles";
+"ReadingStyle.Mine.Footer" = "Saves the current layout and look. Kept on this device only.";
+"ReadingStyle.ThisBookOnly" = "This Book Only";
+"ReadingStyle.ThisBookOnly.Footer" = "While on, styles and settings you change belong to this book alone. Turning it off discards them.";
+"ReadingStyle.Automatic.Title" = "Automatic";
+"ReadingStyle.Automatic.Footer" = "Rows left on follow the book’s language and the current style; adjusting one by hand turns it off. Current baseline: %@.";
+"ReadingBaseline.Chinese" = "Chinese";
+"ReadingBaseline.English" = "English";
+"ReadingBaseline.JapaneseHorizontal" = "Japanese, Horizontal";
+"ReadingBaseline.JapaneseVertical" = "Japanese, Vertical";
+"ReadingBaseline.Korean" = "Korean";
+"ReadingStyle.Language.zhHant" = "Traditional Chinese";
+"ReadingStyle.Language.zhHans" = "Simplified Chinese";
+"ReadingStyle.Language.ja" = "Japanese";
+"ReadingStyle.Language.ko" = "Korean";
+"ReadingStyle.Language.en" = "English";
+"ReadingStyle.zhHant.book" = "Scroll";
+"ReadingStyle.zhHant.airy" = "Airy";
+"ReadingStyle.zhHans.web" = "Web Novel (CN)";
+"ReadingStyle.zhHans.print" = "Print";
+"ReadingStyle.ja.bunko" = "Bunko";
+"ReadingStyle.ja.yoko" = "Yokogumi";
+"ReadingStyle.ko.book" = "Tankobon";
+"ReadingStyle.ko.web" = "Web Novel (KR)";
+"ReadingStyle.en.paperback" = "Paperback";
+"ReadingStyle.en.modern" = "Modern";
+"ReadingStyle.Remove" = "Remove Style";

@@ -87,6 +87,10 @@ struct NodeAttributedStringRenderer: Sendable {
         /// are dropped before rendering, so the reader's 行距／段距 apply everywhere in the
         /// chapter. Only the EPUB builder passes the setting; every other format keeps true.
         let honorsBookSpacing: Bool
+        /// 對齊: what a paragraph whose CSS says nothing about `text-align` is set with.
+        let bodyAlignment: NSTextAlignment
+        /// 段首縮排 in points, for the paragraphs 套用書本間距 off takes from the book.
+        let bookSpacingParagraphIndent: CGFloat
 
         init(
             from settings: ReaderRenderSettings,
@@ -121,6 +125,8 @@ struct NodeAttributedStringRenderer: Sendable {
             self.declaredLanguage = declaredLanguage
             self.displayScale = settings.displayScale
             self.honorsBookSpacing = honorsBookSpacing
+            self.bodyAlignment = settings.bodyTextAlignment.nsTextAlignment
+            self.bookSpacingParagraphIndent = (baseFontSize ?? settings.fontSize) * settings.firstLineIndentEm
             // EPUB <h1> path: size/spacing/visibility always apply. Font and
             // weight apply only when the user explicitly picked a title font
             // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,
@@ -158,7 +164,10 @@ struct NodeAttributedStringRenderer: Sendable {
     /// margin collapse, container insets — sees the reader's spacing. Padding and borders
     /// stay: they draw the book's boxes, not the space between paragraphs. Media keep
     /// their margins, which place the picture rather than space the text.
-    static func withoutBookSpacing(_ node: RenderableNode) -> RenderableNode {
+    static func withoutBookSpacing(_ node: RenderableNode, paragraphIndent: CGFloat) -> RenderableNode {
+        func withoutBookSpacing(_ node: RenderableNode) -> RenderableNode {
+            Self.withoutBookSpacing(node, paragraphIndent: paragraphIndent)
+        }
         func strip(_ style: RenderStyle) -> RenderStyle {
             var style = style
             style.lineHeightMultiplier = 1.0
@@ -172,7 +181,10 @@ struct NodeAttributedStringRenderer: Sendable {
         }
         switch node {
         case let .paragraph(nodes, style):
-            return .paragraph(children(nodes), style: strip(style))
+            // The reader's 段首縮排 too, as `ReaderBookSpacingStyleSheet` sets it on `<p>`.
+            var style = strip(style)
+            style.textIndent = paragraphIndent
+            return .paragraph(children(nodes), style: style)
         case let .heading(nodes, level, style):
             return .heading(children(nodes), level: level, style: strip(style))
         case let .blockquote(nodes):
@@ -206,7 +218,9 @@ struct NodeAttributedStringRenderer: Sendable {
     /// chapter's build time, and its cost is in awaited services rather than the tree walk.
     func render(_ nodes: [RenderableNode]) async -> NSAttributedString {
         let renderStart = SourcePerfTrace.now
-        let nodes = config.honorsBookSpacing ? nodes : nodes.map(Self.withoutBookSpacing)
+        let nodes = config.honorsBookSpacing
+            ? nodes
+            : nodes.map { Self.withoutBookSpacing($0, paragraphIndent: config.bookSpacingParagraphIndent) }
         // Reuse an already-bound collector rather than shadowing it, so an outer scope (a test,
         // or a nested render) still sees the leaves this call performed.
         let leaves = ReaderDocumentTrace.renderLeaves ?? RenderLeafMetrics()
@@ -1219,14 +1233,14 @@ struct NodeAttributedStringRenderer: Sendable {
             para.tailIndent = tailInset > 0 ? -tailInset : 0
         }
 
-        // Unspecified CSS text-align (.natural) now defaults to full justification, so both margins
-        // align for CJK + Latin alike — the same thing Readest / Apple Books do by force-injecting
+        // Unspecified CSS text-align (.natural) takes the reader's 對齊 — full justification unless
+        // the reader chose otherwise, the same thing Readest / Apple Books do by force-injecting
         // `text-align: justify`. Explicit CSS left/center/right/justify still win. RTL "natural"
         // keeps the right-alignment resolved just above (other scripts come later). Single-line and
         // paragraph-last lines are never stretched — that's enforced in the horizontal line drawer —
         // so headings, captions and hard-wrapped code stay ragged automatically.
         para.alignment = (style.textAlign == .natural && !rtlRightAligned)
-            ? .justified
+            ? config.bodyAlignment
             : nsTextAlignment(from: style.textAlign)
         para.hyphenationFactor = ReaderHyphenation.factor
         para.baseWritingDirection = style.baseWritingDirection

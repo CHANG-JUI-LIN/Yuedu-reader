@@ -4355,7 +4355,7 @@
 "設定分組：支援" = "지원";
 "這裡列出你已有的來源；要新增來源配置、模組或遠端書庫，請到設定。" = "추가한 소스가 여기에 표시됩니다. 소스, 모듈 또는 원격 라이브러리는 설정에서 추가하세요.";
 "套用書本間距" = "책 간격 사용";
-"ReaderSettings.BookSpacing.Footer" = "끄면 줄 간격과 문단 간격에 책 자체의 레이아웃 대신 항상 위의 설정이 사용됩니다.";
+"ReaderSettings.BookSpacing.Footer" = "끄면 줄 간격, 문단 간격, 첫 줄 들여쓰기에 책 자체의 레이아웃 대신 항상 여기의 설정이 사용됩니다.";
 "沒有「%@」的結果" = "“%@”에 대한 결과 없음";
 "請檢查拼字或嘗試新的搜尋。" = "철자를 확인하거나 새로운 검색을 시도하십시오.";
 
@@ -4630,3 +4630,50 @@
 "清除滑桿與開關會保留樣式表；重設連樣式表一起清掉。" = "슬라이더와 스위치를 지워도 스타일시트는 남고, 재설정하면 함께 지워집니다.";
 
 "串流影片最快 2×，再快會沒有聲音" = "스트리밍 동영상은 최대 2×이며, 더 빠르면 소리가 나지 않습니다";
+
+/* 閱讀設定 › 排版：段首縮排、對齊 */
+"段首縮排" = "첫 줄 들여쓰기";
+"ReaderSettings.TextAlignment" = "정렬";
+"ReaderSettings.TextAlignment.Justified" = "양쪽 정렬";
+"ReaderSettings.TextAlignment.Start" = "앞쪽 정렬";
+"ReaderSettings.FirstLineIndent.Value" = "%@자";
+
+/* 閱讀樣式 */
+"閱讀樣式" = "읽기 스타일";
+"內建多套排版，也能把自己的設定存成樣式" = "기본 제공 조판 스타일, 내 설정도 스타일로 저장";
+"一鍵換上整套排版" = "한 번에 조판 전체를 바꾸기";
+"依語言調好的內建樣式，還能把你調好的設定存成自己的樣式。" = "언어별로 다듬은 기본 스타일에 더해, 내 설정도 스타일로 저장할 수 있습니다.";
+"ReadingStyle.Current" = "현재 스타일";
+"ReadingStyle.None" = "없음";
+"ReadingStyle.Modified" = "수정됨";
+"ReadingStyle.ModifiedFormat" = "%@(수정됨)";
+"ReadingStyle.Restore" = "“%@”(으)로 되돌리기";
+"ReadingStyle.SaveNew" = "새 스타일로 저장";
+"ReadingStyle.Name.Prompt" = "스타일 이름";
+"ReadingStyle.Mine" = "내 스타일";
+"ReadingStyle.Mine.Footer" = "현재 조판과 모양을 저장합니다. 이 기기에만 보관됩니다.";
+"ReadingStyle.ThisBookOnly" = "이 책에만 적용";
+"ReadingStyle.ThisBookOnly.Footer" = "켜져 있는 동안 스타일과 변경한 설정은 이 책에만 적용됩니다. 끄면 삭제됩니다.";
+"ReadingStyle.Automatic.Title" = "자동";
+"ReadingStyle.Automatic.Footer" = "켜진 항목은 책의 언어와 현재 스타일을 따르며, 직접 조정하면 꺼집니다. 현재 기준: %@.";
+"ReadingBaseline.Chinese" = "중국어";
+"ReadingBaseline.English" = "영어";
+"ReadingBaseline.JapaneseHorizontal" = "일본어 가로쓰기";
+"ReadingBaseline.JapaneseVertical" = "일본어 세로쓰기";
+"ReadingBaseline.Korean" = "한국어";
+"ReadingStyle.Language.zhHant" = "중국어 번체";
+"ReadingStyle.Language.zhHans" = "중국어 간체";
+"ReadingStyle.Language.ja" = "일본어";
+"ReadingStyle.Language.ko" = "한국어";
+"ReadingStyle.Language.en" = "영어";
+"ReadingStyle.zhHant.book" = "서권";
+"ReadingStyle.zhHant.airy" = "청량";
+"ReadingStyle.zhHans.web" = "웹소설(중국)";
+"ReadingStyle.zhHans.print" = "출판";
+"ReadingStyle.ja.bunko" = "문고";
+"ReadingStyle.ja.yoko" = "가로짜기";
+"ReadingStyle.ko.book" = "단행본";
+"ReadingStyle.ko.web" = "웹소설";
+"ReadingStyle.en.paperback" = "페이퍼백";
+"ReadingStyle.en.modern" = "모던";
+"ReadingStyle.Remove" = "스타일 해제";

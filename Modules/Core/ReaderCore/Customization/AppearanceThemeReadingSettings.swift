@@ -67,6 +67,10 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
     var lineHeightMultiple: Double?
     var letterSpacing: Double?
     var paragraphSpacingMultiplier: Double?
+    /// 段首縮排, in characters of the body size.
+    var firstLineIndent: Double?
+    /// `ReaderBodyTextAlignment` raw value.
+    var textAlignment: String?
     var pageMarginH: Double?
     var pageMarginV: Double?
     var pageMarginTop: Double?
@@ -127,6 +131,16 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
     var regexHighlights: RegexHighlightConfiguration?
     var textUnderline: TextUnderline?
 
+    // MARK: 自動與閱讀樣式
+
+    /// 自動 per row, keyed by `ReadingSettingsScopeItem` raw value: true leaves the row to
+    /// the book's 排版基準 (`ReadingBaseline`) and the worn reading style, false wears the
+    /// row's own fields. A row with no entry says nothing, like any nil field — except
+    /// that a row carrying values and no entry means the values (`withImpliedExplicitRows`).
+    var automaticItems: [String: Bool]?
+    /// The reading style (`ReadingStyle.id`) last applied; `""` for none.
+    var readingStyleID: String?
+
     init() {}
 
     /// Speaks for nothing.
@@ -135,6 +149,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case fontPostScript, fontSize, isBold, textColorOverrides
         case lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier
+        case firstLineIndent, textAlignment
         case pageMarginH, pageMarginV, pageMarginTop, pageMarginBottom
         case bottomJustify
         case pageTurnStyle, scrollMode
@@ -145,6 +160,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         case readerTheme, followsSystemTheme, bindsAppearanceReaderTheme
         case boundLightReaderTheme, boundDarkReaderTheme, readerBackgroundID, customBackground
         case commentBubble, dialogueBubbleStyle, regexHighlights, textUnderline
+        case automaticItems, readingStyleID
     }
 
     /// Field by field, so one value this build cannot read costs that field alone.
@@ -171,6 +187,8 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         lineHeightMultiple = field(.lineHeightMultiple)
         letterSpacing = field(.letterSpacing)
         paragraphSpacingMultiplier = field(.paragraphSpacingMultiplier)
+        firstLineIndent = field(.firstLineIndent)
+        textAlignment = field(.textAlignment)
         pageMarginH = field(.pageMarginH)
         pageMarginV = field(.pageMarginV)
         pageMarginTop = field(.pageMarginTop)
@@ -200,6 +218,8 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         dialogueBubbleStyle = field(.dialogueBubbleStyle)
         regexHighlights = field(.regexHighlights)
         textUnderline = field(.textUnderline)
+        automaticItems = field(.automaticItems)
+        readingStyleID = field(.readingStyleID)
     }
 
     /// Each non-nil field of `other` replaces this value's — how an import lands on a
@@ -214,6 +234,8 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         merged.lineHeightMultiple = other.lineHeightMultiple ?? lineHeightMultiple
         merged.letterSpacing = other.letterSpacing ?? letterSpacing
         merged.paragraphSpacingMultiplier = other.paragraphSpacingMultiplier ?? paragraphSpacingMultiplier
+        merged.firstLineIndent = other.firstLineIndent ?? firstLineIndent
+        merged.textAlignment = other.textAlignment ?? textAlignment
         merged.pageMarginH = other.pageMarginH ?? pageMarginH
         merged.pageMarginV = other.pageMarginV ?? pageMarginV
         merged.pageMarginTop = other.pageMarginTop ?? pageMarginTop
@@ -243,6 +265,8 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         merged.dialogueBubbleStyle = other.dialogueBubbleStyle ?? dialogueBubbleStyle
         merged.regexHighlights = other.regexHighlights ?? regexHighlights
         merged.textUnderline = other.textUnderline ?? textUnderline
+        merged.automaticItems = mergedAutomaticItems(with: other.automaticItems)
+        merged.readingStyleID = other.readingStyleID ?? readingStyleID
         return merged
     }
 }

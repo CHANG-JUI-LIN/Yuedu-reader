@@ -52,7 +52,7 @@ enum ReadingSetupPart: CaseIterable, Hashable {
     var scopeItems: Set<ReadingSettingsScopeItem> {
         switch self {
         case .font: return [.font]
-        case .layout: return [.fontSize, .bold, .lineSpacing, .letterSpacing, .paragraphSpacing, .pageMargins, .bottomJustify]
+        case .layout: return [.fontSize, .bold, .lineSpacing, .letterSpacing, .paragraphSpacing, .firstLineIndent, .textAlignment, .pageMargins, .bottomJustify]
         case .pageTurn: return [.pageTurn]
         case .headerFooter: return [.headerFooter]
         case .chapterTitle: return [.chapterTitle]

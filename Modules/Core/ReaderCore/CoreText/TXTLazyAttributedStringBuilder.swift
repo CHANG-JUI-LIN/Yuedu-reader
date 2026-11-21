@@ -104,13 +104,13 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         )
 
         let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.alignment = .justified // full justification: both margins align, CJK + Latin alike
+        bodyParaStyle.alignment = settings.bodyTextAlignment.nsTextAlignment
         bodyParaStyle.hyphenationFactor = ReaderHyphenation.factor // break long Latin words instead of gapping the line
         bodyParaStyle.lineBreakMode = .byWordWrapping
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
-        bodyParaStyle.firstLineHeadIndent = settings.fontSize * 2
+        bodyParaStyle.firstLineHeadIndent = settings.fontSize * settings.firstLineIndentEm
 
         let attrStr = NSMutableAttributedString()
         // `.zero` only for a builder nothing has sized (a test building a chapter by hand): the

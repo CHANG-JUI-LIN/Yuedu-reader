@@ -140,9 +140,9 @@ extension GlobalSettings {
     }
 
     /// The shared setup must be complete, so wearing it sets every field. One saved
-    /// before a field joined the setup has none for it: 排版方向 (2026-10-06) and 底部對齊
-    /// (2026-10-12) are taken once from what is on screen, which no theme had a value for
-    /// yet. A theme with no value of its own would otherwise keep the previous theme's
+    /// before a field joined the setup has none for it: 排版方向 (2026-10-06), 底部對齊
+    /// (2026-10-12) and 段首縮排／對齊 (2026-11-21) are taken once from what is on screen,
+    /// which no theme had a value for yet. A theme with no value of its own would otherwise keep the previous theme's
     /// value. Can go once no install still holds a shared setup from before those builds.
     @discardableResult
     private func completeLaterFields(of reading: inout AppearanceThemeReadingSettings) -> Bool {
@@ -153,6 +153,26 @@ extension GlobalSettings {
         }
         if reading.bottomJustify == nil {
             reading.bottomJustify = readerBottomJustify
+            completed = true
+        }
+        if reading.firstLineIndent == nil {
+            reading.firstLineIndent = readerFirstLineIndent
+            completed = true
+        }
+        if reading.textAlignment == nil {
+            reading.textAlignment = readerTextAlignment.rawValue
+            completed = true
+        }
+        // 自動 (2026-11-21): a setup from before it keeps every row's own numbers; one
+        // first created on a new install leaves them to the book's 排版基準.
+        var flags = reading.automaticItems ?? [:]
+        for item in ReadingBaseline.items where flags[item.rawValue] == nil {
+            flags[item.rawValue] = Self.readingStartsAutomatic
+            completed = true
+        }
+        reading.automaticItems = flags
+        if reading.readingStyleID == nil {
+            reading.readingStyleID = readerReadingStyleID ?? ""
             completed = true
         }
         return completed
@@ -242,12 +262,72 @@ extension GlobalSettings {
         isApplyingAppearanceExtras = true
         defer { isApplyingAppearanceExtras = wasApplying }
 
+        try writeReadingSettings(wornReadingSettings(), origin: origin)
+    }
+
+    /// What the reader wears: 全域, the worn theme's own values over it for the rows that
+    /// follow the theme, and — for the rows left on 自動 — the book's 排版基準 and the worn
+    /// reading style over both.
+    func wornReadingSettings() -> AppearanceThemeReadingSettings {
         var worn = globalReadingSettings
         let themeItems = readingSettingsScope.themeItems
         if !themeItems.isEmpty, let own = themeReadingSettings(themeID: readingSettingsThemeID) {
-            worn = worn.overlaid(with: own.restricted(to: themeItems))
+            // A theme's values with no word about 自動 are the theme's to wear.
+            worn = worn.overlaid(with: own.restricted(to: themeItems).withImpliedExplicitRows())
         }
-        try writeReadingSettings(worn, origin: origin)
+        if let book = bookReadingOverride {
+            worn = worn.overlaid(with: book.withImpliedExplicitRows())
+        }
+        let automatic = worn.automaticRows.intersection(ReadingBaseline.items)
+        if !automatic.isEmpty {
+            var resolved = automaticReadingValues(styleID: worn.readingStyleID).restricted(to: automatic)
+            resolved.automaticItems = nil
+            worn = worn.overlaid(with: resolved)
+        }
+        return worn
+    }
+
+    /// What a row on 自動 wears for the book being read: its 排版基準, with the typesetting
+    /// of the worn reading style over it.
+    func automaticReadingValues(styleID: String?) -> AppearanceThemeReadingSettings {
+        let baseline = readingBaseline
+        var values = baseline.values
+        if let styleID, let style = ReadingStyleLibrary.builtIn(id: styleID) {
+            values = values.overlaid(with: style.values(for: baseline).restricted(to: ReadingBaseline.items))
+        }
+        return values
+    }
+
+    // MARK: - 自動
+
+    /// The book being read changed kind — or the reader opened one. Rows on 自動 are set
+    /// again for it; with none on 自動 nothing is written.
+    func setReadingBaseline(_ baseline: ReadingBaseline) {
+        readingBaseline = baseline
+        // Also when it did not change: a new install's rows start on 自動 and are first
+        // set here. Cheap when nothing differs — the writer assigns only what does.
+        guard !readerAutomaticItems.isEmpty else { return }
+        synchronizeReadingSettings()
+    }
+
+    /// Leaves a row to 自動, or takes it back with the values it is showing.
+    func setReadingRowAutomatic(_ item: ReadingSettingsScopeItem, _ isAutomatic: Bool) {
+        guard ReadingBaseline.items.contains(item),
+              readerAutomaticItems.contains(item) != isAutomatic else { return }
+        if isAutomatic {
+            readerAutomaticItems.insert(item)
+            recordReadingSettingEdit { $0.automaticItems = [item.rawValue: true] }
+            synchronizeReadingSettings()
+        } else {
+            // What is on screen becomes the row's own: recorded whole, since the stored
+            // fields are from before the row was left to 自動.
+            let shown = currentReadingSettingsSnapshot().restricted(to: [item])
+            readerAutomaticItems.remove(item)
+            recordReadingSettingEdit {
+                $0 = shown
+                $0.automaticItems = [item.rawValue: false]
+            }
+        }
     }
 
     // MARK: - Recording edits
@@ -262,6 +342,31 @@ extension GlobalSettings {
         guard !isApplyingAppearanceExtras else { return }
         var edit = AppearanceThemeReadingSettings()
         mutate(&edit)
+        // An edited value takes its row off 自動. The row is recorded whole: its stored
+        // fields date from before it was left to 自動, and the ones this edit did not
+        // touch would otherwise come back the next time the setup is worn.
+        var valuesOnly = edit
+        valuesOnly.automaticItems = nil
+        let leavingAutomatic = valuesOnly.items.intersection(readerAutomaticItems)
+        if !leavingAutomatic.isEmpty {
+            readerAutomaticItems.subtract(leavingAutomatic)
+            var shown = currentReadingSettingsSnapshot().restricted(to: leavingAutomatic)
+            shown.automaticItems = nil
+            edit = shown.overlaid(with: edit)
+        }
+        edit = edit.withImpliedExplicitRows()
+        if let book = bookReadingOverride, !isApplyingReadingSettingsSync {
+            // The open book has a setup of its own: the edit is the book's, and neither
+            // the theme, the shared setup nor the other devices hear of it. Rows arriving
+            // from another device are the library's, never this book's: they go on to the
+            // stores below, and show once the book's own setup is out of the way.
+            let updated = book.overlaid(with: edit)
+            if updated != book {
+                bookReadingOverride = updated
+                persistBookReadingOverride?(updated)
+            }
+            return
+        }
         let items = edit.items
         guard !items.isEmpty else { return }
         if !isApplyingReadingSettingsSync {
@@ -303,6 +408,8 @@ extension GlobalSettings {
         snapshot.lineHeightMultiple = lineHeightMultiple
         snapshot.letterSpacing = letterSpacing
         snapshot.paragraphSpacingMultiplier = paragraphSpacingMultiplier
+        snapshot.firstLineIndent = readerFirstLineIndent
+        snapshot.textAlignment = readerTextAlignment.rawValue
         snapshot.pageMarginH = pageMarginH
         snapshot.pageMarginV = pageMarginV
         snapshot.pageMarginTop = pageMarginTop
@@ -333,6 +440,10 @@ extension GlobalSettings {
         snapshot.dialogueBubbleStyle = dialogueBubbleStyle
         snapshot.regexHighlights = regexHighlightConfiguration
         snapshot.textUnderline = currentTextUnderlineSettings
+        snapshot.automaticItems = Dictionary(uniqueKeysWithValues: ReadingBaseline.items.map {
+            ($0.rawValue, readerAutomaticItems.contains($0))
+        })
+        snapshot.readingStyleID = readerReadingStyleID ?? ""
         return snapshot
     }
 
@@ -406,6 +517,9 @@ extension GlobalSettings {
         assign(\.lineHeightMultiple, reading.lineHeightMultiple)
         assign(\.letterSpacing, reading.letterSpacing)
         assign(\.paragraphSpacingMultiplier, reading.paragraphSpacingMultiplier)
+        // A theme pack or a backup is someone else's file: bounded before it is worn.
+        assign(\.readerFirstLineIndent, reading.firstLineIndent.map(ReaderFirstLineIndent.sanitized))
+        assign(\.readerTextAlignment, reading.textAlignment.flatMap(ReaderBodyTextAlignment.init(rawValue:)))
         assign(\.pageMarginH, reading.pageMarginH)
         assign(\.pageMarginV, reading.pageMarginV)
         assign(\.pageMarginTop, reading.pageMarginTop)
@@ -489,7 +603,51 @@ extension GlobalSettings {
             assign(\.readerTextUnderlineOffset, underline.offset)
         }
 
-        guard changed else { return }
-        NotificationCenter.default.post(name: .readingSettingsDidApply, object: self)
+        // 自動 and the reading style last: the values above, when they are recorded as
+        // edits (an import, another device's rows), take their rows off 自動 first.
+        var returnsToAutomatic = false
+        if let flags = reading.automaticItems {
+            var rows = readerAutomaticItems
+            for (key, isAutomatic) in flags {
+                guard let item = ReadingSettingsScopeItem(rawValue: key),
+                      ReadingBaseline.items.contains(item) else { continue }
+                if isAutomatic { rows.insert(item) } else { rows.remove(item) }
+            }
+            if rows != readerAutomaticItems {
+                readerAutomaticItems = rows
+                changed = true
+            }
+            if !isApplyingAppearanceExtras {
+                // A row taken off 自動 is recorded with what it shows: its stored fields
+                // date from before it was left to 自動, and a value above that equalled
+                // the one on screen was not assigned, so not recorded either.
+                let explicitRows = Set(flags.compactMap { key, isAutomatic in
+                    isAutomatic ? nil : ReadingSettingsScopeItem(rawValue: key)
+                }).intersection(ReadingBaseline.items)
+                let shown = currentReadingSettingsSnapshot().restricted(to: explicitRows)
+                recordReadingSettingEdit {
+                    $0 = shown
+                    $0.automaticItems = flags
+                }
+                returnsToAutomatic = flags.values.contains(true)
+            }
+        }
+        if let styleID = reading.readingStyleID {
+            let value: String? = styleID.isEmpty ? nil : styleID
+            if readerReadingStyleID != value {
+                readerReadingStyleID = value
+                changed = true
+            }
+            if !isApplyingAppearanceExtras {
+                recordReadingSettingEdit { $0.readingStyleID = styleID }
+            }
+        }
+
+        if changed {
+            NotificationCenter.default.post(name: .readingSettingsDidApply, object: self)
+        }
+        // Rows an import or another device left on 自動 arrived with that device's
+        // numbers; this one sets them for its own book.
+        if returnsToAutomatic { synchronizeReadingSettings() }
     }
 }

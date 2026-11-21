@@ -322,7 +322,7 @@ struct BrowserLayoutConfigInputs: Sendable {
             paragraphSpacing: settings.paragraphSpacing,
             letterSpacing: settings.letterSpacing,
             isBold: settings.isBold,
-            defaultTextAlignment: .justified,
+            defaultTextAlignment: settings.bodyTextAlignment.nsTextAlignment,
             textTransform: BrowserReaderAttributes.transform(settings: settings),
             fontResolver: { families, weight, italic, size in
                 UserReaderFontResolver.epubOverride(postScriptName: selectedFont,
@@ -730,7 +730,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return ChapterAdmission(choice: .legacyEngineFailure(.resourceFailure("chapterHTML")))
         }
         guard isCurrentWork(generation) else { return nil }
-        let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
+        let input = await styleInput(forChapter: spineIndex, html: html)
         guard isCurrentWork(generation) else { return nil }
         // Parses the chapter's HTML and CSS: off the main thread, which a chapter
         // arriving mid-scroll would otherwise stall (14.trace: part of 235 ms).
@@ -825,7 +825,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 await fallbackToLegacy(spineIndex, reason: .resourceFailure("chapterHTML"))
                 return
             }
-            let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
+            let input = await styleInput(forChapter: spineIndex, html: html)
             guard isCurrentWork(generation) else { return }
             await prepareBrowserFonts(at: spineIndex)
             guard isCurrentWork(generation) else { return }
@@ -1064,6 +1064,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// The result is `sending`: built from `admitted` and a configuration made off
     /// this class's isolation, nothing on the main actor holds it, so the scroll
     /// path can move it to a layout owner.
+    /// The chapter's stylesheets as the book ships them, then the reader's own sheet when
+    /// 套用書本間距 is off. Every layout path asks here, so the admission scan and the layout
+    /// read the same sheets.
+    private func styleInput(forChapter spineIndex: Int, html: String) async -> CSSFrontendInput {
+        let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
+        return ReaderBookSpacingStyleSheet.applying(to: input, settings: settings)
+    }
+
     private func chapterEvaluation(
         for spineIndex: Int,
         input: CSSFrontendInput,
@@ -2212,7 +2220,7 @@ extension BrowserLayoutPageEngine {
         }
         guard choice(for: spine)?.isBrowser == true else { return nil }
         let html = try await resource.chapterHTML(at: spine)
-        let input = await resource.cssFrontendInput(forChapter: spine, html: html)
+        let input = await styleInput(forChapter: spine, html: html)
         await prepareBrowserFonts(at: spine)
         try Task.checkCancellation()
         let store = BrowserLayoutImageStore(await resource.prefetchImages(

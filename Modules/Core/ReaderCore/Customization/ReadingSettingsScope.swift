@@ -33,6 +33,8 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
     case lineSpacing
     case letterSpacing
     case paragraphSpacing
+    case firstLineIndent
+    case textAlignment
     case pageMargins
     case bottomJustify
     case headerFooter
@@ -43,6 +45,9 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
     case dialogueBubble
     case regexHighlight
     case textUnderline
+    /// Which reading style was applied. Not a row of 排版生效範圍's page: it follows
+    /// whatever the default scope is, with the rows it set.
+    case readingStyle
 
     var id: String { rawValue }
 
@@ -56,6 +61,8 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .lineSpacing: return "行距"
         case .letterSpacing: return "字距"
         case .paragraphSpacing: return "段距"
+        case .firstLineIndent: return "段首縮排"
+        case .textAlignment: return "ReaderSettings.TextAlignment"
         case .pageMargins: return "頁面邊距"
         case .bottomJustify: return "底部對齊"
         case .headerFooter: return "頁首頁尾"
@@ -68,6 +75,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .dialogueBubble: return "對話氣泡"
         case .regexHighlight: return "正則高亮"
         case .textUnderline: return "文字底線"
+        case .readingStyle: return "閱讀樣式"
         }
     }
 
@@ -85,6 +93,8 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .lineSpacing: return "arrow.up.and.down.text.horizontal"
         case .letterSpacing: return "arrow.left.and.right.text.vertical"
         case .paragraphSpacing: return "paragraphsign"
+        case .firstLineIndent: return "increase.indent"
+        case .textAlignment: return "text.justify"
         case .pageMargins: return "arrow.left.and.line.vertical.and.arrow.right"
         case .bottomJustify: return "align.vertical.bottom"
         case .headerFooter: return "rectangle.split.3x1"
@@ -95,6 +105,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .dialogueBubble: return "bubble.left.and.bubble.right"
         case .regexHighlight: return "text.magnifyingglass"
         case .textUnderline: return "underline"
+        case .readingStyle: return "rectangle.stack"
         }
     }
 }
@@ -137,6 +148,9 @@ struct ReadingSettingsScopeConfiguration: Codable, Equatable, Sendable {
 extension AppearanceThemeReadingSettings {
     /// Drops every field `item` governs.
     mutating func clear(_ item: ReadingSettingsScopeItem) {
+        if automaticItems?.removeValue(forKey: item.rawValue) != nil, automaticItems?.isEmpty == true {
+            automaticItems = nil
+        }
         switch item {
         case .font:
             fontPostScript = nil
@@ -154,6 +168,10 @@ extension AppearanceThemeReadingSettings {
             letterSpacing = nil
         case .paragraphSpacing:
             paragraphSpacingMultiplier = nil
+        case .firstLineIndent:
+            firstLineIndent = nil
+        case .textAlignment:
+            textAlignment = nil
         case .pageMargins:
             pageMarginH = nil
             pageMarginV = nil
@@ -192,6 +210,8 @@ extension AppearanceThemeReadingSettings {
             regexHighlights = nil
         case .textUnderline:
             textUnderline = nil
+        case .readingStyle:
+            readingStyleID = nil
         }
     }
 

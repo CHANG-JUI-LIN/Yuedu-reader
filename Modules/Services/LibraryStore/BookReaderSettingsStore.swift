@@ -13,8 +13,17 @@ struct BookReaderSettings: Codable, Equatable {
     /// Reading mode plus every toggle of the manga / PDF / fixed-layout EPUB reader.
     /// `nil` reads as the right-to-left defaults an unsaved book has always had.
     var fixedPage: FixedPageReaderConfiguration? = nil
+    /// 只套用到這本書: the book's own reading setup — a reading style and the edits made
+    /// while it is worn — laid over the theme's and the shared one while the book is open.
+    /// Sparse like a theme's: nil fields are not the book's to say.
+    var reading: AppearanceThemeReadingSettings? = nil
+    /// The kind of book this is for typesetting — a `ReadingBaseline` raw value, kept
+    /// from the first time the reader worked it out, so a book whose rows are on 自動 is
+    /// set the same way every time it is opened. 直排 and 橫排 Japanese are one kind here;
+    /// which of the two it is follows how the book is being read.
+    var readingBaseline: String? = nil
 
-    var isEmpty: Bool { fixedPage == nil }
+    var isEmpty: Bool { fixedPage == nil && reading == nil && readingBaseline == nil }
 }
 
 /// The one place per-book reader settings live.
@@ -66,6 +75,39 @@ final class BookReaderSettingsStore {
         save()
     }
 
+    // MARK: Reading setup
+
+    func readingOverride(for bookID: UUID) -> AppearanceThemeReadingSettings? {
+        settingsByBook[bookID]?.reading
+    }
+
+    /// Nil takes the book's own setup away, so it reads like the rest of the library.
+    func setReadingOverride(_ reading: AppearanceThemeReadingSettings?, for bookID: UUID) {
+        guard settingsByBook[bookID]?.reading != reading else { return }
+        var settings = settingsByBook[bookID] ?? BookReaderSettings(bookID: bookID, modifiedAt: Date())
+        settings.reading = reading
+        settings.modifiedAt = Date()
+        if settings.isEmpty {
+            settingsByBook.removeValue(forKey: bookID)
+        } else {
+            settingsByBook[bookID] = settings
+        }
+        save()
+    }
+
+    func readingBaseline(for bookID: UUID) -> ReadingBaseline? {
+        settingsByBook[bookID]?.readingBaseline.flatMap(ReadingBaseline.init(rawValue:))
+    }
+
+    /// Not an edit of the reader's: `modifiedAt` stays.
+    func setReadingBaseline(_ baseline: ReadingBaseline, for bookID: UUID) {
+        guard settingsByBook[bookID]?.readingBaseline != baseline.rawValue else { return }
+        var settings = settingsByBook[bookID] ?? BookReaderSettings(bookID: bookID, modifiedAt: Date())
+        settings.readingBaseline = baseline.rawValue
+        settingsByBook[bookID] = settings
+        save()
+    }
+
     // MARK: Book lifecycle
 
     func removeSettings(for bookID: UUID) {
@@ -83,7 +125,8 @@ final class BookReaderSettingsStore {
         if let own = settingsByBook[survivorID], !own.isEmpty, own.modifiedAt >= carried.modifiedAt { return }
         // Not an edit: the choice keeps the time the reader made it.
         settingsByBook[survivorID] = BookReaderSettings(
-            bookID: survivorID, modifiedAt: carried.modifiedAt, fixedPage: carried.fixedPage
+            bookID: survivorID, modifiedAt: carried.modifiedAt, fixedPage: carried.fixedPage,
+            reading: carried.reading, readingBaseline: carried.readingBaseline
         )
         AppLogger.cache("本書設定：同一部作品合併，帶過被合併那本的設定", context: [
             "from": mergedID.uuidString, "to": survivorID.uuidString,

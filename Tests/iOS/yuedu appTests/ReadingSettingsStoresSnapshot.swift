@@ -15,7 +15,15 @@ struct ReadingSettingsStoresSnapshot {
     }
 
     /// Empties them, so the next read captures the shared setup from what is on screen.
+    ///
+    /// Every row is taken off 自動 first. `xctest.sh` runs on an erased simulator, which
+    /// is a new install — every typesetting row on 自動 — with an English test host, so
+    /// the next theme switch would otherwise set the rows from the English 排版基準
+    /// instead of the numbers a test wrote. Tests of 自動 put rows back on it themselves.
+    @MainActor
     static func clear() {
+        GlobalSettings.shared.readerAutomaticItems = []
+        GlobalSettings.shared.readerReadingStyleID = nil
         for key in GlobalSettings.readingSettingsStoreKeys {
             UserDefaults.standard.removeObject(forKey: key)
         }

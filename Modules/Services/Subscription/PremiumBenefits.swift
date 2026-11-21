@@ -61,6 +61,8 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
             ]
         case .comfort:
             return [
+                PremiumBenefit(feature: .readingStyles, iconName: "rectangle.stack",
+                               titleKey: "閱讀樣式", detailKey: "內建多套排版，也能把自己的設定存成樣式"),
                 PremiumBenefit(feature: .readerThemePacks, iconName: "paintpalette",
                                titleKey: "外觀主題", detailKey: "App 與閱讀配色、頁面背景，都能自己調"),
                 PremiumBenefit(feature: .readerBackgroundImport, iconName: "photo.on.rectangle.angled",
@@ -154,6 +156,9 @@ struct PremiumPitch: Equatable {
         case .launchScreen?:
             return .init(headlineKey: "打開 App，先看到你的畫面",
                          pitchKey: "換上自己的開屏圖片。")
+        case .readingStyles?:
+            return .init(headlineKey: "一鍵換上整套排版",
+                         pitchKey: "依語言調好的內建樣式，還能把你調好的設定存成自己的樣式。")
         case .moduleImport?:
             return .init(headlineKey: "用模組接上更多內容",
                          pitchKey: "從網址、檔案或模組倉庫加入第三方模組，榜單、搜尋和評論跟著進來。")

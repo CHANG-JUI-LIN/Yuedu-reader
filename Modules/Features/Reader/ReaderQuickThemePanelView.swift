@@ -55,8 +55,13 @@ struct ReaderQuickThemePanelView: View {
     /// A locked control asked for the paywall. The reader closes this sheet and presents
     /// it from its own `onDismiss`, as it does for 自訂 — never a sheet on top of this one.
     var onOpenPaywall: ((PremiumFeature) -> Void)? = nil
+    /// Whether this book's face is the reader's to choose: 字體 shows in the panel.
+    var allowsUserSelectedReaderFont = true
+    /// An EPUB: with no face chosen it is drawn in the book's own, not the system's.
+    var usesPublicationFontDefault = false
 
     @Bindable private var settings = GlobalSettings.shared
+    @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.colorScheme) private var colorScheme
     /// The saved-background page pushed in this panel's own navigation.
     @State private var backgroundEditor: ReaderBackgroundEditorRoute?
@@ -78,6 +83,7 @@ struct ReaderQuickThemePanelView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DSSpacing.lg) {
                     typeAndPageTurnRow
+                    styleAndFontRow
                     brightnessSlider
                     readingBackgroundRow
                         .padding(.bottom, DSSpacing.lg)
@@ -201,6 +207,21 @@ struct ReaderQuickThemePanelView: View {
             onIncrement: { adjustFontSize(1) },
             onDecrement: { adjustFontSize(-1) }
         )
+    }
+
+    /// 閱讀樣式 and 字體, a menu each, side by side like the row above them. No previews:
+    /// a style is picked by name (maintainer, 2026-11-21). 字體 shows only for books whose
+    /// face the reader may choose.
+    private var styleAndFontRow: some View {
+        HStack(spacing: DSSpacing.md) {
+            ReadingStyleMenu(
+                isProActive: subscriptionStore.hasAccess(.readingStyles),
+                onOpenPaywall: { onOpenPaywall?($0) }
+            )
+            if allowsUserSelectedReaderFont {
+                ReaderFontMenu(defaultName: localized(usesPublicationFontDefault ? "書籍預設字體" : "系統字體"))
+            }
+        }
     }
 
     /// A `Menu` behind a capsule button.

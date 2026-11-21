@@ -78,6 +78,7 @@ struct ReaderSettingsView: View {
                 // reaches for them. 排版生效範圍 comes first because it decides where every
                 // change below is kept.
                 Form {
+                    readingStyleSection
                     scopeSection
 
                     if supportsUserFont || supportsFontSize {
@@ -206,9 +207,37 @@ struct ReaderSettingsView: View {
         .interfaceSectionSurface()
     }
 
-    private func scopeSummary(_ themeItems: Set<ReadingSettingsScopeItem>) -> String {
+    /// 閱讀樣式 leads: it sets most of what the sections below adjust one by one.
+    private var readingStyleSection: some View {
+        Section {
+            NavigationLink {
+                ReadingStylesView(
+                    isProActive: subscriptionStore.hasAccess(.readingStyles),
+                    onOpenPaywall: { requestPaywall($0) }
+                )
+            } label: {
+                SettingsValueLabel(
+                    title: localized("閱讀樣式"),
+                    systemImage: "rectangle.stack",
+                    value: readingStyleSummary
+                )
+            }
+        }
+        .interfaceSectionSurface()
+    }
+
+    private var readingStyleSummary: String {
+        guard let name = settings.appliedReadingStyleName else { return localized("ReadingStyle.None") }
+        return settings.isReadingStyleModified
+            ? String(format: localized("ReadingStyle.ModifiedFormat"), name)
+            : name
+    }
+
+    private func scopeSummary(_ allThemeItems: Set<ReadingSettingsScopeItem>) -> String {
+        // The rows 排版生效範圍 lists; which style was applied is not one of them.
+        let themeItems = allThemeItems.subtracting([.readingStyle])
         if themeItems.isEmpty { return localized("全部跟隨全域") }
-        if themeItems.count == ReadingSettingsScopeItem.allCases.count { return localized("全部跟隨主題") }
+        if themeItems.count == ReadingSettingsScopeItem.allCases.count - 1 { return localized("全部跟隨主題") }
         return String(format: localized("%d 項跟隨主題"), themeItems.count)
     }
 
@@ -456,6 +485,24 @@ struct ReaderSettingsView: View {
                     range: 0.3...1.2,
                     step: 0.05
                 )
+                if showsFirstLineIndent {
+                    SettingsSliderRow(
+                        title: localized(ReadingSettingsScopeItem.firstLineIndent.titleKey),
+                        systemImage: ReadingSettingsScopeItem.firstLineIndent.systemImage,
+                        valueText: firstLineIndentText,
+                        value: $settings.readerFirstLineIndent,
+                        range: ReaderFirstLineIndent.range,
+                        step: ReaderFirstLineIndent.step
+                    )
+                }
+                Picker(selection: $settings.readerTextAlignment) {
+                    ForEach(ReaderBodyTextAlignment.allCases, id: \.self) { alignment in
+                        Text(localized(alignment.titleKey)).tag(alignment)
+                    }
+                } label: {
+                    SettingsRowLabel(localized(ReadingSettingsScopeItem.textAlignment.titleKey),
+                                     systemImage: ReadingSettingsScopeItem.textAlignment.systemImage)
+                }
             }
 
             if supportsLineHeight {
@@ -527,41 +574,82 @@ struct ReaderSettingsView: View {
         supportsLineHeight && !settings.scrollMode && !isVerticalWritingMode
     }
 
+    /// 段首縮排 is for the formats whose paragraphs the reader sets itself. An EPUB's
+    /// indent is its stylesheet's, so the row would move nothing there — until 套用書本間距
+    /// is switched off, which puts the reader's on its paragraphs.
+    private var showsFirstLineIndent: Bool {
+        supportsSpacing && (!usesPublicationFontDefault || !settings.readerUsesBookSpacing)
+    }
+
+    /// One string for the row's value and what VoiceOver speaks.
+    private var firstLineIndentText: String {
+        let value = settings.readerFirstLineIndent
+        let number = value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        return String(format: localized("ReaderSettings.FirstLineIndent.Value"), number)
+    }
+
+    /// The rows 重設排版 puts back, of the ones that can be left on 自動.
+    private var layoutRows: Set<ReadingSettingsScopeItem> {
+        var rows: Set<ReadingSettingsScopeItem> = []
+        if supportsSpacing {
+            rows.formUnion([.lineSpacing, .letterSpacing, .paragraphSpacing, .textAlignment])
+            if showsFirstLineIndent { rows.insert(.firstLineIndent) }
+        }
+        if supportsLineHeight { rows.insert(.pageMargins) }
+        return rows
+    }
+
     private var hasCustomLayout: Bool {
+        let bottomJustify = showsBottomJustify && !settings.readerBottomJustify
+        let bookSpacing = showsBookSpacingToggle && !settings.readerUsesBookSpacing
+        if GlobalSettings.readingStartsAutomatic {
+            // This install's rows started on 自動: one taken off it is what was customized.
+            return !layoutRows.isSubset(of: settings.readerAutomaticItems) || bottomJustify || bookSpacing
+        }
         let spacing = supportsSpacing && (
             abs(readerConfig.lineHeightMultiple - defaultLineHeightMultiple) > 0.001
                 || abs(readerConfig.letterSpacing - defaultLetterSpacing) > 0.001
                 || abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001
+                || (showsFirstLineIndent
+                    && abs(settings.readerFirstLineIndent - ReaderFirstLineIndent.default) > 0.001)
+                || settings.readerTextAlignment != .justified
         )
         let margins = supportsLineHeight && (
             abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001
                 || abs(readerConfig.pageMarginTop - defaultPageMarginV) > 0.001
                 || abs(readerConfig.pageMarginBottom - defaultPageMarginV) > 0.001
         )
-        let bottomJustify = showsBottomJustify && !settings.readerBottomJustify
-        let bookSpacing = showsBookSpacingToggle && !settings.readerUsesBookSpacing
         return spacing || margins || bottomJustify || bookSpacing
     }
 
     /// The bars' own space is computed from their height, so there is no separate
     /// reservation left to reset here — only what this section shows.
     private func resetLayout() {
+        if showsBottomJustify {
+            settings.readerBottomJustify = true
+        }
+        if showsBookSpacingToggle {
+            settings.readerUsesBookSpacing = true
+        }
+        if GlobalSettings.readingStartsAutomatic {
+            // Back to where this install's rows started: on 自動, set for the book.
+            for row in layoutRows { settings.setReadingRowAutomatic(row, true) }
+            return
+        }
         if supportsSpacing {
             readerConfig.lineHeightMultiple = defaultLineHeightMultiple
             readerConfig.letterSpacing = defaultLetterSpacing
             readerConfig.paragraphSpacingMultiplier = defaultParagraphSpacingMultiplier
+            if showsFirstLineIndent {
+                settings.readerFirstLineIndent = ReaderFirstLineIndent.default
+            }
+            settings.readerTextAlignment = .justified
         }
         if supportsLineHeight {
             readerConfig.pageMarginH = defaultPageMarginH
             readerConfig.pageMarginV = defaultPageMarginV
             readerConfig.pageMarginTop = defaultPageMarginV
             readerConfig.pageMarginBottom = defaultPageMarginV
-        }
-        if showsBottomJustify {
-            settings.readerBottomJustify = true
-        }
-        if showsBookSpacingToggle {
-            settings.readerUsesBookSpacing = true
         }
     }
 
@@ -972,8 +1060,7 @@ struct ReaderSettingsView: View {
     }
 
     private var currentFontName: String {
-        guard let selected = settings.selectedReaderFontPostScript else { return defaultFontName }
-        return settings.userFonts.first { $0.postScriptName == selected }?.displayName ?? selected
+        ReaderFontDisplayName.name(for: settings.selectedReaderFontPostScript, defaultName: defaultFontName)
     }
 
 }

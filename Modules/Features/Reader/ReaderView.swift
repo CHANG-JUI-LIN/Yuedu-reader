@@ -1765,6 +1765,7 @@ struct ReaderView: View {
         let volumeHandler = volumeHandler
         let pageBars = pageBarsController
         let renderer = epubRenderer
+        let readerBookID = bookId
         return ReaderTeardownProbe {
             volumeHandler.onPageTurn = nil
             autoReader.usesContinuousScroll = { false }
@@ -1773,6 +1774,8 @@ struct ReaderView: View {
             autoReader.onProgressChanged = nil
             pageBars.releaseContent()
             renderer.pageBarsProvider = nil
+            // The library's reading setup again, without this book's own.
+            GlobalSettings.shared.clearBookReadingOverride(bookID: readerBookID)
             // The reader is gone for good: stop laying out its chapters. `onDisappear` cannot
             // (a covered reader comes back), and the engine's deinit never runs while a
             // preload task holds it. Two closed readers of one 857,793-character chapter kept
@@ -2337,6 +2340,10 @@ struct ReaderView: View {
         )
         let lifecycleLayers = AnyView(
             configuredLayers
+                // 直排 and 橫排 Japanese have a 排版基準 each.
+                .onChange(of: bookDirection.principalMode.isVertical) { _, _ in
+                    if let baseline = bookReadingBaseline { settings.setReadingBaseline(baseline) }
+                }
                 .onAppear {
             ensureReaderOverlaySVGAssetStore()
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -2344,6 +2351,7 @@ struct ReaderView: View {
                 chapterFetcher: dependencies.chapterFetcher,
                 offlineDownloadManager: dependencies.offlineDownloadManager
             )
+            installReadingSetupForBook()
             readerConfig.syncFromGlobalSettings()
             alignReaderModeWithDevice()
             syncActiveThemePreset()
@@ -2819,7 +2827,9 @@ struct ReaderView: View {
                 onOpenPaywall: { feature in
                     quickPanelDeferredRoute = .paywall(feature)
                     showQuickThemePanel = false
-                }
+                },
+                allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
+                usesPublicationFontDefault: book?.resolvedPipelineKind == .epub
             )
         }
         .sheet(isPresented: $showReaderSearch, onDismiss: { bookSearchSheetDidDismiss() }) {

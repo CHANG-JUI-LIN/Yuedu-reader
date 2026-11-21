@@ -609,7 +609,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             lineHeightMultiple: settings.lineHeightMultiple,
             lineSpacing: settings.lineSpacing,
             paragraphSpacing: settings.paragraphSpacing,
-            firstLineIndent: settings.fontSize * 2,
+            firstLineIndent: settings.fontSize * settings.firstLineIndentEm,
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
             fontFamilyName: UserReaderFontResolver.selectedPostScriptName,
@@ -853,13 +853,13 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         )
 
         let bodyParaStyle = NSMutableParagraphStyle()
-        bodyParaStyle.alignment = .justified // full justification: both margins align, CJK + Latin alike
+        bodyParaStyle.alignment = settings.bodyTextAlignment.nsTextAlignment
         bodyParaStyle.hyphenationFactor = ReaderHyphenation.factor // break long Latin words instead of gapping the line
         bodyParaStyle.lineBreakMode = .byWordWrapping
         bodyParaStyle.minimumLineHeight = bodyTargetLineHeight
         bodyParaStyle.maximumLineHeight = bodyTargetLineHeight
         bodyParaStyle.paragraphSpacing = settings.paragraphSpacing
-        bodyParaStyle.firstLineHeadIndent = settings.fontSize * 2
+        bodyParaStyle.firstLineHeadIndent = settings.fontSize * settings.firstLineIndentEm
 
         let attr = NSMutableAttributedString()
         await ChapterTitleAttributedBuilder.append(

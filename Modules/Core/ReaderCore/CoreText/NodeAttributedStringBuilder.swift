@@ -71,7 +71,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         let chapter = chapters[index]
 
         // 1. Chapter → [RenderableNode]
-        let nodes = TXTRenderableNodeConverter.convert(chapter: chapter, firstLineIndent: settings.fontSize * 2)
+        let nodes = TXTRenderableNodeConverter.convert(chapter: chapter, firstLineIndent: settings.fontSize * settings.firstLineIndentEm)
 
         // 2. [RenderableNode] → NSAttributedString
         let size = renderSize.value

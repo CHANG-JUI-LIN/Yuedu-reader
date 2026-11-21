@@ -814,6 +814,22 @@ class GlobalSettings {
             recordReadingSettingEdit { $0.paragraphSpacingMultiplier = paragraphSpacingMultiplier }
         }
     }
+    /// 段首縮排, in characters of the body size. TXT and online chapters; an EPUB keeps the
+    /// indent its stylesheet sets. Part of `ReaderRenderSettings`, so a change re-paginates.
+    var readerFirstLineIndent: Double {
+        didSet {
+            UserDefaults.standard.set(readerFirstLineIndent, forKey: "yd_reader_first_line_indent")
+            recordReadingSettingEdit { $0.firstLineIndent = readerFirstLineIndent }
+        }
+    }
+    /// 對齊: how body paragraphs with no alignment of their own are set.
+    /// Part of `ReaderRenderSettings`, so a change re-paginates.
+    var readerTextAlignment: ReaderBodyTextAlignment {
+        didSet {
+            UserDefaults.standard.set(readerTextAlignment.rawValue, forKey: "yd_reader_text_alignment")
+            recordReadingSettingEdit { $0.textAlignment = readerTextAlignment.rawValue }
+        }
+    }
     var pageMarginH: Double {
         didSet {
             UserDefaults.standard.set(pageMarginH, forKey: "yd_page_margin_h")
@@ -1377,6 +1393,69 @@ class GlobalSettings {
     /// True while reading settings from another device are being worn: their writes are
     /// recorded like edits, but none of them is a setting made here.
     var isApplyingReadingSettingsSync = false
+
+    /// The rows worn on 自動: set from the book's 排版基準 and the worn reading style instead
+    /// of from their own stored values. The live mirror of the worn setup's
+    /// `automaticItems`; written by `writeReadingSettings` and by an edit, which takes its
+    /// row off 自動.
+    var readerAutomaticItems: Set<ReadingSettingsScopeItem> {
+        didSet {
+            UserDefaults.standard.set(readerAutomaticItems.map(\.rawValue).sorted(),
+                                      forKey: "yd_reading_automatic_items")
+        }
+    }
+    /// The reading style last applied (`ReadingStyle.id`), nil for none. Mirror of the
+    /// worn setup's `readingStyleID`.
+    var readerReadingStyleID: String? {
+        didSet {
+            UserDefaults.standard.set(readerReadingStyleID, forKey: "yd_reading_style_id")
+        }
+    }
+    /// The 排版基準 of the book being read; the interface language's when none is.
+    /// Not stored: the reader sets it when a book opens (`setReadingBaseline`).
+    var readingBaseline: ReadingBaseline = .interfaceDefault
+
+    /// 我的樣式: reading styles the reader saved. On this device only, like 章節標題's
+    /// 我的預設; built-in styles live in `ReadingStyleLibrary`.
+    var customReadingStyles: [ReadingStyle] {
+        didSet {
+            do {
+                UserDefaults.standard.set(try JSONEncoder().encode(customReadingStyles),
+                                          forKey: Self.customReadingStylesKey)
+            } catch {
+                AppLogger.error("⟐ saved reading styles not stored", error: error)
+            }
+        }
+    }
+    nonisolated static let customReadingStylesKey = "yd_reading_styles_custom_v1"
+
+    private static func loadCustomReadingStyles() -> [ReadingStyle] {
+        guard let data = UserDefaults.standard.data(forKey: customReadingStylesKey) else { return [] }
+        do {
+            return try JSONDecoder().decode([ReadingStyle].self, from: data)
+        } catch {
+            AppLogger.error("⟐ saved reading styles unreadable", error: error)
+            return []
+        }
+    }
+
+    /// This book's own reading setup, worn over the theme's and the shared one while the
+    /// book is open; nil for a book with none. Edits made meanwhile are the book's.
+    /// Set by the reader (`setBookReadingOverride`), which also stores it.
+    var bookReadingOverride: AppearanceThemeReadingSettings?
+    /// The book whose reader set the override, so another reader closing leaves it.
+    var bookReadingOverrideBookID: UUID?
+    /// Stores the book's setup after an edit; nil when no book with one is open.
+    var persistBookReadingOverride: ((AppearanceThemeReadingSettings?) -> Void)?
+
+    /// Whether a shared reading setup created on this install starts with every
+    /// typesetting row on 自動. Decided once, on the first launch of a build that has
+    /// 自動: true for a new install, false for one that already had settings — an
+    /// upgrade keeps the numbers its reader is used to (design §5.3).
+    nonisolated static let readingStartsAutomaticKey = "yd_reading_starts_automatic"
+    nonisolated static var readingStartsAutomatic: Bool {
+        UserDefaults.standard.bool(forKey: readingStartsAutomaticKey)
+    }
 
     var appearanceThemeID: String {
         didSet {
@@ -2175,6 +2254,19 @@ class GlobalSettings {
     }
 
     private init() {
+        // Before anything below writes a key: an install with none of ours is new.
+        if UserDefaults.standard.object(forKey: Self.readingStartsAutomaticKey) == nil {
+            let isNewInstall = !UserDefaults.standard.dictionaryRepresentation().keys
+                .contains { $0.hasPrefix("yd_") }
+            UserDefaults.standard.set(isNewInstall, forKey: Self.readingStartsAutomaticKey)
+        }
+        if let stored = UserDefaults.standard.stringArray(forKey: "yd_reading_automatic_items") {
+            readerAutomaticItems = Set(stored.compactMap(ReadingSettingsScopeItem.init(rawValue:)))
+        } else {
+            readerAutomaticItems = Self.readingStartsAutomatic ? ReadingBaseline.items : []
+        }
+        customReadingStyles = Self.loadCustomReadingStyles()
+        readerReadingStyleID = UserDefaults.standard.string(forKey: "yd_reading_style_id")
         UserDefaults.standard.removeObject(forKey: "yd_app_lang")
         // Before anything below reads the stores it rewrites.
         ReaderBackgroundMigration.runIfNeeded()
@@ -2234,6 +2326,10 @@ class GlobalSettings {
         pageMarginBottom = (UserDefaults.standard.object(forKey: "yd_page_margin_bottom") as? Double)
             ?? loadedPageMarginV
         readerBottomJustify = (UserDefaults.standard.object(forKey: "yd_reader_bottom_justify") as? Bool) ?? true
+        readerFirstLineIndent = (UserDefaults.standard.object(forKey: "yd_reader_first_line_indent") as? Double)
+            .map(ReaderFirstLineIndent.sanitized) ?? ReaderFirstLineIndent.default
+        readerTextAlignment = UserDefaults.standard.string(forKey: "yd_reader_text_alignment")
+            .flatMap(ReaderBodyTextAlignment.init(rawValue:)) ?? .justified
         readerUsesBookSpacing = (UserDefaults.standard.object(forKey: "yd_reader_uses_book_spacing") as? Bool) ?? true
         readerTextColorOverrides = Self.persistedReaderTextColorOverrides()
         let loadedFooterBottomPadding =

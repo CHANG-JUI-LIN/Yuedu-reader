@@ -1059,6 +1059,11 @@ struct ReaderRenderSettings: Equatable {
     /// reader's 行距／段距 (on), or are dropped so the reader's apply everywhere (off).
     /// Read by the EPUB builder alone; baked into paragraph styles, so a change re-runs layout.
     var usesBookSpacing: Bool = true
+    /// 段首縮排 in characters of the body size, for the formats whose paragraphs the reader
+    /// sets itself (TXT, online chapters). An EPUB's indent is its stylesheet's.
+    var firstLineIndentEm: CGFloat = ReaderFirstLineIndent.default
+    /// 對齊 for body paragraphs that carry no alignment of their own.
+    var bodyTextAlignment: ReaderBodyTextAlignment = .justified
     /// Pixels per point of the window the reader is in: tables, formulas and media placeholders
     /// are drawn into bitmaps at this density, so moving to a screen of another density re-runs
     /// layout. The reader passes its own (`ReaderRenderSettingsSnapshotInput.displayScale`);

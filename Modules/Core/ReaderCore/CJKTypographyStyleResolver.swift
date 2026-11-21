@@ -49,6 +49,11 @@ final class CJKTypographyStyleResolver: @unchecked Sendable {
         return CJKTypographyStyle.declared(declaredLanguage) ?? Self.interfaceStyle
     }
 
+    /// What the book's own text already decided this session, if any of it was read.
+    func decidedStyle(book: UUID, conversion: TextConversion) -> CJKTypographyStyle? {
+        lock.withLock { decided["\(book.uuidString)|\(conversion.rawValue)"] }
+    }
+
     /// The style the interface language implies; Traditional unless the interface is
     /// Simplified Chinese, Japanese or Korean, as zh-Hant is the app's development language.
     static var interfaceStyle: CJKTypographyStyle {

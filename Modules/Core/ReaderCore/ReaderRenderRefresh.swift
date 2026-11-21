@@ -177,6 +177,9 @@ extension ReaderRenderSettings {
             || bottomJustify != old.bottomJustify
             // 套用書本間距 decides each paragraph's line height and spacing while the string is built.
             || usesBookSpacing != old.usesBookSpacing
+            // 段首縮排 and 對齊 are baked into each paragraph style.
+            || firstLineIndentEm != old.firstLineIndentEm
+            || bodyTextAlignment != old.bodyTextAlignment
             || regexRefresh == .relayout
 
         if layoutChanged { return .layout }
