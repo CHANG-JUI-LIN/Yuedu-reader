@@ -17,6 +17,18 @@ struct InstalledRuleModule: Hashable, Sendable {
     }
 }
 
+/// An imported module as the iCloud sync carries it: its file as written and its install
+/// record. Official modules come with the app and are never among them.
+struct RuleModuleSyncItem: Codable, Equatable, Sendable {
+    /// The folder's name, which is the module's id.
+    let id: String
+    /// `module.json`, byte for byte.
+    let module: Data
+    let subscriptionURL: URL?
+    let installedAt: Date
+    let updatedAt: Date
+}
+
 enum RuleModuleStoreError: Error, Equatable, Sendable {
     case rejected(RuleModuleRejection)
     case alreadyInstalled(String)
@@ -173,6 +185,75 @@ struct RuleModuleStore: Sendable {
         }
         return directory.appendingPathComponent(".official", isDirectory: true)
             .appendingPathComponent(id, isDirectory: true).appendingPathComponent("cache", isDirectory: true)
+    }
+
+    // MARK: - Sync
+
+    /// Every module folder as it is on disk, for the iCloud sync: the bytes, never the parsed
+    /// module, so one this app cannot open (it asks for a newer app) is still held — a folder
+    /// left out here would be read as a module removed on this device and deleted on the others.
+    /// Only a folder that is not there yet is empty; any other failure to read throws, for the
+    /// same reason.
+    func syncItems() throws -> [RuleModuleSyncItem] {
+        let folders: [URL]
+        do {
+            folders = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey],
+                                                                  options: [.skipsHiddenFiles])
+        } catch CocoaError.fileReadNoSuchFile {
+            return []
+        }
+        var items: [RuleModuleSyncItem] = []
+        for folder in folders.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard try folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+            let data = try Data(contentsOf: folder.appendingPathComponent("module.json"))
+            let record = try JSONDecoder().decode(InstallRecord.self,
+                                                  from: try Data(contentsOf: folder.appendingPathComponent("install.json")))
+            items.append(RuleModuleSyncItem(id: folder.lastPathComponent, module: data, subscriptionURL: record.subscriptionURL,
+                                            installedAt: record.installedAt, updatedAt: record.updatedAt))
+        }
+        return items
+    }
+
+    /// Makes the folder what a sync merged: writes each module that is new or different (its
+    /// cached pages go with the old file), and removes each that is no longer among them.
+    /// Returns false, changing nothing, when the folder is not `local` any more — a module
+    /// installed, updated or removed during the round trip, which the merge never saw and the
+    /// next sync carries.
+    func applySync(_ items: [RuleModuleSyncItem], expecting local: [RuleModuleSyncItem]) throws -> Bool {
+        let current = try syncItems()
+        guard current == local else { return false }
+        let held = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for item in items where held[item.id] != item {
+            // The id becomes a folder name: one that is not a safe name, or is an official
+            // module's, is never written, whatever the cloud holds.
+            guard RuleModuleValidator.isFileSafe(item.id), !OfficialRuleModules.reservedIDs.contains(item.id) else {
+                AppLogger.sync("⟐ synced module skipped, its id cannot be a folder: \(item.id)", level: .error)
+                continue
+            }
+            try write(item)
+        }
+        let wanted = Set(items.map(\.id))
+        for item in current where !wanted.contains(item.id) {
+            try FileManager.default.removeItem(at: folder(for: item.id))
+        }
+        return true
+    }
+
+    private func write(_ item: RuleModuleSyncItem) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let staging = directory.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let record = InstallRecord(subscriptionURL: item.subscriptionURL, installedAt: item.installedAt, updatedAt: item.updatedAt)
+        let folder = folder(for: item.id)
+        do {
+            try item.module.write(to: staging.appendingPathComponent("module.json"), options: .atomic)
+            try JSONEncoder().encode(record).write(to: staging.appendingPathComponent("install.json"), options: .atomic)
+            if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
+            try FileManager.default.moveItem(at: staging, to: folder)
+        } catch {
+            removeStaging(staging)
+            throw error
+        }
     }
 
     // MARK: - Helpers

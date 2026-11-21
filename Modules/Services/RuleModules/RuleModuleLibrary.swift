@@ -200,10 +200,42 @@ final class RuleModuleLibrary: ObservableObject {
         await load()
     }
 
+    // MARK: - Sync
+
+    /// What the reader set on the 模組 page, module by module, for the iCloud sync: only the
+    /// modules with something set, so one put back as it came is a deletion the sync carries.
+    var preferenceSyncItems: [RuleModulePreferenceSyncItem] {
+        Set(disabled).union(hiddenInLibrary).union(globalValues.keys).sorted().map { id in
+            RuleModulePreferenceSyncItem(id: id, disabled: disabled.contains(id), hiddenInLibrary: hiddenInLibrary.contains(id),
+                                         globalValues: globalValues[id] ?? [:])
+        }
+    }
+
+    /// The other devices' 停用, 在資源庫中展示 and global values, merged with this one's.
+    func applyPreferencesFromSync(_ items: [RuleModulePreferenceSyncItem]) {
+        disabled = Set(items.filter(\.disabled).map(\.id))
+        hiddenInLibrary = Set(items.filter(\.hiddenInLibrary).map(\.id))
+        globalValues = Dictionary(items.filter { !$0.globalValues.isEmpty }.map { ($0.id, $0.globalValues) },
+                                  uniquingKeysWith: { first, _ in first })
+        preferences.set(disabled.sorted(), forKey: Self.disabledKey)
+        preferences.set(hiddenInLibrary.sorted(), forKey: Self.hiddenInLibraryKey)
+        preferences.set(globalValues, forKey: Self.globalValuesKey)
+        publish()
+    }
+
     private func applyingGlobalValues(_ installed: InstalledRuleModule) -> InstalledRuleModule {
         guard let values = globalValues[installed.module.id] else { return installed }
         return InstalledRuleModule(module: installed.module.applyingGlobalValues(values),
                                    subscriptionURL: installed.subscriptionURL, installedAt: installed.installedAt,
                                    updatedAt: installed.updatedAt, isOfficial: installed.isOfficial)
     }
+}
+
+/// One module's settings on the 模組 page, as the iCloud sync carries them. An official
+/// module's too: it is on every device, and 停用 follows the reader.
+struct RuleModulePreferenceSyncItem: Codable, Equatable, Sendable {
+    let id: String
+    let disabled: Bool
+    let hiddenInLibrary: Bool
+    let globalValues: [String: String]
 }

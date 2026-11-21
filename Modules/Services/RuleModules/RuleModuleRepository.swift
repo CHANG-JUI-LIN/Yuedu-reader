@@ -178,6 +178,28 @@ struct RuleModuleRepositoryStore: Sendable {
         try write(list().filter { $0.url != url })
     }
 
+    /// The subscriptions for the iCloud sync. `list()` shows a file it cannot read as no
+    /// repositories; a sync would read that as every one of them unsubscribed here and take
+    /// them from the other devices, so this throws instead.
+    func syncList() throws -> [RuleModuleRepositorySubscription] {
+        guard FileManager.default.fileExists(atPath: file.path) else { return [] }
+        return try JSONDecoder().decode([RuleModuleRepositorySubscription].self, from: Data(contentsOf: file))
+    }
+
+    /// Makes the list what a sync merged, those already here in their order and the new ones
+    /// after them. Returns false, writing nothing, when the list is not `local` any more: a
+    /// repository added or removed during the round trip, which the next sync carries.
+    func applySync(_ merged: [RuleModuleRepositorySubscription],
+                   expecting local: [RuleModuleRepositorySubscription]) throws -> Bool {
+        guard try syncList() == local else { return false }
+        let byURL = Dictionary(merged.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        let here = Set(local.map(\.url))
+        let kept = local.compactMap { byURL[$0.url] }
+        let arrived = merged.filter { !here.contains($0.url) }.sorted { $0.url.absoluteString < $1.url.absoluteString }
+        try write(kept + arrived)
+        return true
+    }
+
     private func write(_ all: [RuleModuleRepositorySubscription]) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()

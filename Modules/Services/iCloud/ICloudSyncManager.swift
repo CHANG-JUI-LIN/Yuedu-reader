@@ -182,6 +182,12 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let booksRecordName = "books_meta_v2"
     /// Text readers' saved positions (`ReadingPositionSyncItem`), one item per book.
     nonisolated private static let readingPositionsRecordName = "reading_positions_v1"
+    /// 模組: the imported modules' files, what the 模組 page sets on each module, and the
+    /// subscribed repositories (2026-11-21; until then a module added on one device was on no
+    /// other, and its sections of 探索 and its books there had nothing to serve them).
+    nonisolated private static let ruleModulesRecordName = "rule_modules_v1"
+    nonisolated private static let ruleModulePreferencesRecordName = "rule_module_preferences_v1"
+    nonisolated private static let ruleModuleRepositoriesRecordName = "rule_module_repositories_v1"
     /// The shelf as builds from before the split sync it.
     nonisolated private static let olderBuildsBooksRecordName = "books_meta"
 
@@ -194,6 +200,7 @@ final class ICloudSyncManager: ObservableObject {
         bookSourcesRecordName, replaceRulesRecordName, bubbleStylesRecordName,
         bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
         readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName, readingPositionsRecordName,
+        ruleModulesRecordName, ruleModulePreferencesRecordName, ruleModuleRepositoriesRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
         "reader_background_choice", readerOverlayLayoutRecordID,
@@ -212,6 +219,9 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
     nonisolated private static let shadowReadingSettings = "icloud_readingSettings_v2"
     nonisolated private static let shadowReadingPositions = "icloud_readingPositions_v1"
+    nonisolated private static let shadowRuleModules = "icloud_ruleModules_v1"
+    nonisolated private static let shadowRuleModulePreferences = "icloud_ruleModulePreferences_v1"
+    nonisolated private static let shadowRuleModuleRepositories = "icloud_ruleModuleRepositories_v1"
     /// What this device synced through `books_meta` before the split: every book it had
     /// there, and every one it deleted. Only read, to tell a book an older build added from
     /// one this device already knew (`adoptBooksAddedByOlderBuilds`).
@@ -765,6 +775,20 @@ final class ICloudSyncManager: ObservableObject {
             }
 
             try Task.checkCancellation()
+            // 5c. 模組. Outside the shelf's block: they are not the shelf's. A failure is held
+            //     until the end, as the style pictures' is in 3d and for its reason — the book
+            //     files after this must not wait on a module folder that cannot be read. The
+            //     error still fails the sync and is shown. Unneeded once this sits after step 6.
+            var moduleError: Error?
+            do {
+                changedRemote = try await mergeRuleModules() || changedRemote
+            } catch {
+                if Task.isCancelled { throw error }
+                AppLogger.sync("sync(\(reason)): modules failed, continuing with the book files: \(error.localizedDescription)", level: .error)
+                moduleError = error
+            }
+
+            try Task.checkCancellation()
             // 6. Binary book files (EPUB/TXT content + cover images).
             let uploadedBookFileCount = try await uploadBookFiles()
             changedRemote = changedRemote || uploadedBookFileCount > 0
@@ -781,6 +805,7 @@ final class ICloudSyncManager: ObservableObject {
             // Everything else went through; the pass still did not, so it is reported as the
             // failure it is and the last-sync date stays where it was.
             if let stylePictureError { throw stylePictureError }
+            if let moduleError { throw moduleError }
             await onMain("sync.done") {
                 lastSyncDate = date
                 statusMessage = localized("iCloud 同步成功")
@@ -798,6 +823,61 @@ final class ICloudSyncManager: ObservableObject {
             AppLogger.sync("sync(\(reason)) failed: \(error.localizedDescription)", level: .error)
             throw error
         }
+    }
+
+    /// The imported modules, then what the 模組 page sets on each, then the subscribed
+    /// repositories; true when any of the three was uploaded.
+    ///
+    /// A module is its file byte for byte and its install record, newest `updatedAt` wins. Read
+    /// from the folder, not from `RuleModuleLibrary.modules`: that leaves out a module turned
+    /// off and one this app version cannot open, and the merge reads an id it synced before
+    /// and no longer sees as removed here — it would take the module from every device.
+    /// The settings follow the modules, so a module removed elsewhere loses its settings by
+    /// that device's own record of them, not by this device editing them.
+    nonisolated private func mergeRuleModules() async throws -> Bool {
+        let library = await MainActor.run { RuleModuleLibrary.shared }
+        let store = library.store
+        let localModules = try store.syncItems()
+        let moduleMerge = try await mergeType(
+            recordName: Self.ruleModulesRecordName,
+            shadowKey: Self.shadowRuleModules,
+            local: localModules,
+            id: { $0.id },
+            hash: { Self.stableHash($0) },
+            fallbackUpdatedAt: { $0.updatedAt },
+            applyLocally: { merged in
+                guard try store.applySync(merged, expecting: localModules) else { return false }
+                await library.load()
+                return true
+            }
+        )
+
+        let localPreferences = await onMain("sync.read.modulePreferences") { library.preferenceSyncItems }
+        let preferenceMerge = try await mergeType(
+            recordName: Self.ruleModulePreferencesRecordName,
+            shadowKey: Self.shadowRuleModulePreferences,
+            local: localPreferences,
+            id: { $0.id },
+            hash: { Self.stableHash($0) },
+            fallbackUpdatedAt: { _ in Date.distantPast },
+            applyLocally: { merged in
+                await onMain("sync.apply.modulePreferences", "count=\(merged.count)") { library.applyPreferencesFromSync(merged) }
+                return true
+            }
+        )
+
+        let repositories = RuleModuleRepositoryStore()
+        let localRepositories = try repositories.syncList()
+        let repositoryMerge = try await mergeType(
+            recordName: Self.ruleModuleRepositoriesRecordName,
+            shadowKey: Self.shadowRuleModuleRepositories,
+            local: localRepositories,
+            id: { $0.url.absoluteString },
+            hash: { Self.stableHash($0) },
+            fallbackUpdatedAt: { _ in Date.distantPast },
+            applyLocally: { merged in try repositories.applySync(merged, expecting: localRepositories) }
+        )
+        return moduleMerge.uploaded || preferenceMerge.uploaded || repositoryMerge.uploaded
     }
 
     /// Every saved position, merged newest-wins: each by when its file was saved here until a
