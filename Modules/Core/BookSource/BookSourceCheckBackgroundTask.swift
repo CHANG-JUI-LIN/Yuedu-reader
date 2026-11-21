@@ -24,6 +24,8 @@ final class BookSourceCheckBackgroundTask {
 
     private var assertion: UIBackgroundTaskIdentifier = .invalid
     private var onExpire: (@MainActor () -> Void)?
+    /// Observes the app leaving the foreground while a run is in progress.
+    private var backgroundObserver: NSObjectProtocol?
     private var total = 0
     private var finished = 0
     /// The continued-processing request submitted for the run in progress.
@@ -36,12 +38,26 @@ final class BookSourceCheckBackgroundTask {
 
     private init() {}
 
-    /// - Parameter onExpire: ends the run; called when iOS is about to stop the app running.
-    func runStarted(total: Int, onExpire: @escaping @MainActor () -> Void) {
+    /// - Parameters:
+    ///   - onBackground: called each time the app leaves the foreground during the run; the
+    ///     checker writes what it has found, since from here the app can be killed unannounced.
+    ///   - onExpire: ends the run; called when iOS is about to stop the app running.
+    func runStarted(
+        total: Int,
+        onBackground: @escaping @MainActor () -> Void,
+        onExpire: @escaping @MainActor () -> Void
+    ) {
         runEnded()
         self.total = total
         finished = 0
         self.onExpire = onExpire
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { onBackground() }
+        }
         assertion = UIApplication.shared.beginBackgroundTask(withName: "Source Check") { [weak self] in
             self?.assertionExpired()
         }
@@ -64,6 +80,10 @@ final class BookSourceCheckBackgroundTask {
     /// The run finished or was stopped. Safe to call more than once.
     func runEnded() {
         onExpire = nil
+        if let observer = backgroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+            backgroundObserver = nil
+        }
         if assertion != .invalid {
             UIApplication.shared.endBackgroundTask(assertion)
             assertion = .invalid

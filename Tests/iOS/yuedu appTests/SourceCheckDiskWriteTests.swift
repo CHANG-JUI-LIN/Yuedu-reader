@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -132,6 +133,47 @@ struct SourceCheckDiskWriteTests {
         #expect(!landed.enabled)
         // The measured time of a passing source, not the 180,000 ms default.
         #expect((300..<180_000).contains(landed.respondTime))
+    }
+
+    /// Crashlytics 2e3bd5ea (3.0.2 (156)): a 3,026-source check ran for over half an hour in
+    /// the background and rewrote the 25 MB library 72 times — 1.8 GB, past MetricKit's 1 GB a
+    /// day — because finished sources were flushed to the store every 30 s. Results now stay
+    /// in memory until the run ends, is stopped, or the app leaves the foreground, so however
+    /// long a run takes, it costs one library write.
+    @Test("a run that takes an hour still writes the library once")
+    func aLongRunWritesTheLibraryOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SourceCheckDiskWrite-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sources = (0..<72).map { index in
+            var source = BookSource(
+                bookSourceUrl: "https://long-run-\(index).yuedu.test", bookSourceName: "來源 \(index)"
+            )
+            source.searchUrl = source.bookSourceUrl + "/search?q={{key}}"
+            return source
+        }
+        let store = BookSourceStore(directory: directory)
+        store.replaceSourcesFromSync(sources)
+        store.waitForQueuedWrites()
+
+        // Every reading of the clock is 50 s after the last: 72 sources take an hour.
+        let clock = SteppingClock(step: 50)
+        let checker = BookSourceHealthChecker(
+            fetcher: EndOfRunFetcher(slowURL: "", brokenURL: ""),
+            store: store,
+            cpuClock: BookSourceCheckCPUClock { clock.next() },
+            pacingCondition: BookSourceCheckPacingCondition { false }
+        )
+        checker.policy.checkDiscovery = false
+        checker.prepare(sources: store.sources)
+
+        let revisionBefore = store.mutationRevision
+        await checker.runAll()
+
+        #expect(checker.finishedCount == sources.count)
+        #expect(store.mutationRevision - revisionBefore == 1)
+        store.waitForQueuedWrites()
+        #expect(store.sources.allSatisfy { $0.respondTime < 180_000 })
     }
 
     // MARK: - URL cache
@@ -531,4 +573,20 @@ private final class DiskWriteStubURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+/// A wall clock that moves `step` seconds every time it is read, with the CPU flat.
+private final class SteppingClock: Sendable {
+    private let step: TimeInterval
+    private let state = OSAllocatedUnfairLock(initialState: 0.0)
+
+    init(step: TimeInterval) { self.step = step }
+
+    func next() -> BookSourceCheckPacing.Sample {
+        let wall = state.withLock { now -> TimeInterval in
+            now += step
+            return now
+        }
+        return BookSourceCheckPacing.Sample(wall: wall, cpu: 0)
+    }
 }

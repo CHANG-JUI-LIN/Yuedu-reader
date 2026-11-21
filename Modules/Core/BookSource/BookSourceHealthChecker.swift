@@ -510,18 +510,22 @@ final class BookSourceHealthChecker: ObservableObject {
     @TaskLocal private static var checkRun: Int = 0
     /// The task-group run of the current `runAll`, cancelled by `cancel()`.
     private var runTask: Task<Void, Never>?
-    /// Measured response times awaiting a single batched write — `applyPolicy` at the end of a
-    /// run, `flushRespondTimes` when it is cancelled.
+    /// Measured response times awaiting a single batched write. Every write rewrites the whole
+    /// source library, so they land only at the run's edges, never on a timer:
+    /// - `applyPolicy` when the run finishes;
+    /// - `flushRespondTimes` when it is stopped — 停止, or iOS ending its background time
+    ///   (`BookSourceCheckBackgroundTask` calls `cancel(reason: .backgroundTimeExpired)`);
+    /// - `flushRespondTimes` when the app leaves the foreground mid-run, the last moment the
+    ///   app is sure to run code before it may be killed without notice.
+    /// A 30 s periodic flush (58ab9cb2, so a killed run kept its results) rewrote a 25 MB,
+    /// 3,026-source library 72 times in one background run — 1.8 GB, past MetricKit's 1 GB a
+    /// day (Crashlytics 2e3bd5ea). What that gives up: a crash in the foreground, or the
+    /// system killing the app while continued processing carries the run in the background,
+    /// loses the results found since the last of those writes.
     private var pendingRespondTimes: [UUID: Int64] = [:]
     /// The groups and comment of finished sources (`BookSourceCheckMarks`), written with the
     /// respond times.
     private var pendingMarks: [UUID: BookSourceCheckMarks] = [:]
-    /// When finished sources were last written mid-run. Legado saves each source as it
-    /// finishes; here one save rewrites the whole library, so finished sources land together
-    /// at most this often, and a run that ends early — 停止, the app killed in the background —
-    /// keeps what it had found.
-    private var lastResultsFlush: TimeInterval = 0
-    static let resultsFlushInterval: TimeInterval = 30
     private let fetcher: any BookSourceHealthCheckFetching
     /// Where measured response times and the post-run 停用／刪除 policy land.
     private let store: BookSourceStore
@@ -584,7 +588,6 @@ final class BookSourceHealthChecker: ObservableObject {
         stopReason = nil
         lastSummary = nil
         runGeneration += 1
-        lastResultsFlush = 0
         // Results of a run that ended are written by then; nothing of one may reach this run.
         pendingRespondTimes.removeAll(keepingCapacity: true)
         pendingMarks.removeAll(keepingCapacity: true)
@@ -608,7 +611,10 @@ final class BookSourceHealthChecker: ObservableObject {
         stopReason = nil
         lastSummary = nil
         let generation = runGeneration
-        background?.runStarted(total: items.count) { [weak self] in
+        background?.runStarted(total: items.count, onBackground: { [weak self] in
+            // Leaving the foreground: land what was found so far, once.
+            self?.flushRespondTimes()
+        }) { [weak self] in
             // iOS is about to suspend the app: end the run as 停止 does, keeping what it found.
             // A source still in flight would otherwise be frozen mid-check and, on return,
             // fail its timeout — a 校验超时 written onto a source that was never slow.
@@ -863,7 +869,7 @@ final class BookSourceHealthChecker: ObservableObject {
         // on success, configured timeout + elapsed time on failure.
         // Accumulated, not persisted here: writing per source re-encoded the whole
         // source library to disk once per finished source (see `setRespondTimes`).
-        // Flushed when the run ends or is cancelled.
+        // Written at the run's edges (`pendingRespondTimes`).
         pendingRespondTimes[items[index].source.id] = items[index].overallPass
             ? elapsed
             : Int64(policy.timeoutSeconds) * 1000 + elapsed
@@ -880,17 +886,11 @@ final class BookSourceHealthChecker: ObservableObject {
             }
         }
         background?.progress(finished: finishedCount)
-        let now = ProcessInfo.processInfo.systemUptime
-        if lastResultsFlush == 0 { lastResultsFlush = now }
-        if now - lastResultsFlush >= Self.resultsFlushInterval {
-            flushRespondTimes()
-        }
         requestItemsPublication()
     }
 
     /// Writes the finished sources' respond times and marks. Named for its first job.
     func flushRespondTimes() {
-        lastResultsFlush = ProcessInfo.processInfo.systemUptime
         guard !pendingRespondTimes.isEmpty || !pendingMarks.isEmpty else { return }
         store.recordCheckResults(respondTimes: pendingRespondTimes, marks: pendingMarks)
         pendingRespondTimes.removeAll(keepingCapacity: true)
