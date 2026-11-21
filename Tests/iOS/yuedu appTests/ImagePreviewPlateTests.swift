@@ -32,6 +32,35 @@ struct ImagePreviewPlateTests {
         #expect(CoreTextImagePreviewController.plate(for: Self.ink(opaque: false), pageColor: nil) == nil)
     }
 
+    @Test("The plate is the picture's own rectangle: the surround stays black")
+    func thePlateStopsAtThePicture() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        // Twice as wide as tall, nothing drawn: all of it is the plate.
+        let wide = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 40), format: format).image { _ in }
+        let preview = CoreTextImagePreviewController(
+            attachment: .init(rect: CGRect(x: 0, y: 0, width: 80, height: 40), image: wide, opacity: 1),
+            pageColor: Self.paper)
+        preview.view.frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        preview.view.layoutIfNeeded()
+        let shot = UIGraphicsImageRendererFormat()
+        shot.scale = 1
+        let drawn = UIGraphicsImageRenderer(size: preview.view.bounds.size, format: shot).image { context in
+            preview.view.layer.render(in: context.cgContext)
+        }
+        let bitmap = try #require(drawn.cgImage)
+        let data = try #require(bitmap.dataProvider?.data as Data?)
+        func pixel(x: Int, y: Int) -> [UInt8] {
+            let offset = y * bitmap.bytesPerRow + x * 4
+            return [data[offset], data[offset + 1], data[offset + 2]]
+        }
+        // The picture is 200×100, centred: page colour inside it, black above and below.
+        #expect(pixel(x: 100, y: 100).allSatisfy { $0 > 200 })
+        #expect(pixel(x: 100, y: 20).allSatisfy { $0 < 20 }, "\(pixel(x: 100, y: 20))")
+        #expect(pixel(x: 100, y: 180).allSatisfy { $0 < 20 }, "\(pixel(x: 100, y: 180))")
+    }
+
     @Test("The empty part of a transparent picture shows the page's colour, not black")
     func transparentPictureIsDrawnOnThePage() throws {
         let preview = CoreTextImagePreviewController(

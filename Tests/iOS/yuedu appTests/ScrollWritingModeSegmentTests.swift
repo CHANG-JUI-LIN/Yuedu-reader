@@ -81,6 +81,45 @@ struct ScrollWritingModeSegmentTests {
         #expect(engine.chapterRanges[3] == nil)
     }
 
+    @Test("a vertical book's picture-only cover and title page are in the text's segment")
+    func pictureOnlyOpeningIsInTheTextsSegment() async throws {
+        // ナミヤ雑貨店の奇蹟's shape: two documents with no text and no declared mode, vertical text,
+        // then a horizontal document with text. Scroll mode scrolled down through the first two and
+        // cut to scrolling sideways at the third.
+        let url = try await BookWritingModesTests.epub(
+            language: "ja", progression: "rtl", css: ".vrtl { writing-mode: vertical-rl; }",
+            chapters: [#"<div><svg viewBox="0 0 100 140" width="100%" height="100%"></svg></div>"#, "<div> </div>",
+                       "<p>あばらやに行こう、といいだしたのは翔太だった。</p>", "<p>Colophon in a horizontal document</p>"],
+            bodyClasses: [2: "vrtl"])
+        let session = try await PublicationSession.open(sourceURL: url)
+        let renderer = EPUBPageRenderer()
+        let modes = await renderer.resolveWritingModes(for: session)
+        #expect(modes.direction.principalMode == .verticalRTL)
+        renderer.load(publicationSession: session, bookIdentifier: UUID().uuidString,
+                      renderSize: try Self.bounds.size,
+                      settings: EPUBTestFixtures.renderSettings(writingMode: modes.direction.principalMode))
+        for await ready in renderer.$isCoreTextReady.values where ready { break }
+        let engine = try #require(renderer.scrollEngine)
+
+        #expect(await renderer.enterScrollSegment(containing: 0) == .entered)
+        #expect(renderer.scrollSegmentMode == .verticalRTL, "the cover scrolls the way the book reads")
+        let extents = try Self.extents(.horizontalRTL)
+        await engine.start(initialChapter: 0, contentWidth: extents.content, viewportExtent: extents.viewport)
+        #expect(engine.isReady)
+        // The way the scroll view asks for the next chapter. The load starts once this task yields.
+        for spine in 0...2 {
+            engine.ensureChapterAhead(of: spine)
+            await Task.yield()
+            await engine.waitForViewportIdle()
+        }
+        #expect(engine.chapterRanges[2]?.isEmpty == false, "the first page of text is in the cover's segment")
+        #expect(engine.segmentBoundary(after: 0) == nil && engine.segmentBoundary(after: 1) == nil)
+        #expect(engine.segmentBoundary(after: 2) == 3, "only the horizontal document with text is another segment's")
+        #expect(engine.chunks.allSatisfy { $0.writingMode == .verticalRTL })
+        // Reaching the text enters no new segment: the axis does not turn.
+        #expect(await renderer.enterScrollSegment(containing: 2) == .unchanged)
+    }
+
     @Test("entering the TOC's segment lays it out horizontally and viewport-driven, bounded by spine 2")
     func enteringTheTOCSegment() async throws {
         let (renderer, engine) = try await Self.reader()
