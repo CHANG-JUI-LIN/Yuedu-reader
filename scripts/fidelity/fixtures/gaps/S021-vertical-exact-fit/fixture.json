@@ -1,0 +1,6 @@
+{
+ "title": "S021 剛好排滿的欄",
+ "language": "ja",
+ "vertical": true,
+ "reproduces": "kusamakura: columns of 28em at 14pt. WebKit sets 28 characters in some and 27 in others where the engine set 28; each paragraph isolates one candidate cause (plain text, punctuation, a ruby as wide as its base, narrower, wider, the book's own sentence with and without its ruby)."
+}

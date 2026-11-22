@@ -1,0 +1,11 @@
+html {
+  -epub-writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; writing-mode: vertical-rl;
+  font-family: "HiraMinProN-W3", serif;
+  font-size: 14pt;
+  margin: auto 1em;
+  padding: 1em 0;
+  max-height: 28em;
+}
+body { margin: 0; }
+p { margin: 0 0 0 1em; line-height: 1.75; text-align: justify; }
+rt { font-size: 50%; }

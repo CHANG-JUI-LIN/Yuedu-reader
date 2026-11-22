@@ -36,6 +36,7 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 代表章節：kusamakura:3、kusamakura:8
 - 假設的根因：`html { background-color: #fff4e7 }`。CSS 規定根元素的背景畫在整個 canvas 上；整頁背景目前看起來只從 `body` 取
 - 完成的樣子：這 13 章的 paint:other 降到 3 以下
+- 狀態：2026-11-22 完成（套件 0.29.0）：`html` 的背景是整頁背景，`body` 的只在 `html` 沒有時才取代它。測試書 85.9 → 98.8。草枕內文在 scorer 2 下 98–99（視覺分只剩不到 0.1% 的格子在比，不再有權重）
 
 ### S004 — 根元素 `html` 自己的盒子沒有生效（margin、padding、max-height／max-width）
 - 測試書：[`s004-root-box-vertical`](../../../scripts/fidelity/fixtures/gaps/S004-root-box-vertical/)（`gaps-2026-10-25`：61.0，欄長沒有被 `max-height: 28em` 限制、也沒有上下置中；line-break 13.8、inline-start 11.5）

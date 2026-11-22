@@ -1,0 +1,26 @@
+html {
+  writing-mode: vertical-rl;
+  -webkit-writing-mode: vertical-rl;
+  -epub-writing-mode: vertical-rl;
+}
+body { margin: 0; }
+p { margin: 0; line-height: 1.75; }
+h2 { font-size: 1em; margin: 0 1em 0 0.5em; }
+.box { background: #dde; margin: 0 1em; }
+.minw { min-width: 10em; }
+.maxh { max-height: 12em; }
+.h50 { height: 50%; }
+.h10 { height: 10em; }
+.w6 { width: 6em; }
+.pad { padding: 1em 0.5em; border: 1px solid #99a; }
+.fl { float: left; margin-bottom: 1em; }
+.fr { float: right; margin-top: 1em; }
+img.half { height: 50%; }
+img.third { height: 33%; }
+.flbox { float: left; height: 6em; background: #edd; margin-bottom: 0.5em; }
+.clear { clear: both; }
+.ib { display: inline-block; background: #eed; }
+.ib4 { display: inline-block; height: 4em; background: #eed; }
+.ib4 img { height: 100%; }
+.ibw { display: inline-block; width: 3em; height: 5em; background: #dee; }
+.end { text-align: right; }

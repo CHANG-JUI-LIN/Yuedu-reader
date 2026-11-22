@@ -1,0 +1,6 @@
+{
+ "title": "S020 直排裡的盒子",
+ "language": "zh-Hant",
+ "vertical": true,
+ "reproduces": "PLAN 1-6e (kusamakura's cover): boxes in vertical-rl that sent the chapter to Legacy. Chapter 1: sizes on the block and inline axes (min-width, max-height, height, percentages). Chapter 2: floats (float: left is the column's top, right its bottom), a picture sized by a percentage height, text flowing beside it. Chapter 3: inline-blocks, of text and around a picture sized to the box."
+}

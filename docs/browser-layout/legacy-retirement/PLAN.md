@@ -99,7 +99,7 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | 1-6b | `calc()`：長度與百分比的加減，用在 `width`、`max-width`、左右 margin／padding、`left`／`right` | **完成**：套件 0.26.0。語料裡唯一用到的一章（全能遊戲設計師第 56 章）67.3 → 93.8，改走新引擎（run `calc-after` 對 `calc-before`）。乘除、巢狀函式、`min()`／`max()`／`clamp()`、其他屬性、直排仍回退 |
 | 1-6c | 沒有 `controls` 的 `audio` 不顯示東西、不再回退（html.css 的規則；舊引擎也是不顯示） | **完成**：套件 0.27.2。劍來 SONG 章 75.1（舊引擎）→ 99.5（run `audio-after` 對 `audio-before`）。有 `controls` 的 `audio`、MathML、`iframe` 仍回退，語料裡沒有 |
 | 1-6d | `html` 元素自己的盒子（GAPS S004）：margin（含 auto）、border、padding、`width`／`max-width`／`min-width`，直排時對應到欄長（`max-height`）。不新增盒子：在文件層算一次，`body` 排在剩下的寬度裡，周圍的留白併進 `body` 的 margin | **完成**：套件 0.28.0。草枕走新引擎的 14 章 67–70 → 81–84（達到 S004 訂的 ≥ 80），整本 66.3 → 79.7；測試書 S004 61.0 → 82.6（排版 62.9 → 99.5）；全語料 567 章只有草枕變動（run `root-corpus-after` 對 `release-0271`）。`html` 的邊框只佔位置不畫，`height`／`min-height` 不處理 |
-| 1-6e | 草枕封面（語料裡最後一個准入回退）：直排裡的浮動圖、`inline-block`、百分比高度、`min-width`、`max-height` | 未開始。四項都要各自做直排測試書對照 WebKit 再放行；實驗性全部放行時 61.4（舊引擎 41.8），未驗證、已改回 |
+| 1-6e | 草枕封面（語料裡最後一個准入回退）：直排裡的浮動、`inline-block`、`min-width`／`min-height`；`html` 的背景成為整頁背景（GAPS S003）；直排不套字型 kerning、倍數行高照 WebKit 以 1/64 像素計算、和本文等寬的注音多佔一小截（草枕內文每十欄有一欄比 WebKit 多排一個字的原因）；App 端：`@font-face` 的 `unicode-range` 不含空白的字型不當主要字型 | **完成**：套件 0.29.0、App `16b383f7`。量測工具同日改版成 scorer 2（直排文字框原本偏離筆畫約 7 點，見 `reports/scorer2-baseline-2026-11-22.md`），以下都是 scorer 2：草枕 80.5 → 97.5（封面 41.8 舊引擎 → 90.0 新引擎，內文 14 章 98–99）；其餘各書平均變動在 ±0.2 內，有 5 章單章視覺分下降超過 1（排版分不變）（run `s2-after` 對 `s2-baseline-0280`）。測試書：S020（直排盒子三章 98.9／74.9／96.6，scorer 1；74.9 那章是浮動圖，捲動模式把圖限制在一個螢幕寬內是刻意和 WebKit 不同）、S021（剛好排滿的 28em 欄，26 欄全部和 WebKit 一致）。仍回退：直排裡的 `max-width`、依容器的寬度、表格、多項目 flex |
 | 1-7 | 排版失敗與逾時不再回退：修掉原因，或顯示錯誤頁 | 未開始 |
 | 1-8 | 元素自己的背景圖。讀程式看起來新引擎不畫非根元素的 `background-image`，還沒用測試書確認 | 未開始 |
 
@@ -113,7 +113,7 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | `position: absolute` | 9 | 全能遊戲設計師 |
 | 其他 | 3 | `calc()` 1、`audio` 1、直排 `min-width` 1 |
 
-**全書普查（2026-11-22，套件 0.27.1，每章用自己的書寫方向）：** 12,984 章只剩 2 章准入回退：草枕封面（直排，見 1-6e）與劍來 SONG 章（`audio`，0.27.2 已處理）。保真度報告裡 ナミヤ 第 11、12 章（版權頁）的回退不是真的：凍結的量測工具把每一章都用書的方向排（`RenderFidelityOracleTests` 以 `session.epubWritingMode` 決定），App 用每章自己的方向；用 App 的開書流程（捲動模式）驗證過，這兩章是橫排、走新引擎、沒有舊引擎區塊。分頁模式沒有另外驗證。
+**全書普查（2026-11-22，套件 0.27.1，每章用自己的書寫方向）：** 12,984 章只剩 2 章准入回退：草枕封面（直排，0.29.0 已處理）與劍來 SONG 章（`audio`，0.27.2 已處理）。0.29.0 之後沒有重跑普查。保真度報告裡 ナミヤ 第 11、12 章（版權頁）的回退不是真的：凍結的量測工具把每一章都用書的方向排（`RenderFidelityOracleTests` 以 `session.epubWritingMode` 決定），App 用每章自己的方向；用 App 的開書流程（捲動模式）驗證過，這兩章是橫排、走新引擎、沒有舊引擎區塊。分頁模式沒有另外驗證。
 
 普查不經過 App：App 對「沒有宣告書寫方向的章節」用書的方向，普查用橫排；排版失敗、逾時、整章翻譯造成的回退普查也看不到。普查工具是一支暫時放進套件測試的程式（`CorpusCensusTests`），沒有進版本庫。
 
@@ -155,3 +155,4 @@ EPUB 啟動時不再建立舊引擎；`BrowserLayoutPageEngine` 自己持有版�
 | 2026-11-22 | 套件 0.27.1：表格列跨頁時後面儲存格的字掉到頁外（0.22.0 起就有；量測是連續版面所以沒抓到）。表格列和多項目 flex 列一樣：放得下一頁就整列移到下一頁，超過一頁就由上往下交錯分頁 | 套件測試、`release-0271` |
 | 2026-11-22 | 1-6c 沒有 controls 的 audio：套件 0.27.2 | `audio-after` |
 | 2026-11-22 | 1-6d `html` 元素的盒子（S004）：套件 0.28.0。第一版把 `html` 的樣式整份放在排版路徑的結構裡，基礎堆疊用量 +26 KB，改成放陣列後回到原值 | `root-kusa-after`、`root-gaps-after`、`root-corpus-after` |
+| 2026-11-22 | 1-6e 草枕封面與直排斷行：套件 0.29.0；量測工具 scorer 2。低於 80 的書只剩 Mahabharata（78.8） | `s2-baseline-0280`、`s2-after` |
