@@ -46,14 +46,14 @@ struct VideoHeroActionRow<Icons: View>: View {
                     Text(action.title)
                         .font(DSFont.footnote.weight(.semibold))
                     if let detail = action.detail {
-                        // The episode's name asks for no width of its own: it takes what the
-                        // row gives the button and truncates. Counted in, a long name made
-                        // the row too wide to fit and the stacked layout was chosen at the
-                        // default text size (回饋中心 #237).
+                        // The episode's name asks for no width of its own: it is as wide as its
+                        // words where the row has room, and truncates where it does not.
+                        // Counted in, a long name made the row too wide to fit and the stacked
+                        // layout was chosen at the default text size (回饋中心 #237).
                         Text(detail)
                             .font(DSFont.caption2)
                             .foregroundStyle(.secondary)
-                            .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+                            .frame(minWidth: 0, idealWidth: 0, alignment: .leading)
                     }
                 }
                 .lineLimit(1)
