@@ -52,14 +52,27 @@ struct RenderFidelityOracleTests {
                 try writeIndex(complete: false)
                 continue
             }
-            let vertical = session.epubWritingMode == .verticalRL
-            var web: FidelityWebReference?
+            // Each document in the mode the scroll host shows it in (`BookWritingModes`): its
+            // own, or the book's for a page with nothing to read on it. Until scorer 3 every
+            // document was captured in the book's mode, so a horizontal colophon in a vertical
+            // book was laid out vertically here, refused by the Browser engine for it, and
+            // reported as a Legacy fallback the reader never makes.
+            let modes = await EPUBPageRenderer().resolveWritingModes(for: session)
+            var references: [Bool: FidelityWebReference] = [:]
             for chapter in FidelityPlan.sample(count: session.chapters.count, book: book, sets: plan.sets) {
+                let vertical = await modes.scrollWritingMode(forSpine: chapter.spine).isVertical
+                var web = references[vertical]
                 let href = session.chapters[chapter.spine].href
                 var entry: [String: Any] = ["book": book.id, "spine": chapter.spine, "set": chapter.set, "href": href]
                 let refDirectory = refRoot.appendingPathComponent(book.id).appendingPathComponent("\(chapter.spine)")
                 let runDirectory = runRoot.appendingPathComponent(book.id).appendingPathComponent("\(chapter.spine)")
                 print("FIDELITY-START book=\(book.id) spine=\(chapter.spine)")
+                // A reference captured in the other mode's viewport is not this chapter's.
+                if plan.sides.contains("webkit"),
+                   !FidelityWebReference.isCached(in: refDirectory, for: FidelityProfile.viewport(vertical: vertical)),
+                   FileManager.default.fileExists(atPath: refDirectory.path) {
+                    try FileManager.default.removeItem(at: refDirectory)
+                }
                 if plan.sides.contains("webkit"),
                    !FileManager.default.fileExists(atPath: refDirectory.appendingPathComponent("dump.json").path) {
                     do {
@@ -84,6 +97,7 @@ struct RenderFidelityOracleTests {
                         web = nil
                     }
                 }
+                references[vertical] = web
                 if plan.sides.contains("engine") {
                     do {
                         let start = Date()
@@ -103,7 +117,7 @@ struct RenderFidelityOracleTests {
                 index.append(entry)
                 try writeIndex(complete: false)
             }
-            web?.discard()
+            references.values.forEach { $0.discard() }
         }
 
         try writeIndex(complete: true)
@@ -1019,6 +1033,17 @@ private final class FidelityWebReference: NSObject, WKNavigationDelegate {
     /// Fails whichever request is waiting on the web view, if any.
     private var failInFlight: (@MainActor (Error) -> Void)?
     private var navigationFinished: (@MainActor (Result<Bool, Error>) -> Void)?
+
+    /// Whether `directory` holds a reference of its chapter captured in `viewport`: the
+    /// cache is keyed by book and spine, and a chapter's viewport follows the mode it is
+    /// shown in.
+    static func isCached(in directory: URL, for viewport: CGSize) -> Bool {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("dump.json")),
+              let dump = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let width = dump["viewportWidth"] as? Double, let height = dump["viewportHeight"] as? Double
+        else { return false }
+        return abs(width - Double(viewport.width)) < 1 && abs(height - Double(viewport.height)) < 1
+    }
 
     init(viewport: CGSize) {
         self.viewport = viewport

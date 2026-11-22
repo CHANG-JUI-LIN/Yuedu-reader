@@ -32,7 +32,7 @@ DEFAULT_OUT = Path.home() / "Library" / "Caches" / "YueduFidelity"
 
 # Scoring constants. Changing any of them changes what a score means: bump
 # SCORER_VERSION and re-record the baseline (ORACLE.md, "Changing the oracle").
-SCORER_VERSION = 2
+SCORER_VERSION = 3
 PASS_SCORE = 80.0
 ALERT_SCORE = 60.0
 ITEM_WEIGHTS = {"lines": 0.30, "horizontal": 0.25, "vertical": 0.25, "typography": 0.20}
@@ -968,10 +968,11 @@ def load_side(directory, vertical=None):
 def load_pair(reference_directory, engine_directory):
     """Both captures of one chapter, ready to compare.
 
-    A reader sets a whole book in the book's writing mode; a page of that book
-    with nothing to read on it (a cover) has no direction to get wrong, and the
-    reference reports it in the default one. Its pictures are then compared
-    where they are on the page, in the reference's frame."""
+    A reader's scroll surface sets a page with nothing to read on it (a cover)
+    in the book's writing mode, as it has no direction of its own to get wrong,
+    and the reference reports it in the default one. Its pictures are then
+    compared where they are on the page, in the reference's frame. (A document
+    with text is captured in its own mode since scorer 3.)"""
     reference, engine = load_side(reference_directory), load_side(engine_directory)
     if engine.vertical != reference.vertical and not reference.characters:
         engine = load_side(engine_directory, vertical=reference.vertical)
