@@ -532,6 +532,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// The one owner of "may the page stack be rewritten right now?", shared by
         /// every page-turn style. See `ReaderStackWriteGate`.
         private var stackWriteGate = ReaderStackWriteGate()
+        /// The chapters UIKit may be holding a 載入中 neighbour for. See
+        /// `ReaderPlaceholderNeighbours`.
+        private var placeholderNeighbours = ReaderPlaceholderNeighbours()
         /// Snapshot of the page count used by UIKit's cached double-sided neighbours.
         /// Hold a shrinking count until the next stack write so an in-flight curl
         /// never loses a controller that UIKit already requested.
@@ -955,6 +958,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let stackWriteTrace = pageTurnTrace.beginStackWrite(targetVC)
             defer { pageTurnTrace.endStep(stackWriteTrace) }
             applyPlaybackHighlight(to: targetVC)
+            // UIKit drops the neighbours it holds and asks again for the new stack.
+            placeholderNeighbours.neighboursReplaced()
             pageViewController.setViewControllers(
                 viewControllerStack(startingWith: targetVC),
                 direction: direction,
@@ -1585,12 +1590,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ///
         /// A placeholder must never take that shortcut: `committedReadingPosition` refuses to
         /// guess a position for one, which is exactly the stuck-載入中 case this path exists
-        /// to resolve.
+        /// to resolve. That holds for one UIKit holds off screen as well as one on screen: a
+        /// 載入中 page the data source vended for this chapter is shown by the next turn
+        /// unless the stack is re-placed now (`ReaderPlaceholderNeighbours`).
         private func handleChapterReady(
             _ spineIndex: Int?,
             on pageViewController: UIPageViewController
         ) {
+            let replacesHeldPlaceholder = spineIndex.map {
+                placeholderNeighbours.layoutLanded(forChapter: $0)
+            } ?? false
             if let spineIndex,
+               !replacesHeldPlaceholder,
                pendingNavigation == nil,
                externalTargetPosition == nil,
                let visible = readingPage(of: pageViewController),
@@ -2213,6 +2224,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             pageTurnTrace.endNeighbour(neighbourTrace, neighbour)
             if neighbour == nil { recordCurlBoundary(asked: "before", from: viewController, on: pvc) }
+            recordVendedPlaceholders(neighbour)
             return neighbour
         }
 
@@ -2226,7 +2238,29 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             pageTurnTrace.endNeighbour(neighbourTrace, neighbour)
             if neighbour == nil { recordCurlBoundary(asked: "after", from: viewController, on: pvc) }
+            recordVendedPlaceholders(neighbour)
             return neighbour
+        }
+
+        /// Notes which chapters a page UIKit now holds shows 載入中 for: one the data source
+        /// vended, or the one a turn left. This is what UIKit holds, not navigation intent
+        /// (`neighbourViewController` stays free of that):
+        /// the chapter's layout landing has to re-place the stack, or the next turn shows
+        /// the stale page.
+        private func recordVendedPlaceholders(_ neighbour: UIViewController?) {
+            guard let neighbour else { return }
+            let chapters = placeholderChapters(in: neighbour)
+            guard !chapters.isEmpty else { return }
+            placeholderNeighbours.vended(placeholderFor: chapters)
+        }
+
+        private func placeholderChapters(in viewController: UIViewController) -> [Int] {
+            if let spread = viewController as? ReaderSpreadPageViewController {
+                return spread.pageViewControllers.flatMap { placeholderChapters(in: $0) }
+            }
+            guard let placeholder = viewController as? PlaceholderPageViewController else { return [] }
+            return [placeholder.coreTextReadingPosition?.spineIndex
+                ?? currentEngine.localPosition(for: placeholder.globalPageIndex).spineIndex]
         }
 
         /// Crashlytics c5efe011 / 658b2c27, "The number of view controllers provided (0) doesn't
@@ -2486,11 +2520,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             transitionCompleted completed: Bool
         ) {
             SourcePerfTrace.span("reader.page.didFinish", "completed=\(completed)", thresholdMs: 50) {
-                nativeTurnDidFinish(pvc, completed: completed)
+                nativeTurnDidFinish(pvc, completed: completed, previous: previousViewControllers)
             }
         }
 
-        private func nativeTurnDidFinish(_ pvc: UIPageViewController, completed: Bool) {
+        private func nativeTurnDidFinish(
+            _ pvc: UIPageViewController,
+            completed: Bool,
+            previous: [UIViewController]
+        ) {
             pageTurnTrace.endNativeTurn(
                 completed: completed,
                 landed: (readingPage(of: pvc) as? any PageIndexProviding & UIViewController)?.globalPageIndex
@@ -2515,6 +2553,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 continueQueuedTransitionIfNeeded(on: pvc, showing: settledPage)
                 return
             }
+
+            // The turn landed. UIKit keeps the page it left as the neighbour on that side
+            // without asking again (2026-11-23 trace: after a forward turn only the page
+            // after was requested), and asks for the other side around the new page as the
+            // position settles below. So what it holds is the page it left plus what it is
+            // about to be vended: a 載入中 page the reader turned away from still owes a
+            // re-place when its chapter lands.
+            placeholderNeighbours.neighboursReplaced()
+            previous.forEach { recordVendedPlaceholders($0) }
 
             if pvc.viewControllers?.first is PageBackViewController {
                 if let resolvedPage = syncStablePosition(

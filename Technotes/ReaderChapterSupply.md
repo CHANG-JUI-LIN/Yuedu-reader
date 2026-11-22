@@ -31,6 +31,8 @@
 
 後兩者由 `schedulePreloadChapter` 這類射後不理的呼叫觸發時，沒有人在 await，通知就永久遺失——畫面上的佔位頁因此停在那裡。這正是舊 `startVisibleVCLog` 自愈輪詢偵測到的狀態（版面在、畫面是佔位頁）。那個輪詢已在一次 rebase 中從 `main` 消失，不要加回來。
 
+**宣告送到了，UIKit 手上的鄰頁也要換。** `UIPageViewController` 會留著資料源給過的鄰頁，下一次翻頁直接拿來用、不再問。`handleChapterReady` 對不在畫面上的章走捷徑、不寫頁堆疊，所以在那一章排好之前就被要走的 載入中 鄰頁會一直留著：翻過去落在它上面，之後再也沒有宣告，就停在載入中。2026-11-23 在模擬器上看到：翻進只有一頁的章時，UIKit 在落地當下就要下一頁，下一章 17 ms 後才排好。章節載入失敗頁永遠只有一頁，所以失敗章讓這更常見。只有排好的那一章沒讓後面各章的頁號移動時才會卡住（它是全書最後一章，或實際頁數剛好等於估計）：頁號一移動，`rebuildPageOffsets` 就宣告全書，頁堆疊本來就會重寫。`ReaderPlaceholderNeighbours` 記下給出去的 載入中 鄰頁是哪一章，那一章排好時不走捷徑、重寫頁堆疊，UIKit 就會重新要鄰頁；頁堆疊被寫入時記錄清空。翻頁完成時也清空，但剛離開的那一頁 UIKit 會留著當那一側的鄰頁、不再問，所以從 載入中 頁往回翻時那一章仍記著。
+
 ### 2　章節到貨是 per-chapter 的資料事件，不得走 refresh transaction
 
 `EPUBPageRenderer.beginRefreshTransaction` 是最新者勝：它取消前一筆的 preparation task，並呼叫 `engine.cancelPendingWork()`（generation++，砍掉所有 preload task）。
@@ -82,6 +84,7 @@
 - `Tests/iOS/yuedu appTests/ReaderChapterSupplyTests.swift` — 完整排版必須宣告；接手被作廢的排版必須重排而非回報假成功；內容真的沒有時不得重試成迴圈。
 - `Tests/iOS/yuedu appTests/ReaderViewModelChapterStateTests.swift` — 取消不得變成 `.failed`；`.cancelled` 再次請求時回到 `.loading`。
 - `Tests/iOS/yuedu appTests/ReaderChapterPresentationTests.swift` — `.cancelled` 畫載入中，不畫失敗。
+- `Tests/iOS/yuedu appTests/ReaderPlaceholderNeighboursTests.swift` — 給過 載入中 鄰頁的章，排好時要重寫一次頁堆疊；頁堆疊換過就不再欠。
 - `Tests/iOS/yuedu appTests/TTSAudioPayloadTests.swift` — 錯誤頁／JSON／截斷 body 一律拒收。
 
 ## 日誌判準（Release Console 可見，且**不需要打開詳細追蹤**）
