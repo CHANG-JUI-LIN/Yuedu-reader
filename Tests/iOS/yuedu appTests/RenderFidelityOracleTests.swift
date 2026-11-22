@@ -601,11 +601,19 @@ private enum FidelityEngineCapture {
 
     /// The content area of a run: baseline − ascent … baseline + descent on the
     /// block axis, advance on the inline axis. WebKit's text rects are the same box.
+    ///
+    /// Down a column the baseline is the central one: the reader centres upright glyphs on
+    /// it, and so does WebKit, whose box is the ascent and the descent each rounded up, half
+    /// either side of that line (草枕 at 14pt in Hiragino Mincho: 20 wide, where the two sum
+    /// to 18.67). Until scorer 2 this box ran from `baseline − descent`, as about an
+    /// alphabetic baseline: 7px to one side of the glyphs it stood for, so their ink was
+    /// scored as paint once the two sides' page backgrounds agreed.
     private static func fragment(start: Int, end: Int, inlineStart: CGFloat, advance: CGFloat, baseline: CGFloat,
                                  font: CTFont, color: UIColor, bold: Bool, italic: Bool, vertical: Bool) -> [String: Any] {
         let ascent = CTFontGetAscent(font), descent = CTFontGetDescent(font)
+        let across = ascent.rounded(.up) + descent.rounded(.up)
         let rect = vertical
-            ? CGRect(x: baseline - descent, y: inlineStart, width: ascent + descent, height: advance)
+            ? CGRect(x: baseline - across / 2, y: inlineStart, width: across, height: advance)
             : CGRect(x: inlineStart, y: baseline - ascent, width: advance, height: ascent + descent)
         return ["s": start, "e": end,
                 "x": FidelityOutput.number(rect.minX), "y": FidelityOutput.number(rect.minY),

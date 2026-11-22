@@ -32,7 +32,7 @@ DEFAULT_OUT = Path.home() / "Library" / "Caches" / "YueduFidelity"
 
 # Scoring constants. Changing any of them changes what a score means: bump
 # SCORER_VERSION and re-record the baseline (ORACLE.md, "Changing the oracle").
-SCORER_VERSION = 1
+SCORER_VERSION = 2
 PASS_SCORE = 80.0
 ALERT_SCORE = 60.0
 ITEM_WEIGHTS = {"lines": 0.30, "horizontal": 0.25, "vertical": 0.25, "typography": 0.20}
