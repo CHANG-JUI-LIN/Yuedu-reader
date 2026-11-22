@@ -83,18 +83,25 @@ enum NineSliceImageDrawing {
         // Top-down source columns/rows, y-up destination columns/rows.
         let sourceX: [CGFloat] = [0, source.left, sourceWidth - source.right, sourceWidth]
         let sourceY: [CGFloat] = [0, source.top, sourceHeight - source.bottom, sourceHeight]
-        let destinationX: [CGFloat] = [
-            rect.minX,
-            rect.minX + destination.left,
-            rect.maxX - destination.right,
-            rect.maxX,
-        ]
-        let destinationY: [CGFloat] = [
-            rect.maxY,
-            rect.maxY - destination.top,
-            rect.minY + destination.bottom,
-            rect.minY,
-        ]
+        // The inner grid lines sit on device pixels. Two slices that share a pixel are
+        // each antialiased into it, and two partial coverages of a translucent image
+        // composite to less than the image's own alpha — a thin line along the join
+        // (FB-238). A centre band thinner than a pixel collapses to nothing here and
+        // the slices either side of it meet on the pixel boundary instead.
+        let innerLeft = snappedToDevicePixel(
+            x: rect.minX + destination.left, in: rect, context: context
+        )
+        let innerRight = max(innerLeft, snappedToDevicePixel(
+            x: rect.maxX - destination.right, in: rect, context: context
+        ))
+        let innerBottom = snappedToDevicePixel(
+            y: rect.minY + destination.bottom, in: rect, context: context
+        )
+        let innerTop = max(innerBottom, snappedToDevicePixel(
+            y: rect.maxY - destination.top, in: rect, context: context
+        ))
+        let destinationX: [CGFloat] = [rect.minX, innerLeft, innerRight, rect.maxX]
+        let destinationY: [CGFloat] = [rect.maxY, innerTop, innerBottom, rect.minY]
 
         for row in 0..<3 {
             for column in 0..<3 {
@@ -118,5 +125,27 @@ enum NineSliceImageDrawing {
                 context.draw(piece, in: destinationRect)
             }
         }
+    }
+
+    /// `x` moved to the nearest device-pixel boundary of `context`, kept inside `rect`.
+    /// Goes through the context's own transform, so the caller's scale and any
+    /// translation it applied (a highlight's background-image offset) are accounted for.
+    private static func snappedToDevicePixel(
+        x: CGFloat, in rect: CGRect, context: CGContext
+    ) -> CGFloat {
+        let snapped = snappedToDevicePixel(CGPoint(x: x, y: rect.midY), context: context).x
+        return min(max(snapped, rect.minX), rect.maxX)
+    }
+
+    private static func snappedToDevicePixel(
+        y: CGFloat, in rect: CGRect, context: CGContext
+    ) -> CGFloat {
+        let snapped = snappedToDevicePixel(CGPoint(x: rect.midX, y: y), context: context).y
+        return min(max(snapped, rect.minY), rect.maxY)
+    }
+
+    private static func snappedToDevicePixel(_ point: CGPoint, context: CGContext) -> CGPoint {
+        let device = context.convertToDeviceSpace(point)
+        return context.convertToUserSpace(CGPoint(x: device.x.rounded(), y: device.y.rounded()))
     }
 }
