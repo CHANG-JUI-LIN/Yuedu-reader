@@ -152,7 +152,7 @@ struct CommentListStyleTests {
         arriving.commentBubble = bubble
         settings.applyReadingSettingsSync([
             ReadingSettingSyncRecord(item: "commentBubble", values: arriving, editedAt: Date(timeIntervalSince1970: 1_900_000_000)),
-        ])
+        ], in: .shared)
         #expect(settings.commentListStyle == CommentListStyle(avatarSize: 60, css: "glass: true;"),
                 "worn, its values bounded first")
         #expect(settings.commentListSheet.declarations(for: .card, isDark: false).glass == true)
@@ -161,7 +161,7 @@ struct CommentListStyleTests {
         arriving.commentBubble = bubble
         settings.applyReadingSettingsSync([
             ReadingSettingSyncRecord(item: "commentBubble", values: arriving, editedAt: Date(timeIntervalSince1970: 1_900_000_100)),
-        ])
+        ], in: .shared)
         #expect(settings.commentListStyle.css == "glass: true;", "a setup without one changes nothing")
     }
 }

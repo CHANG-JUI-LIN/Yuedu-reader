@@ -400,7 +400,7 @@ struct ReadingStyleTests {
         values.letterSpacing = 3
         settings.applyReadingSettingsSync([
             ReadingSettingSyncRecord(item: "letterSpacing", values: values, editedAt: Date()),
-        ])
+        ], in: .layout)
         #expect(stored == nil)
         #expect(settings.bookReadingOverride?.letterSpacing == nil)
         #expect(settings.themeReadingSettings(themeID: settings.readingSettingsThemeID)?.letterSpacing == 3)

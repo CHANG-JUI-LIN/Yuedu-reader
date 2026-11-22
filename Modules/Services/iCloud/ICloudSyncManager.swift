@@ -175,9 +175,45 @@ final class ICloudSyncManager: ObservableObject {
     /// The saved reading backgrounds, as one merged blob; their pictures are file records
     /// named `readerbg_<hash of the file name>`.
     nonisolated private static let readerBackgroundsRecordName = "reader_backgrounds_v2"
-    /// The reading setup, one item per 排版生效範圍 row as last set on any device.
-    nonisolated private static let readingSettingsRecordName = "reading_settings_v2"
-    nonisolated private static let readerBarLayoutRecordName = "reader_bar_layout_v2"
+    /// The reading setup, one item per 排版生效範圍 row as last set on a device: the rows
+    /// every device wears in one record, and the layout rows in one record per kind of
+    /// device, so an iPhone's layout reaches iPhones and an iPad's reaches iPads (FB-244).
+    ///
+    /// New names since 2026-11-22. Builds up to 3.0.2 (156) keep syncing every row through
+    /// `reading_settings_v2` and the header/footer layout through `reader_bar_layout_v2`,
+    /// and this build neither reads nor writes those: filtering the layout rows out of the
+    /// old record would have read as this device deleting them, and tombstoned them for
+    /// the builds still sharing it. What a device wore at the update is what it starts
+    /// with — its rows are kept in UserDefaults as they were, each with the `editedAt` it
+    /// had, and merge into the new records by that clock.
+    nonisolated static func readingSettingsRecordName(
+        _ partition: ReadingSettingSyncPartition, kind: ReadingLayoutDeviceKind
+    ) -> String {
+        switch partition {
+        case .shared: return "reading_settings_v3"
+        case .layout: return "reading_layout_\(kind.rawValue)_v1"
+        }
+    }
+    nonisolated static func readingSettingsShadowKey(
+        _ partition: ReadingSettingSyncPartition, kind: ReadingLayoutDeviceKind
+    ) -> String {
+        switch partition {
+        case .shared: return "icloud_readingSettings_v3"
+        case .layout: return "icloud_readingLayout_\(kind.rawValue)_v1"
+        }
+    }
+    /// The header/footer layout is 頁首頁尾's, a layout row: one record per kind of device.
+    nonisolated static func readerBarLayoutRecordName(kind: ReadingLayoutDeviceKind) -> String {
+        "reader_bar_layout_\(kind.rawValue)_v1"
+    }
+    nonisolated static func readerBarLayoutShadowKey(kind: ReadingLayoutDeviceKind) -> String {
+        "icloud_readerBarLayout_\(kind.rawValue)_v1"
+    }
+    /// Every record the reading setup's rows are in, for all kinds of device.
+    nonisolated private static var readingSettingsRecordNames: [String] {
+        [readingSettingsRecordName(.shared, kind: .phone)]
+            + ReadingLayoutDeviceKind.allCases.map { readingSettingsRecordName(.layout, kind: $0) }
+    }
     nonisolated private static let readerKeepsScreenAwakeRecordName = "reader_keeps_screen_awake_v2"
     nonisolated private static let booksRecordName = "books_meta_v2"
     /// Text readers' saved positions (`ReadingPositionSyncItem`), one item per book.
@@ -212,15 +248,18 @@ final class ICloudSyncManager: ObservableObject {
     /// the background joined the rest of the reading setup.
     nonisolated private static let mergedRecordNames = [
         bookSourcesRecordName, replaceRulesRecordName, bubbleStylesRecordName,
-        bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
-        readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName, readingPositionsRecordName,
+        bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName,
+        readerKeepsScreenAwakeRecordName, booksRecordName, readingPositionsRecordName,
         ruleModulesRecordName, ruleModulePreferencesRecordName, ruleModuleRepositoriesRecordName,
         homeConfigurationsRecordName, homeSelectionRecordName, metadataFillOrderRecordName, aggregationSettingsRecordName,
         homeOrderRecordName, homePhotosRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
         "reader_background_choice", readerOverlayLayoutRecordID,
-    ]
+        // The reading setup and the header/footer layout as builds up to 3.0.2 (156) sync
+        // them, every kind of device in one record.
+        "reading_settings_v2", "reader_bar_layout_v2",
+    ] + readingSettingsRecordNames + ReadingLayoutDeviceKind.allCases.map { readerBarLayoutRecordName(kind: $0) }
 
     // Local merge shadows (per-id updatedAt/hash/deleted) for the auto-merge sync, new with
     // the `_v2` records: the ones before them say what was in step with the old records.
@@ -230,10 +269,8 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles_v2"
     nonisolated private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection_v2"
     nonisolated private static let shadowCommentCardStyles = "icloud_commentCardStyles_v2"
-    nonisolated private static let shadowReaderBarLayout = "icloud_readerBarLayout_v2"
     nonisolated private static let shadowReaderKeepsScreenAwake = "icloud_readerKeepsScreenAwake_v2"
     nonisolated private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
-    nonisolated private static let shadowReadingSettings = "icloud_readingSettings_v2"
     nonisolated private static let shadowReadingPositions = "icloud_readingPositions_v1"
     nonisolated private static let shadowRuleModules = "icloud_ruleModules_v1"
     nonisolated private static let shadowRuleModulePreferences = "icloud_ruleModulePreferences_v1"
@@ -611,20 +648,37 @@ final class ICloudSyncManager: ObservableObject {
             //     there both survive. After 3b, so a background it names is in the list.
             //     Each item is the snapshot taken when the row was set: switching themes
             //     changes none of them, and only a new setting reads as a local edit.
-            let localReadingSettings = await onMain("sync.read.readingSettings") { GlobalSettings.shared.readingSettingSyncRecords }
-            let readingSettingsMerge = try await mergeType(
-                recordName: Self.readingSettingsRecordName,
-                shadowKey: Self.shadowReadingSettings,
-                local: localReadingSettings,
-                id: { $0.item },
-                hash: { Self.stableHash($0) },
-                fallbackUpdatedAt: { $0.editedAt },
-                applyLocally: { merged in
-                    await onMain("sync.apply.readingSettings", "count=\(merged.count)") { GlobalSettings.shared.applyReadingSettingsSync(merged) }
-                    return true
-                }
-            )
-            changedRemote = changedRemote || readingSettingsMerge.uploaded
+            //     Two records, merged the same way: the rows every device wears, and the
+            //     layout rows of this kind of device (FB-244).
+            let (localReadingSettings, layoutKind) = await onMain("sync.read.readingSettings") {
+                (GlobalSettings.shared.readingSettingSyncRecords, ReadingLayoutDeviceKind.current)
+            }
+            var mergedReadingSettings: [ReadingSettingSyncRecord] = []
+            for partition in ReadingSettingSyncPartition.allCases {
+                let merge = try await mergeType(
+                    recordName: Self.readingSettingsRecordName(partition, kind: layoutKind),
+                    shadowKey: Self.readingSettingsShadowKey(partition, kind: layoutKind),
+                    local: localReadingSettings.filter { partition.holds($0.item) },
+                    id: { $0.item },
+                    hash: { Self.stableHash($0) },
+                    fallbackUpdatedAt: { $0.editedAt },
+                    // A row this build cannot name counts as shared here (`holds`), so a
+                    // layout record holding one — a newer build's new layout row — would
+                    // be written back without it and the row sent to every kind of
+                    // device through the shared record.
+                    leavesAlone: partition == .layout
+                        ? { rows in rows.contains { ReadingSettingsScopeItem(rawValue: $0.item) == nil } }
+                        : nil,
+                    applyLocally: { merged in
+                        await onMain("sync.apply.readingSettings", "set=\(partition.rawValue) count=\(merged.count)") {
+                            GlobalSettings.shared.applyReadingSettingsSync(merged, in: partition)
+                        }
+                        return true
+                    }
+                )
+                changedRemote = changedRemote || merge.uploaded
+                mergedReadingSettings += merge.values
+            }
 
             try Task.checkCancellation()
             // 3d. The pictures the reading setup shows — 正則高亮's frames, 對話氣泡's skins,
@@ -643,7 +697,7 @@ final class ICloudSyncManager: ObservableObject {
             var stylePictureError: Error?
             do {
                 let stylePictures = Self.readerStylePictureSync(
-                    referencedBy: readingSettingsMerge.values,
+                    referencedBy: mergedReadingSettings,
                     stored: await ReaderStyleAssetStore.shared.assets()
                 )
                 var uploadedStylePictures = 0
@@ -669,13 +723,14 @@ final class ICloudSyncManager: ObservableObject {
             //    constant id, whose merge clock advances only on a real user
             //    edit — never when a sync applies a remote layout, which would
             //    make both devices claim to be newest on every pass.
+            //    One record per kind of device, as the layout rows of 3c have (FB-244).
             let (localBarLayout, barLayoutClock) = await onMain("sync.read.barLayout") {
                 let settings = GlobalSettings.shared
                 return (settings.readerBarLayout, settings.readerBarLayoutSyncClock)
             }
             let barLayoutMerge = try await mergeType(
-                recordName: Self.readerBarLayoutRecordName,
-                shadowKey: Self.shadowReaderBarLayout,
+                recordName: Self.readerBarLayoutRecordName(kind: layoutKind),
+                shadowKey: Self.readerBarLayoutShadowKey(kind: layoutKind),
                 local: [
                     ReaderBarLayoutSyncRecord(
                         layout: localBarLayout,
@@ -1649,9 +1704,12 @@ final class ICloudSyncManager: ObservableObject {
         }
         let localBackgrounds = await MainActor.run { GlobalSettings.shared.readerCustomBackgrounds }
         // The reading setup's pictures, by the setups here and in the cloud.
-        let remoteReadingSettings = try await valuesNamedForDeletion(
-            in: Self.readingSettingsRecordName, as: ReadingSettingSyncRecord.self
-        ) { $0.item }
+        var remoteReadingSettings: [ReadingSettingSyncRecord] = []
+        for recordName in Self.readingSettingsRecordNames + ["reading_settings_v2"] {
+            remoteReadingSettings += try await valuesNamedForDeletion(
+                in: recordName, as: ReadingSettingSyncRecord.self
+            ) { $0.item }
+        }
         let localReadingSettings = await MainActor.run { GlobalSettings.shared.readingSettingSyncRecords }
         let stylePictures = Self.readerStylePictureIDs(referencedBy: localReadingSettings + remoteReadingSettings)
         let files = bookFilePayloads(await localBooks() + remoteBooks)

@@ -29,7 +29,7 @@ struct ReadingSettingsSyncTests {
             ReadingSettingSyncRecord(item: "fontSize", values: fontSize, editedAt: Date(timeIntervalSince1970: 1_900_000_000)),
             ReadingSettingSyncRecord(item: "lineSpacing", values: lineHeight, editedAt: Date(timeIntervalSince1970: 1_900_000_000)),
         ]
-        settings.applyReadingSettingsSync(remote)
+        settings.applyReadingSettingsSync(remote, in: .layout)
 
         #expect(settings.readerFontSize == 30)
         #expect(settings.lineHeightMultiple == 2)
@@ -61,7 +61,7 @@ struct ReadingSettingsSyncTests {
         horizontal.writingMode = ReaderWritingMode.horizontal.rawValue
         let remote = [ReadingSettingSyncRecord(item: "writingMode", values: horizontal,
                                                editedAt: Date(timeIntervalSince1970: 1_900_000_000))]
-        settings.applyReadingSettingsSync(remote)
+        settings.applyReadingSettingsSync(remote, in: .layout)
         #expect(settings.readerWritingMode == .horizontal)
         settings.synchronizeReadingSettings()
         #expect(settings.readerWritingMode == .horizontal)
@@ -92,7 +92,7 @@ struct ReadingSettingsSyncTests {
         )
         settings.applyReadingSettingsSync([
             ReadingSettingSyncRecord(item: "commentBubble", values: bubble, editedAt: Date()),
-        ])
+        ], in: .shared)
 
         #expect(settings.commentBubblePresetMode == pickedMode)
         #expect(settings.commentBubbleSelectedCustomStyleID == pickedStyle)

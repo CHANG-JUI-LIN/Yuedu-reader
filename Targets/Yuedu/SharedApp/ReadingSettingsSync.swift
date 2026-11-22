@@ -17,6 +17,60 @@ struct ReadingSettingSyncRecord: Codable, Equatable, Sendable {
     var editedAt: Date
 }
 
+/// Which kind of device a reading layout was set on. Layout syncs between devices of one
+/// kind only (maintainer, 2026-11-22, FB-244): a reader with an iPad and an iPhone sets
+/// each for its own screen, and until then a size or a margin set on one landed on the
+/// other at the next sync.
+enum ReadingLayoutDeviceKind: String, CaseIterable, Sendable {
+    case phone
+    case pad
+
+    /// An iPad app running on a Mac is an iPad.
+    @MainActor
+    static var current: Self {
+        if ProcessInfo.processInfo.isiOSAppOnMac { return .pad }
+        switch UIDevice.current.userInterfaceIdiom {
+        case .pad, .mac: return .pad
+        default: return .phone
+        }
+    }
+}
+
+/// The two sets the synced rows fall into, each a cloud record of its own.
+enum ReadingSettingSyncPartition: String, CaseIterable, Sendable {
+    /// Rows every device of the account wears.
+    case shared
+    /// Rows only devices of this one's kind wear: one record per `ReadingLayoutDeviceKind`.
+    case layout
+
+    /// The rows that set type and page for a screen: what a reader means by 排版, and what
+    /// has a different right answer on a phone and on a tablet. 閱讀樣式 goes with them —
+    /// it names the style those rows were set by.
+    ///
+    /// The rest say how things look or what gets marked, not how the page is set, and stay
+    /// with every device: 文字顏色, 閱讀背景, 段評氣泡, 對話氣泡, 正則高亮, 文字底線.
+    static func isLayout(_ item: ReadingSettingsScopeItem) -> Bool {
+        switch item {
+        case .font, .fontSize, .bold, .writingMode, .lineSpacing, .letterSpacing,
+             .paragraphSpacing, .firstLineIndent, .textAlignment, .pageMargins, .bottomJustify,
+             .headerFooter, .chapterTitle, .pageTurn, .readingStyle:
+            return true
+        case .textColor, .background, .commentBubble, .dialogueBubble, .regexHighlight,
+             .textUnderline:
+            return false
+        }
+    }
+
+    /// Whether the row named `item` (a `ReadingSettingsScopeItem` raw value) is this set's.
+    /// A row this build cannot name is a newer build's, and is passed on with the shared
+    /// ones as it always was; the sync leaves a layout record holding one alone
+    /// (`ICloudSyncManager`, 3c).
+    func holds(_ item: String) -> Bool {
+        let isLayout = ReadingSettingsScopeItem(rawValue: item).map(Self.isLayout) ?? false
+        return isLayout == (self == .layout)
+    }
+}
+
 extension GlobalSettings {
     nonisolated static let readingSettingSyncRecordsKey = "yd_reading_setting_sync_records"
 
@@ -90,15 +144,30 @@ extension GlobalSettings {
         return snapshot
     }
 
-    /// Wears the rows iCloud merged in from other devices — the ones that differ from
-    /// what this device had — recorded where each comes from, as a setting made here
-    /// would be, so the next theme sync keeps them. They stay the other device's: none
-    /// is noted again, which would make every device claim the newest on each sync.
+    /// Wears the rows iCloud merged in from other devices for one set — the ones that
+    /// differ from what this device had — recorded where each comes from, as a setting
+    /// made here would be, so the next theme sync keeps them. They stay the other
+    /// device's: none is noted again, which would make every device claim the newest on
+    /// each sync.
+    ///
+    /// Only `partition`'s rows are replaced: the other set has a merge of its own, and
+    /// rows dropped here would read as deleted on this device at the next sync. A row of
+    /// the other set found in this one's record is not worn — a layout row in the shared
+    /// record would be another kind of device's.
     @MainActor
-    func applyReadingSettingsSync(_ merged: [ReadingSettingSyncRecord]) {
-        let local = Dictionary(uniqueKeysWithValues: readingSettingSyncRecords.map { ($0.item, $0) })
-        let arrived = merged.filter { local[$0.item] != $0 }
-        readingSettingSyncRecords = merged
+    func applyReadingSettingsSync(_ merged: [ReadingSettingSyncRecord], in partition: ReadingSettingSyncPartition) {
+        let stored = readingSettingSyncRecords
+        let local = Dictionary(
+            stored.filter { partition.holds($0.item) }.map { ($0.item, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let strays = merged.filter { !partition.holds($0.item) }
+        if !strays.isEmpty {
+            AppLogger.error("⟐ synced reading settings: \(strays.map(\.item)) not in the \(partition.rawValue) set; not worn")
+        }
+        let own = merged.filter { partition.holds($0.item) }
+        let arrived = own.filter { local[$0.item] != $0 }
+        readingSettingSyncRecords = stored.filter { !partition.holds($0.item) } + own
         guard !arrived.isEmpty else { return }
 
         var values = AppearanceThemeReadingSettings()
