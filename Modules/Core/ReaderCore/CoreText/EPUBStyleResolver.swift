@@ -13,8 +13,8 @@ final class EPUBStyleResolver {
         let weight: Int
         let italic: Bool
         let resolvedURL: String
-        /// False when the face's `unicode-range` leaves out U+0020: see `RegisteredFontFace.isPrimaryCandidate`.
-        var coversSpace = true
+        /// False when the face's `unicode-range` holds marks only: see `RegisteredFontFace.isPrimaryCandidate`.
+        var coversText = true
     }
 
     struct RegisteredFontFace {
@@ -23,11 +23,18 @@ final class EPUBStyleResolver {
         let postScriptName: String
         var weight: Int = 400
         var isItalic: Bool = false
-        /// False for a face its `@font-face` limits, by `unicode-range`, to characters that do
-        /// not include the space. CSS Fonts 4 §5.2: such a face is not the "first available
-        /// font", the one a line's height and a ruby's size are measured from. 草枕 embeds a
-        /// seven-glyph font for dashes (`unicode-range: U+2013-2016`) and lists it first in
-        /// `font-family`; taken as the primary font, its metrics set every line of the book.
+        /// False for a face its `@font-face` limits, by `unicode-range`, to marks: characters
+        /// that include neither the space nor any letter, kana, Han or hangul
+        /// (`unicodeRangeCoversText`). CSS Fonts 4 §5.2: a face whose range leaves out the
+        /// space is not the "first available font", the one a line's height and a ruby's size
+        /// are measured from. 草枕 embeds a seven-glyph font for dashes (`unicode-range:
+        /// U+2013-2016`) and lists it first in `font-family`; taken as the primary font, its
+        /// metrics set every line of the book.
+        ///
+        /// Narrower than the rule: a subset of a text face (`U+4E00-9FFF`, no space) stays a
+        /// primary candidate. A font cascade draws a character in a later font only when the
+        /// earlier ones lack it, so moving such a face behind the next family would stop it
+        /// drawing anything that family also has.
         var isPrimaryCandidate = true
     }
 
@@ -191,7 +198,7 @@ final class EPUBStyleResolver {
                     postScriptName: registeredFont.postScriptName,
                     weight: fontFace.weight,
                     isItalic: fontFace.italic,
-                    isPrimaryCandidate: fontFace.coversSpace
+                    isPrimaryCandidate: fontFace.coversText
                 )
                 if !(registeredFontVariants[alias] ?? []).contains(where: {
                     $0.weight == face.weight && $0.isItalic == face.isItalic
@@ -278,11 +285,10 @@ final class EPUBStyleResolver {
                 }
                 return font
             }
-            // A face limited to a range without the space follows the first font that is not:
-            // that one is the primary font, whose metrics the line takes. The limited face
-            // then supplies the characters the primary lacks. (Its range's characters that
-            // the primary does have are drawn by the primary: a cascade list has no way to
-            // prefer a later font for some characters.)
+            // A face limited to marks follows the first font that is not: that one is the
+            // primary font, whose metrics the line takes. The limited face then supplies the
+            // characters the primary lacks. (Its marks that the primary also has are drawn by
+            // the primary: a cascade list has no way to prefer a later font for some characters.)
             fonts.insert(contentsOf: rangedOnly, at: min(1, fonts.count))
             guard let primary = fonts.first else { return nil }
             let descriptor = primary.fontDescriptor.addingAttributes([
@@ -535,7 +541,7 @@ final class EPUBStyleResolver {
                 weight: weight,
                 italic: italic,
                 resolvedURL: resolvedURL,
-                coversSpace: Self.unicodeRangeDescriptor(in: block).map(Self.unicodeRangeCoversSpace) ?? true
+                coversText: Self.unicodeRangeDescriptor(in: block).map(Self.unicodeRangeCoversText) ?? true
             )
         }
     }
@@ -550,8 +556,11 @@ final class EPUBStyleResolver {
     }
 
     /// Whether a `unicode-range` descriptor's value (`U+26`, `U+0-7F`, `U+4??`, comma-separated,
-    /// lowercased) includes U+0020. A value that does not parse limits nothing.
-    nonisolated static func unicodeRangeCoversSpace(_ value: String) -> Bool {
+    /// lowercased) includes the space, a Latin letter, kana, Han or hangul: text, not marks
+    /// alone. A value that does not parse limits nothing.
+    nonisolated static func unicodeRangeCoversText(_ value: String) -> Bool {
+        let text: [ClosedRange<UInt32>] = [0x20...0x20, 0x41...0x5A, 0x61...0x7A, 0x3041...0x30FF,
+                                           0x3400...0x9FFF, 0xAC00...0xD7AF]
         var parsedAny = false
         for item in value.split(separator: ",") {
             let token = item.trimmingCharacters(in: .whitespaces)
@@ -570,7 +579,7 @@ final class EPUBStyleResolver {
             }
             guard let bounds else { continue }
             parsedAny = true
-            if bounds.0 <= 0x20, 0x20 <= bounds.1 { return true }
+            if text.contains(where: { $0.lowerBound <= bounds.1 && bounds.0 <= $0.upperBound }) { return true }
         }
         return !parsedAny
     }
