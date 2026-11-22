@@ -159,19 +159,23 @@ extension ReaderView {
                         in: Rectangle(),
                         fill: modernPalette.panelFill
                     )
-                    // Drawn by the presentation, outside the card's environment: the
-                    // scheme set on the card below never reaches it, and the glass stayed
-                    // light over a night page (feedback #78, checked on iOS 26.5).
-                    .environment(\.colorScheme, readerColorScheme)
                 }
                 // `.popover` has no `onDismiss`, so the card's own disappearance is the
                 // dismissal signal the deferred route waits on. Deliberately a real
                 // lifecycle callback, not a timer.
                 .onDisappear(perform: presentDeferredModernBookCardRoute)
-                // A presentation starts again from the system appearance, so the card's
-                // own system colours would be light over a night page; see
-                // `readerColorScheme`. Its glass is set in `presentationBackground` above.
-                .environment(\.colorScheme, readerColorScheme)
+                // A presentation starts again from the system appearance, so the whole
+                // popover is told the reader's: the card's system colours, the surface in
+                // `presentationBackground` above, and the popover's own glass under it.
+                // The preference stops at the popover — the reader behind it and the app
+                // outside keep the device's appearance (checked on iOS 17.5, 26.5, 27.2).
+                //
+                // It has to be the preference, not `.environment(\.colorScheme)`: the
+                // environment reaches SwiftUI's views only, and on iOS 27 the popover's
+                // glass follows the presentation's UIKit trait, so the card sat on light
+                // grey glass over a night page for as long as it was open (FB-239; the
+                // environment was feedback #78's fix, enough on iOS 26.5 at the time).
+                .preferredColorScheme(readerColorScheme)
         }
     }
 
