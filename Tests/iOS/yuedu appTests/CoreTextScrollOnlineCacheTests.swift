@@ -49,6 +49,29 @@ struct CoreTextScrollOnlineCacheTests {
         #expect(renderedText(in: engine).contains("Previous chapter body"))
     }
 
+    @Test("a chapter whose build throws stands on a failure block and is not built again on every scroll")
+    func failedChapterShowsFailureBlockOnce() async throws {
+        let builder = MutableOnlineLikeBuilder(chapterCount: 2)
+        builder.cachedChapters[0] = "First chapter body"
+        builder.cachedChapters[1] = "Second chapter body"
+        builder.failingChapters = [1]
+        let engine = CoreTextScrollEngine(builder: builder, renderSettings: makeSettings())
+
+        await engine.start(initialChapter: 0, contentWidth: 320)
+        await engine.waitForViewportIdle()
+
+        // It had contributed nothing: a blank gap with nothing saying a chapter was missing.
+        let range = try #require(engine.chapterRanges[1])
+        let text = engine.chunks[range].map(\.attributedString.string).joined()
+        #expect(text.contains(localized("章節載入失敗")))
+        #expect(text.contains("Chapter 1"))
+        #expect(engine.chapterText(forSpine: 1) == nil, "the failure block is not the chapter's text")
+        let builds = builder.buildCount(1)
+        for _ in 0..<5 { engine.ensureChapterAhead(of: 0) }
+        await engine.waitForViewportIdle()
+        #expect(builder.buildCount(1) == builds, "a failed chapter was built again on a scroll near it")
+    }
+
     @Test("arriving chapter content takes its placeholder's slot instead of an end")
     func arrivingChapterReplacesPlaceholderInPlace() async throws {
         // Both chapters start uncached, so both are appended as placeholders in order.
@@ -299,6 +322,14 @@ private final class MutableOnlineLikeBuilder: AttributedStringBuilding {
         get { cache.withLock { $0 } }
         set { cache.withLock { $0 = newValue } }
     }
+    private let failing = OSAllocatedUnfairLock(initialState: Set<Int>())
+    /// Chapters whose build throws something other than `contentNotCached`.
+    var failingChapters: Set<Int> {
+        get { failing.withLock { $0 } }
+        set { failing.withLock { $0 = newValue } }
+    }
+    private let builds = OSAllocatedUnfairLock(initialState: [Int: Int]())
+    func buildCount(_ index: Int) -> Int { builds.withLock { $0[index, default: 0] } }
 
     init(chapterCount: Int) {
         self.chapterCount = chapterCount
@@ -321,6 +352,8 @@ private final class MutableOnlineLikeBuilder: AttributedStringBuilding {
         guard index >= 0, index < chapterCount else {
             throw AttributedStringBuildingError.chapterOutOfRange(index)
         }
+        builds.withLock { $0[index, default: 0] += 1 }
+        if failingChapters.contains(index) { throw CocoaError(.fileReadCorruptFile) }
         guard let body = cachedChapters[index] else {
             throw AttributedStringBuildingError.contentNotCached(index)
         }

@@ -48,7 +48,7 @@ field; it is optional, so old saved positions decode unchanged.
   visible position, the restore target, annotations (`displayedTextAnnotations`), requests
   and the TTS hint through it.
 - **Browser engine**: translated chapters always take the CoreText path
-  (`BrowserFallbackReason.readerTranslation`), so the browser engine never sees a map.
+  (`BrowserChapterFailureReason.readerTranslation`), so the browser engine never sees a map.
 
 ## Deliberate limits
 

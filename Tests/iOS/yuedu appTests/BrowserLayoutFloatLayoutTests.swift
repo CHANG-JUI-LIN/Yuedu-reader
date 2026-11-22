@@ -524,22 +524,30 @@ struct BrowserLayoutFloatLayoutTests {
         #expect(following.rect.minX >= fittedImage.rect.width)
     }
 
-    @Test func oversizedNonReplacedFloatTriggersWholeChapterFallback() async {
+    /// A float taller than a page used to refuse the whole chapter (which then fell
+    /// back to the legacy engine). It now breaks across pages, and the text beside
+    /// it runs down the same pages.
+    @Test func floatTallerThanAPageBreaksBesideItsText() async throws {
+        let floated = (0..<14).map { "左\($0 % 10)" }.joined(separator: "<br/>")
+        let beside = (0..<14).map { "右\($0 % 10)" }.joined(separator: "<br/>")
         let html = """
-        <html><body style="margin: 0">
-        <div style="float: left; width: 100px; height: 240px">Too tall</div>
-        <p style="margin: 0">Following text</p>
+        <html><body style="margin: 0; font-size: 20px; line-height: 1">
+        <div style="float: left; width: 100px">\(floated)</div>
+        <p style="margin: 0">\(beside)</p>
+        <p style="margin: 0">後</p>
         </body></html>
         """
-        let doc = BrowserLayoutDocument(
-            html: html,
-            cssTexts: [],
-            config: makeConfig(renderHeight: 200)
-        )
-
-        await #expect(throws: BrowserLayoutDocument.BrowserLayoutError.self) {
-            _ = try await doc.renderPages(containerSize: CGSize(width: 390, height: 200))
+        let doc = BrowserLayoutDocument(html: html, cssTexts: [], config: makeConfig(renderHeight: 100))
+        let pages = try await doc.renderPages(containerSize: CGSize(width: 390, height: 100))
+        // (A `<br>` is a fragment of no width.)
+        let inked = pages.map { textFragments(in: $0).map(\.rect.rawValue).filter { $0.width > 0 } }
+        #expect(inked.reduce(0) { $0 + $1.count } == 29)
+        for (index, rects) in inked.enumerated() {
+            #expect(rects.allSatisfy { $0.minY >= -0.5 && $0.maxY <= 100.5 }, "page \(index): \(rects)")
         }
+        #expect(inked.prefix(2).allSatisfy { rects in
+            rects.contains { $0.minX < 1 } && rects.contains { $0.minX >= 99.5 }
+        }, "\(inked)")
     }
 
     // MARK: - 13. Percentage width float
@@ -562,17 +570,25 @@ struct BrowserLayoutFloatLayoutTests {
         #expect(pBox.lines[0].contentX == 200)
     }
 
-    // MARK: - 14. Unsupported width:auto fallback in scanner
+    // MARK: - 14. width:auto floats in the scanner
 
-    @Test func unsupportedWidthAutoFallbackInScanner() {
-        let html = """
+    /// A non-replaced float with `width: auto` gets a shrink-to-fit width (YueduCoreText
+    /// since 2026-10-17); only a float inside a float is still refused.
+    @Test func widthAutoFloatIsSupportedAndNestedFloatIsNotInScanner() {
+        let single = BrowserLayoutCapabilityScanner.scan(html: """
         <html><body>
         <div style="float: left;">Text inside float without width</div>
         </body></html>
-        """
-        let res = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: [])
-        #expect(!res.supported, "Non-replaced float with width:auto must be rejected for fallback")
-        #expect(res.unsupportedFeatures.contains(.float))
+        """, cssTexts: [])
+        #expect(single.supported, "\(single.unsupportedFeatures)")
+
+        let nested = BrowserLayoutCapabilityScanner.scan(html: """
+        <html><body>
+        <div style="float: left;"><span style="float: right;">inner</span>outer</div>
+        </body></html>
+        """, cssTexts: [])
+        #expect(!nested.supported)
+        #expect(nested.unsupportedFeatures.contains(.float))
     }
 
     // MARK: - 15. Replaced <img> float without explicit width is supported in scanner

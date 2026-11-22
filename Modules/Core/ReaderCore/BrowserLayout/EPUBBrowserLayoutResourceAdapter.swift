@@ -105,7 +105,16 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
 
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] {
         guard session.chapters.indices.contains(index) else { return [:] }
-        guard let sources = try? HTMLResourceReferences.imageSources(in: html) else { return [:] }
+        let sources: Set<String>
+        do {
+            sources = try HTMLResourceReferences.imageSources(in: html)
+        } catch {
+            // The chapter's own layout parses the same HTML and reports its failure; this
+            // only means no picture is fetched ahead of it.
+            AppLogger.parse("Browser image prefetch could not read the chapter's pictures",
+                            context: ["spine": "\(index)", "error": "\(error)"])
+            return [:]
+        }
         var images: [String: UIImage?] = [:]
         // NOTE: the root background-image is deliberately NOT collected here.
         // It is paint-only (never affects layout), and scanning the stylesheets

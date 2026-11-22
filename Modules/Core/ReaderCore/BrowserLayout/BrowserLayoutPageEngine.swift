@@ -3,17 +3,17 @@ import UIKit
 import YueduCoreText
 import YueduCoreTextTypography
 
-/// Precise reason a chapter fell back to the legacy engine (Phase 2C).
+/// Precise reason the browser engine could not lay a chapter out, or (for
+/// `readerTranslation`) why the chapter goes to the CoreText path.
 /// Never a bare string — distinguishes capability, content and resource
 /// causes so diagnostics can tell "unsupported" from "empty" from "failed".
-enum BrowserFallbackReason: Equatable {
+enum BrowserChapterFailureReason: Equatable {
     case unsupportedSVG
     case unsupportedLayoutProperty(String)
     case imageOnlyDocument
     case emptyRenderableContent
     case resourceFailure(String)
     case layoutFailure(String)
-    case timeout
     /// 整章翻譯 is on: translations are spliced into the chapter document, which only the
     /// CoreText path lays out.
     case readerTranslation
@@ -26,33 +26,33 @@ enum BrowserFallbackReason: Equatable {
         case .emptyRenderableContent: return "empty-renderable-content"
         case .resourceFailure(let r): return "resource-failure(\(r))"
         case .layoutFailure(let f): return "layout-failure(\(f))"
-        case .timeout: return "timeout"
         case .readerTranslation: return "reader-translation"
         }
     }
 
     /// Content/capability-level reasons describe a chapter the browser engine
-    /// *cannot render*; the rest are engine failures (resource/timeout/bug).
-    /// Forced-mode diagnostics split accordingly (unsupported vs failed).
+    /// *cannot render*; the rest are failures (resource or layout).
+    /// Failure pages split accordingly (unsupported vs failed).
     var isUnsupportedKind: Bool {
         switch self {
         case .unsupportedSVG, .unsupportedLayoutProperty, .imageOnlyDocument, .emptyRenderableContent, .readerTranslation:
             return true
-        case .resourceFailure, .layoutFailure, .timeout:
+        case .resourceFailure, .layoutFailure:
             return false
         }
     }
 }
 
-/// Terminal diagnostic page published by the BROWSER engine itself in
-/// `browserForced` mode when a chapter cannot be rendered (unsupported,
-/// image-only, empty, layout-failure, timeout). It is a REAL page owned by the
-/// browser engine (`effectiveEngine=browser`) — never a legacy fallback, and
-/// never a placeholder that can re-trigger layout. The reader treats it as one
-/// page; page turning past it proceeds to the next chapter.
-struct BrowserForcedDiagnosticPage: Equatable {
+/// A chapter's terminal failure page, published by the BROWSER engine itself
+/// when the chapter cannot be shown: its HTML could not be read or parsed, its
+/// layout threw, or — in `browserForced` mode only — it is unsupported or laid
+/// out empty. It is a REAL page owned by the browser engine
+/// (`effectiveEngine=browser`) — never a legacy fallback, and never a
+/// placeholder that can re-trigger layout. The reader treats it as one page;
+/// page turning past it proceeds to the next chapter.
+struct BrowserChapterFailurePage: Equatable {
     let spineIndex: Int
-    let reason: BrowserFallbackReason
+    let reason: BrowserChapterFailureReason
     let unsupportedFeatures: [UnsupportedFeature]
 }
 
@@ -64,8 +64,8 @@ enum ChapterLayoutState: Equatable {
     case idle            // not started, no session, no pages
     case loading         // a session is creating/inducing the chapter
     case ready           // browserChapters[spine] has >= 1 page
-    case unsupportedDiagnostic(BrowserForcedDiagnosticPage)
-    case failedDiagnostic(BrowserForcedDiagnosticPage)
+    case unsupportedDiagnostic(BrowserChapterFailurePage)
+    case failedDiagnostic(BrowserChapterFailurePage)
 
     var isTerminal: Bool {
         switch self {
@@ -84,7 +84,7 @@ enum ChapterLayoutState: Equatable {
         }
     }
 
-    var diagnosticPage: BrowserForcedDiagnosticPage? {
+    var diagnosticPage: BrowserChapterFailurePage? {
         switch self {
         case .unsupportedDiagnostic(let page), .failedDiagnostic(let page): return page
         case .idle, .loading, .ready: return nil
@@ -93,10 +93,14 @@ enum ChapterLayoutState: Equatable {
 }
 
 /// Per-chapter engine choice with structured reasons (never book content).
+///
+/// A chapter the browser engine fails on stays `.browser` and shows its failure
+/// page (`ChapterLayoutState.failedDiagnostic`); only admission (`legacyFallback`)
+/// and 整章翻譯 (`legacyEngineFailure(.readerTranslation)`) hand one to the delegate.
 enum ChapterEngineChoice {
     case browser
     case legacyFallback([UnsupportedFeature])
-    case legacyEngineFailure(BrowserFallbackReason)
+    case legacyEngineFailure(BrowserChapterFailureReason)
 
     var isBrowser: Bool {
         if case .browser = self { return true }
@@ -501,8 +505,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     private var layoutGeneration = 0
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
-    /// Internal for tests, which force the timeout path with a 1 ns limit.
-    var chapterTimeoutNanos: UInt64 = 5_000_000_000
     /// Stored for future annotation/selection integration (data structures must
     /// not block later work).
     private var textAnnotations: [CoreTextTextAnnotation] = []
@@ -627,7 +629,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // a terminal chapter must not trigger another ensure.
         if let state = chapterLayoutStates[spineIndex], state.isTerminal {
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) preloadSkip spine=\(spineIndex) state=\(state.label)")
-            return isLaidOut(spineIndex) ? .alreadyLaidOut : .contentUnavailable
+            return settledOutcome(spineIndex, laidOut: .alreadyLaidOut)
         }
         if let existing = preloadTasks[spineIndex] {
             // In-flight dedupe for (generation, spine): await the existing
@@ -636,7 +638,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             await existing.value
             guard !Task.isCancelled else { return .cancelled }
             guard generation == layoutGeneration else { return .supersededByGeneration }
-            return isLaidOut(spineIndex) ? .laidOut : .contentUnavailable
+            return settledOutcome(spineIndex, laidOut: .laidOut)
         }
         let task = Task { [weak self] in
             guard let self, self.isCurrentWork(generation) else { return }
@@ -649,7 +651,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         await task.value
         guard !Task.isCancelled else { return .cancelled }
         guard generation == layoutGeneration else { return .supersededByGeneration }
-        return isLaidOut(spineIndex) ? .laidOut : .contentUnavailable
+        return settledOutcome(spineIndex, laidOut: .laidOut)
+    }
+
+    /// A settled chapter's outcome: laid out, or showing its failure page (`buildFailed`:
+    /// the failure was logged where it was caught), or neither.
+    private func settledOutcome(_ spineIndex: Int, laidOut: ChapterLayoutOutcome) -> ChapterLayoutOutcome {
+        if isLaidOut(spineIndex) { return laidOut }
+        return chapterLayoutStates[spineIndex]?.diagnosticPage != nil ? .buildFailed : .contentUnavailable
     }
 
     /// Whether this chapter has a layout on WHICHEVER engine owns it.
@@ -669,6 +678,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private func preloadChapterInternal(_ spineIndex: Int, generation: Int) async {
         guard let admission = await decideEngine(for: spineIndex, generation: generation),
               isCurrentWork(generation) else { return }
+        if let failure = admission.failure {
+            // The chapter could not be read or parsed: the delegate would read the same
+            // bytes, so the chapter shows its failure page.
+            publishFailurePage(spineIndex, reason: failure)
+            return
+        }
         let choice = admission.choice
         choices[spineIndex] = choice
         switch choice {
@@ -676,16 +691,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             await layoutBrowserChapter(spineIndex, admitted: admission.evaluation)
         case .legacyFallback, .legacyEngineFailure:
             if mode == .browserForced {
-                // Forced mode NEVER hands a chapter to the legacy engine —
-                // not even on a chapterHTML fetch failure. Publish the
-                // browser engine's own terminal failure diagnostic instead.
-                let reason: BrowserFallbackReason
+                // Forced mode NEVER hands a chapter to the legacy engine.
+                // Publish the browser engine's own terminal page instead.
+                let reason: BrowserChapterFailureReason
                 if case .legacyEngineFailure(let r) = choice {
                     reason = r
                 } else {
                     reason = .unsupportedLayoutProperty("forced-scan-fallback")
                 }
-                await publishForcedDiagnostic(spineIndex, reason: reason, generation: layoutGeneration)
+                publishFailurePage(spineIndex, reason: reason)
                 return
             }
             await delegate.preloadChapter(at: spineIndex)
@@ -706,6 +720,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private struct ChapterAdmission {
         let choice: ChapterEngineChoice
         var evaluation: BrowserChapterEvaluation? = nil
+        /// Set when the chapter's HTML could not be read or parsed: no engine can lay it
+        /// out, and it shows its failure page.
+        var failure: BrowserChapterFailureReason? = nil
     }
 
     private func decideEngine(for spineIndex: Int, generation: Int) async -> sending ChapterAdmission? {
@@ -720,14 +737,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             )
             return ChapterAdmission(choice: cached)
         }
-        guard let html = try? await resource.chapterHTML(at: spineIndex) else {
+        let html: String
+        do {
+            html = try await resource.chapterHTML(at: spineIndex)
+        } catch {
             guard isCurrentWork(generation) else { return nil }
-            BrowserLayoutDeviceDiagnostic.log(
-                .engineDecision(spine: spineIndex, generation: layoutGeneration),
-                spine: spineIndex, generation: layoutGeneration,
-                message: "actualEngine=legacy reason=chapterHTML-fetch-failed"
-            )
-            return ChapterAdmission(choice: .legacyEngineFailure(.resourceFailure("chapterHTML")))
+            AppLogger.parse("Browser admission could not read the chapter", context: [
+                "spine": spineIndex, "error": String(describing: error),
+            ])
+            return ChapterAdmission(choice: .browser, failure: .resourceFailure("chapterHTML"))
         }
         guard isCurrentWork(generation) else { return nil }
         let input = await styleInput(forChapter: spineIndex, html: html)
@@ -749,7 +767,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 "spine": spineIndex, "error": String(describing: error),
             ])
             guard isCurrentWork(generation) else { return nil }
-            return ChapterAdmission(choice: .legacyEngineFailure(.resourceFailure("chapterParse")))
+            return ChapterAdmission(choice: .browser, failure: .resourceFailure("chapterParse"))
         }
         guard isCurrentWork(generation) else { return nil }
         // The chapter's mode, read from this parse: the resolver never parses an admitted chapter again.
@@ -821,10 +839,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         do {
             let html = try await resource.chapterHTML(at: spineIndex)
             guard isCurrentWork(generation) else { return }
-            guard !html.isEmpty else {
-                await fallbackToLegacy(spineIndex, reason: .resourceFailure("chapterHTML"))
-                return
-            }
             let input = await styleInput(forChapter: spineIndex, html: html)
             guard isCurrentWork(generation) else { return }
             await prepareBrowserFonts(at: spineIndex)
@@ -865,10 +879,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // so it is not needed to lay anything out — and taking the source
             // from the style tree (instead of re-scanning the stylesheets) is
             // what makes the fetched key and the painted key the same string.
+            //
+            // No step is timed out: each runs off the main thread while the chapter's
+            // 載入中 page shows, and stops once this task is cancelled. A limit in
+            // seconds sent exactly the largest chapters, on exactly the slowest devices,
+            // to an engine that builds them more slowly still.
             let prepareStart = SourcePerfTrace.now
-            let facts = try await withTimeout(nanos: chapterTimeoutNanos) {
-                try await owner.prepare()
-            }
+            let facts = try await owner.prepare()
             SourcePerfTrace.record("browser.prepare", "spine=\(spineIndex)", since: prepareStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
             if let backgroundSource = facts.backgroundImageSource, store.image(for: backgroundSource) == nil {
@@ -888,33 +905,26 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // FIRST PAGE: publish immediately — the rest of the chapter is NOT
             // laid out yet.
             let firstPageStart = SourcePerfTrace.now
-            let laidOutFirstPage = try await withTimeout(nanos: chapterTimeoutNanos) {
-                try await owner.layoutNextPage()
-            }
+            let laidOutFirstPage = try await owner.layoutNextPage()
             SourcePerfTrace.record("browser.firstPage", "spine=\(spineIndex)", since: firstPageStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
             let firstPage: PageFragments
             if let laidOutFirstPage {
                 firstPage = laidOutFirstPage
             } else {
-                // A chapter that produced zero pages: distinguish an image-only
-                // document (DOM has <img> but no text rendered by us) from a
-                // truly empty document.
-                let hasImageMarkup = html.contains("<img") || html.contains("<svg")
-                // A chapter with nothing in it to draw — no picture either, such as a
-                // cover whose `<svg>` was left empty — is one blank page, and it is
-                // this engine's page: handing it to the legacy engine draws the same
-                // nothing. A chapter that names a picture and still came out empty
-                // keeps the fallback, since the picture may be something only the
-                // legacy engine shows; so does forced mode, which reports on its
-                // own diagnostic page.
-                let namesAPicture = html.contains("<img") || html.contains("<image")
-                guard mode == .browserAuto, !namesAPicture else {
-                    await fallbackToLegacy(
-                        spineIndex,
-                        reason: hasImageMarkup ? .imageOnlyDocument : .emptyRenderableContent
-                    )
+                // A chapter with nothing in it to draw is one blank page, and it is this
+                // engine's page — a cover whose `<svg>` was left empty, or one whose only
+                // picture did not load (`loadImage` logged why: the corpus census of
+                // 2026-11-23 found no chapter of 12,984 that laid out empty once its
+                // pictures loaded). Forced mode reports on its own page instead, naming
+                // what was unsupported.
+                if mode == .browserForced {
+                    let hasImageMarkup = html.contains("<img") || html.contains("<svg")
+                    publishFailurePage(spineIndex, reason: hasImageMarkup ? .imageOnlyDocument : .emptyRenderableContent)
                     return
+                }
+                if html.contains("<img") || html.contains("<image") {
+                    AppLogger.render("[BrowserLayout] chapter names a picture but laid out empty spine=\(spineIndex)")
                 }
                 firstPage = PageFragments(index: 0, pageRect: PageLocalRect(rawValue: CGRect(origin: .zero, size: renderSize)),
                                           fragments: [])
@@ -953,18 +963,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return
         } catch HTMLLayoutError.cancelled {
             return
-        } catch let error as EngineTimeoutError {
-            guard isCurrentWork(generation) else { return }
-            await fallbackToLegacy(spineIndex, reason: .timeout)
-            _ = error
         } catch {
             guard isCurrentWork(generation) else { return }
-            await fallbackToLegacy(spineIndex, reason: .layoutFailure(String(describing: error).prefix(80).description))
+            AppLogger.render("[BrowserLayout] chapter layout failed spine=\(spineIndex): \(error)")
+            publishFailurePage(spineIndex, reason: .layoutFailure(String(describing: error).prefix(80).description))
         }
     }
 
     /// Background completion of a chapter's remaining pages. On failure the
-    /// WHOLE chapter falls back to the legacy delegate (no mixed chapter).
+    /// WHOLE chapter shows its failure page (no chapter cut short part-way).
     private func finishBrowserChapter(_ spineIndex: Int, generation: Int) async {
         guard let owner = browserSessions[spineIndex] else { return }
         let finishStart = SourcePerfTrace.now
@@ -978,11 +985,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return
         } catch {
             guard layoutGeneration == generation else { return }
-            browserChapters.removeValue(forKey: spineIndex)?.releaseLifecycleBytes()
-            browserSessions.removeValue(forKey: spineIndex)
-            await fallbackToLegacy(spineIndex, reason: .layoutFailure(String(describing: error).prefix(80).description))
-            rebuildOffsets()
-            onChapterReady?(spineIndex)
+            AppLogger.render("[BrowserLayout] chapter layout failed after its first page spine=\(spineIndex): \(error)")
+            publishFailurePage(spineIndex, reason: .layoutFailure(String(describing: error).prefix(80).description))
             return
         }
         guard isCurrentWork(generation), var layout = browserChapters[spineIndex] else { return }
@@ -1113,43 +1117,17 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         return evaluation
     }
 
-    private func fallbackToLegacy(_ spineIndex: Int, reason: BrowserFallbackReason) async {
-        // browserForced (DEBUG diagnostics): NEVER silently fall back. The
-        // browser engine's own output — possibly an unsupported/failed
-        // chapter — publishes a TERMINAL diagnostic page instead, so the
-        // reader always has a real page to hold (`effectiveEngine=browser`,
-        // never legacy) and the state machine stops re-ensuring the session.
-        // Only browserAuto may hand a chapter to the legacy engine.
-        if mode == .browserForced {
-            await publishForcedDiagnostic(spineIndex, reason: reason, generation: layoutGeneration)
-            return
-        }
-        choices[spineIndex] = .legacyEngineFailure(reason)
-        // The browser engine no longer owns this chapter; its `.loading` must not outlive
-        // the attempt.
-        chapterLayoutStates.removeValue(forKey: spineIndex)
-        engineStatus[spineIndex] = "legacy: engineFailure \(reason.description)"
-        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacy spine=\(spineIndex) reason=\(reason.description)")
-        await delegate.preloadChapter(at: spineIndex)
-        // lastPageIndex(ofChapter:) returns a GLOBAL page index (spine offset +
-        // local count); the chapter-local count is what matters for offsets —
-        // log it explicitly so the device log is unambiguous.
-        let localCount = delegate.lastPageIndex(ofChapter: spineIndex)
-            .map { $0 - delegate.pageIndex(forSpine: spineIndex, charOffset: 0) + 1 }
-        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacyDone spine=\(spineIndex) delegatePages=\(localCount.map(String.init) ?? "nil") (chapter-local)")
-    }
-
-    /// Forced-mode terminal diagnostic: a chapter the browser engine cannot
-    /// render publishes ONE real page owned by the browser engine (never a
-    /// legacy fallback, never a 0-page non-terminal state). The page count is
-    /// exactly 1 so the reader can turn past it into the next chapter, and
-    /// the state is terminal so position queries never re-ensure the session.
-    private func publishForcedDiagnostic(
-        _ spineIndex: Int,
-        reason: BrowserFallbackReason,
-        generation: Int
-    ) async {
-        let page = BrowserForcedDiagnosticPage(
+    /// A chapter the browser engine cannot show publishes ONE real page of its own: the
+    /// failure page (never a legacy fallback, never a 0-page non-terminal state). The
+    /// page count is exactly 1 so the reader can turn past it into the next chapter, and
+    /// the state is terminal so position queries never re-ensure the session. A layout
+    /// with other settings (`invalidateLayout`) or new content (`notifyChapterDataChanged`)
+    /// tries the chapter again.
+    ///
+    /// Whatever the chapter had published is dropped with it: pages laid out before a
+    /// later page failed belong to a chapter that cannot be shown whole.
+    private func publishFailurePage(_ spineIndex: Int, reason: BrowserChapterFailureReason) {
+        let page = BrowserChapterFailurePage(
             spineIndex: spineIndex,
             reason: reason,
             unsupportedFeatures: forcedUnsupportedFeatures[spineIndex] ?? []
@@ -1157,10 +1135,17 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         let state: ChapterLayoutState = reason.isUnsupportedKind
             ? .unsupportedDiagnostic(page)
             : .failedDiagnostic(page)
+        choices[spineIndex] = .browser
+        if let dropped = browserChapters.removeValue(forKey: spineIndex) {
+            dropped.releaseLifecycleBytes()
+            // The chapter's pages are gone and every later page moved: no cached
+            // artifact keyed by a global page index still names what it drew.
+            evictAllDisplayLists()
+        }
+        browserSessions.removeValue(forKey: spineIndex)?.cancel()
         chapterLayoutStates[spineIndex] = state
-        engineStatus[spineIndex] = "forced-unsupported: \(reason.description)"
-        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) forcedNoFallback spine=\(spineIndex) reason=\(reason.description) effectiveEngine=browser")
-        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) diagnosticPagePublished spine=\(spineIndex) reason=\(reason.description) pageKind=\(state.label) effectiveEngine=browser")
+        engineStatus[spineIndex] = "failed: \(reason.description)"
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) failurePagePublished spine=\(spineIndex) reason=\(reason.description) pageKind=\(state.label) effectiveEngine=browser")
         rebuildOffsets()
         onChapterReady?(spineIndex)
     }
@@ -1619,11 +1604,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             if let state = chapterLayoutStates[spine], let diag = state.diagnosticPage {
                 // Terminal diagnostic chapter: ONE real page owned by the
                 // browser engine (never a placeholder, never a re-ensure).
-                return BrowserForcedDiagnosticViewController(
+                return BrowserChapterFailureViewController(
                     globalPageIndex: index,
                     readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: 0),
                     diagnosticPage: diag,
-                    backgroundColor: themeBackgroundColor,
+                    chapterTitle: resource.chapterTitle(at: spine),
+                    themeBackgroundColor: themeBackgroundColor,
+                    themeTextColor: themeTextColor,
+                    readerBackgroundImage: currentReaderBackgroundImage(),
                     showOverlay: showDebugOverlay
                 )
             }
@@ -1690,7 +1678,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 commitSHA: Self.currentCommitSHA,
                 engineMode: modeLabel,
                 fallbackReason: engineStatus[spine].flatMap {
-                    $0.hasPrefix("legacy") ? $0 : ($0.hasPrefix("forced-unsupported") ? "FORCED UNSUPPORTED" : nil)
+                    $0.hasPrefix("legacy") || $0.hasPrefix("failed") ? $0 : nil
                 },
                 k1PageLocalRect: k1Rect,
                 traceID: BrowserLayoutDeviceDiagnostic.traceID(for: spine, generation: layoutGeneration),
@@ -1780,11 +1768,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             if let state = chapterLayoutStates[spine], let diag = state.diagnosticPage {
                 BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) pageVCPosition diagnostic spine=\(spine) pageKind=\(state.label) reason=\(diag.reason.description)")
                 let global = pageIndex(forSpine: spine, charOffset: 0)
-                return BrowserForcedDiagnosticViewController(
+                return BrowserChapterFailureViewController(
                     globalPageIndex: global,
                     readingPosition: position,
                     diagnosticPage: diag,
-                    backgroundColor: themeBackgroundColor,
+                    chapterTitle: resource.chapterTitle(at: spine),
+                    themeBackgroundColor: themeBackgroundColor,
+                    themeTextColor: themeTextColor,
+                    readerBackgroundImage: currentReaderBackgroundImage(),
                     showOverlay: showDebugOverlay
                 )
             }
@@ -2065,34 +2056,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         displayListCache.removeAll()
         displayListCacheBytes.removeAll()
     }
-
-    /// Fails a layout step that takes longer than `nanos`, and stops it.
-    ///
-    /// The step and a timer are sibling child tasks; the first to finish decides and
-    /// the other is cancelled. A step on a `BrowserPageLayoutOwner` stops at its next
-    /// block or page once cancelled, so a chapter past its time goes to the legacy
-    /// engine without being laid out to the end first.
-    private func withTimeout<T: Sendable>(nanos: UInt64,
-                                          _ step: @escaping @Sendable () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: TimedStep<T>.self) { group in
-            group.addTask { .finished(try await step()) }
-            group.addTask {
-                try await Task.sleep(nanoseconds: nanos)
-                return .timedOut
-            }
-            defer { group.cancelAll() }
-            guard case .finished(let value)? = try await group.next() else { throw EngineTimeoutError() }
-            return value
-        }
-    }
 }
-
-private enum TimedStep<T: Sendable>: Sendable {
-    case finished(T)
-    case timedOut
-}
-
-private struct EngineTimeoutError: Error {}
 
 // MARK: - ChapterEngineChoice helpers
 

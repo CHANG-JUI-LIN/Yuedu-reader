@@ -80,9 +80,9 @@ struct SVGCoverFixtureTests {
         // The diagnostic page is a REAL browser page VC — not a placeholder
         // (which would re-trigger ensure) and not a legacy page.
         let atIndexVC = engine.pageViewController(at: 0)
-        #expect(atIndexVC is BrowserForcedDiagnosticViewController)
+        #expect(atIndexVC is BrowserChapterFailureViewController)
         let positionVC = engine.pageViewController(for: .chapterStart(0))
-        #expect(positionVC is BrowserForcedDiagnosticViewController)
+        #expect(positionVC is BrowserChapterFailureViewController)
 
         // Session-ensure seal: exactly ONE session for (generation 0, spine 0),
         // and 100 position queries must not create more (the livelock).

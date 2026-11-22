@@ -224,6 +224,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// Paged mode renders a placeholder page for these; scroll mode used to render
     /// nothing at all, which is why an uncached chapter appeared as a blank screen.
     private var placeholderChapters: Set<Int> = []
+    /// Chapters whose build threw: they stand on a 章節載入失敗 placeholder (also in
+    /// `placeholderChapters`) and are not loaded again until a reslice builds a new
+    /// layout — a failure is reported, never retried on every scroll frame.
+    private var failedChapters: Set<Int> = []
     /// Chapters found to be laid out in another mode than this segment's: where it ends.
     private var segmentBoundaries: Set<Int> = []
     /// Latest-wins guard for overlapping settings/content reslices.
@@ -294,6 +298,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let next = chapterIndex + 1
         guard next < builder.chapterCount,
               !loadedChapters.contains(next),
+              !failedChapters.contains(next),
               slicingChapters[next] == nil,
               !pendingMissingChapters.contains(next),
               !segmentBoundaries.contains(next) else { return }
@@ -306,6 +311,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let prev = chapterIndex - 1
         guard prev >= 0,
               !loadedChapters.contains(prev),
+              !failedChapters.contains(prev),
               slicingChapters[prev] == nil,
               !pendingMissingChapters.contains(prev),
               !segmentBoundaries.contains(prev) else { return }
@@ -375,6 +381,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         slicingChapters = [:]
         pendingMissingChapters = replacement.pendingMissingChapters
         placeholderChapters = replacement.placeholderChapters
+        failedChapters = replacement.failedChapters
         segmentBoundaries = replacement.segmentBoundaries
         isReady = replacement.isReady
         events.send(.reset(restorePosition: restorePosition))
@@ -551,7 +558,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     private func loadChapter(_ chapterIndex: Int) async {
         guard chapterIndex >= 0, chapterIndex < builder.chapterCount else { return }
         guard !Task.isCancelled,
-              !loadedChapters.contains(chapterIndex), slicingChapters[chapterIndex] == nil else { return }
+              !loadedChapters.contains(chapterIndex), !failedChapters.contains(chapterIndex),
+              slicingChapters[chapterIndex] == nil else { return }
         let generation = resliceGeneration
         let loadID = UUID()
         slicingChapters[chapterIndex] = loadID
@@ -777,9 +785,13 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             AppLogger.render("[ScrollEngine] chapter content missing chapter=\(requestedChapter)")
             insertLoadingPlaceholder(for: requestedChapter)
             onChapterContentRequired?(requestedChapter)
+        } catch is CancellationError {
+            // A superseded preparation (a newer layout generation took over), not a failure.
+            return
         } catch {
             guard generation == resliceGeneration, !Task.isCancelled else { return }
             AppLogger.render("[ScrollEngine] buildChapter error chapter=\(chapterIndex) error=\(error)")
+            insertFailurePlaceholder(for: chapterIndex)
         }
     }
 
@@ -791,6 +803,21 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// to a chapter boundary — showed a blank surface with nothing to indicate a fetch was
     /// running. Replaced in place by `loadChapter` as soon as the real content is sliced.
     private func insertLoadingPlaceholder(for chapterIndex: Int) {
+        insertPlaceholder(for: chapterIndex, message: localized("載入中…"))
+    }
+
+    /// Stands a chapter whose build threw up as "title + 章節載入失敗", in the slot its
+    /// 載入中 placeholder held if it had one — the scroll counterpart of the paged
+    /// engine's failure page. Without it the chapter contributed zero chunks: a blank
+    /// gap the reader scrolled straight past with nothing saying a chapter was missing.
+    private func insertFailurePlaceholder(for chapterIndex: Int) {
+        let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
+        pendingMissingChapters.remove(chapterIndex)
+        failedChapters.insert(chapterIndex)
+        insertPlaceholder(for: chapterIndex, message: localized("章節載入失敗"), at: vacatedIndex)
+    }
+
+    private func insertPlaceholder(for chapterIndex: Int, message: String, at index: Int? = nil) {
         guard contentWidth > 0,
               !placeholderChapters.contains(chapterIndex),
               !loadedChapters.contains(chapterIndex)
@@ -801,7 +828,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         // being true before stage 5 removes the call.
         let placeholderStart = CoreTextSliceMetrics.now
         let output = CoreTextChunkSlicer.slice(
-            attributedString: makeLoadingPlaceholderString(for: chapterIndex),
+            attributedString: makePlaceholderString(for: chapterIndex, message: message),
             chapterIndex: chapterIndex,
             contentWidth: contentWidth,
             writingMode: renderSettings.writingMode
@@ -814,7 +841,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         )
         guard !output.chunks.isEmpty else { return }
         placeholderChapters.insert(chapterIndex)
-        insert(chunks: output.chunks, chapterIndex: chapterIndex)
+        insert(chunks: output.chunks, chapterIndex: chapterIndex, at: index)
     }
 
     /// Removes a chapter's placeholder rows and closes the gap, returning the index the
@@ -842,7 +869,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
     /// Never contributes to `chapterCharacterCounts`: this text is not book content and
     /// must not enter progress or TTS position math.
-    private func makeLoadingPlaceholderString(for chapterIndex: Int) -> NSAttributedString {
+    private func makePlaceholderString(for chapterIndex: Int, message: String) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let titleStyle = renderSettings.chapterTitleStyle
         let title = builder.chapterTitle(at: chapterIndex)
@@ -866,7 +893,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let bodyParagraph = NSMutableParagraphStyle()
         bodyParagraph.alignment = .center
         result.append(NSAttributedString(
-            string: localized("載入中…"),
+            string: message,
             attributes: [
                 .font: UserReaderFontResolver.bodyFont(
                     size: renderSettings.fontSize,

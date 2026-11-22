@@ -127,7 +127,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
     struct DebugSpec {
         let commitSHA: String
         let engineMode: String
-        /// BrowserFallbackReason.description when this page is a forced
+        /// BrowserChapterFailureReason.description when this page is a forced
         /// unsupported render (browserForced); nil for supported pages.
         let fallbackReason: String?
         /// k1 page-local rect (for window conversion in didMoveToWindow).
@@ -1016,61 +1016,146 @@ final class BrowserLayoutPageViewController: UIViewController,
 
 }
 
-/// Terminal diagnostic page VC for `browserForced` chapters the browser engine
-/// cannot render (unsupported / image-only / empty / failed / timeout). A REAL
-/// page owned by the browser engine — `effectiveEngine=browser`, NEVER a legacy
-/// fallback, and never a placeholder that could re-ensure layout. The reader
-/// treats it as one page and can turn past it into the next chapter.
+/// A chapter's failure page: the browser engine could not show the chapter (its HTML
+/// could not be read or parsed, or its layout threw; in `browserForced` mode also an
+/// unsupported or empty chapter). A REAL page owned by the browser engine —
+/// `effectiveEngine=browser`, NEVER a legacy fallback, and never a placeholder that
+/// could re-ensure layout (the paged host refreshes `PlaceholderPageViewController`s).
+/// The reader treats it as one page and can turn past it into the next chapter.
+///
+/// It looks like the chapter's 載入中 page with the message in place of the spinner,
+/// so the two states of one chapter read as the same surface.
 @MainActor
-final class BrowserForcedDiagnosticViewController: UIViewController,
+final class BrowserChapterFailureViewController: UIViewController,
     PageIndexProviding,
     CoreTextReadingPositionProviding {
     let globalPageIndex: Int
     let coreTextReadingPosition: CoreTextReadingPosition?
-    private let diagnosticPage: BrowserForcedDiagnosticPage
-    private let backgroundColorFill: UIColor
+    /// VoiceOver-originated reader commands, as on every reader page.
+    var onAccessibilityAction: ((TouchAction) -> Void)?
+    /// See `CoreTextPageViewController.voiceOverFocus`.
+    weak var voiceOverFocus: ReaderPageVoiceOverFocus?
+    let diagnosticPage: BrowserChapterFailurePage
+    private let chapterTitle: String
+    private let themeBackgroundColor: UIColor
+    private let themeTextColor: UIColor
+    private let readerBackgroundImage: UIImage?
+    private let showOverlay: Bool
+    private let messageLabel = UILabel()
+    private let titleLabel = UILabel()
 
     init(
         globalPageIndex: Int,
         readingPosition: CoreTextReadingPosition?,
-        diagnosticPage: BrowserForcedDiagnosticPage,
-        backgroundColor: UIColor,
+        diagnosticPage: BrowserChapterFailurePage,
+        chapterTitle: String,
+        themeBackgroundColor: UIColor,
+        themeTextColor: UIColor,
+        readerBackgroundImage: UIImage?,
         showOverlay: Bool
     ) {
         self.globalPageIndex = globalPageIndex
         self.coreTextReadingPosition = readingPosition
         self.diagnosticPage = diagnosticPage
-        self.backgroundColorFill = backgroundColor
+        self.chapterTitle = chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.themeBackgroundColor = themeBackgroundColor
+        self.themeTextColor = themeTextColor
+        self.readerBackgroundImage = readerBackgroundImage
+        self.showOverlay = showOverlay
         super.init(nibName: nil, bundle: nil)
-        if showOverlay {
-            let label = UILabel()
-            let reason = diagnosticPage.reason.description
-            let features = diagnosticPage.unsupportedFeatures.isEmpty
-                ? ""
-                : " / unsupported=\(diagnosticPage.unsupportedFeatures.map(\.description).joined(separator: ","))"
-            label.text = "FORCED UNSUPPORTED\nreason=\(reason)\(features)\nspine=\(diagnosticPage.spineIndex)"
-            label.font = .systemFont(ofSize: 12, weight: .semibold)
-            label.textColor = .systemRed
-            label.textAlignment = .center
-            label.numberOfLines = 0
-            label.translatesAutoresizingMaskIntoConstraints = false
-            label.accessibilityIdentifier = "reader_forced_diagnostic_page"
-            view.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-                label.leadingAnchor.constraint(lessThanOrEqualTo: view.leadingAnchor, constant: 16),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -16),
-            ])
-        }
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
+    /// What the page says, and what VoiceOver reads after the chapter's title.
+    static var message: String { localized("章節載入失敗") }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = backgroundColorFill
+        view.backgroundColor = themeBackgroundColor
+        installBackgroundImageIfNeeded()
+
+        messageLabel.text = Self.message
+        messageLabel.font = .preferredFont(forTextStyle: .body)
+        messageLabel.textColor = themeTextColor.withAlphaComponent(0.6)
+        titleLabel.text = chapterTitle
+        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.textColor = themeTextColor.withAlphaComponent(0.5)
+        if showOverlay {
+            let features = diagnosticPage.unsupportedFeatures.isEmpty
+                ? ""
+                : " / unsupported=\(diagnosticPage.unsupportedFeatures.map(\.description).joined(separator: ","))"
+            titleLabel.text = "reason=\(diagnosticPage.reason.description)\(features)\nspine=\(diagnosticPage.spineIndex)"
+            titleLabel.textColor = .systemRed
+        }
+        let stack = UIStackView(arrangedSubviews: [messageLabel, titleLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = DSSpacing.md
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        for label in [messageLabel, titleLabel] {
+            label.adjustsFontForContentSizeCategory = true
+            label.textAlignment = .center
+            label.numberOfLines = 0
+        }
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: DSSpacing.lg),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -DSSpacing.lg),
+        ])
+        view.accessibilityIdentifier = "reader_chapter_failure_page"
+        configureAccessibility()
+    }
+
+    /// Aspect-fill and centred, as on the 載入中 page and a laid-out page.
+    private func installBackgroundImageIfNeeded() {
+        guard let readerBackgroundImage else { return }
+        let imageView = UIImageView(image: readerBackgroundImage)
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.isAccessibilityElement = false
+        view.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: view.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+
+    /// One element, "<chapter>，章節載入失敗", with the reader commands reachable — the
+    /// same contract as `PlaceholderPageViewController`: a blind user must never be left
+    /// on a page with no way back to the toolbar.
+    private func configureAccessibility() {
+        view.isAccessibilityElement = true
+        view.accessibilityTraits = .staticText
+        view.accessibilityLabel = Self.accessibilityLabel(chapterTitle: chapterTitle)
+        view.accessibilityHint = localized("點兩下展開閱讀工具，三指左右滑動翻頁")
+        view.accessibilityCustomActions = [
+            accessibilityAction(named: localized("選單"), action: .toggleMenu),
+            accessibilityAction(named: localized("目錄"), action: .tableOfContents),
+        ]
+    }
+
+    static func accessibilityLabel(chapterTitle: String) -> String {
+        chapterTitle.isEmpty ? message : "\(chapterTitle)，\(message)"
+    }
+
+    private func accessibilityAction(named name: String, action: TouchAction) -> UIAccessibilityCustomAction {
+        UIAccessibilityCustomAction(name: name) { [weak self] _ in
+            guard let handler = self?.onAccessibilityAction else { return false }
+            handler(action)
+            return true
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        voiceOverFocus?.pageDidAppear(view, at: coreTextReadingPosition)
     }
 }

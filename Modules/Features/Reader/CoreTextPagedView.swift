@@ -1408,6 +1408,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 placeholder.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
+            case let failure as BrowserChapterFailureViewController:
+                failure.voiceOverFocus = pageVoiceOverFocus(for: failure.globalPageIndex)
+                failure.onAccessibilityAction = { [weak self] action in
+                    self?.performAccessibilityAction(action)
+                }
             case let spread as ReaderSpreadPageViewController:
                 spread.pageViewControllers.forEach { _ = installAccessibilityActions(on: $0) }
             default:

@@ -679,28 +679,13 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
                 }
 
                 if presentationalUsage.hasValidHint {
-                    let currentEvidence: GeometryEvidence
-                    do {
-                        currentEvidence = try documentEvidence(
-                            html: chapter.html,
-                            css: chapter.css,
-                            config: config,
-                            images: images,
-                            contentHeight: contentHeight
-                        )
-                    } catch BrowserLayoutDocument.BrowserLayoutError.unsupportedFloatFragmentation {
-                        rows.append(CorpusRow(
-                            bookID: bookID,
-                            spineIndex: spineIndex,
-                            sourceLength: 0,
-                            scannerReasons: ["layout-unsupported-float-fragmentation"],
-                            boxLineDigest: nil,
-                            fragmentDigest: nil,
-                            pageRangeDigest: nil,
-                            pageCount: nil
-                        ))
-                        continue
-                    }
+                    let currentEvidence = try documentEvidence(
+                        html: chapter.html,
+                        css: chapter.css,
+                        config: config,
+                        images: images,
+                        contentHeight: contentHeight
+                    )
                     let row = corpusRow(
                         bookID: bookID,
                         spineIndex: spineIndex,
@@ -733,28 +718,13 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
                 }
 
                 if textIndentClass == .supportedNonZero {
-                    let currentEvidence: GeometryEvidence
-                    do {
-                        currentEvidence = try documentEvidence(
-                            html: chapter.html,
-                            css: chapter.css,
-                            config: config,
-                            images: images,
-                            contentHeight: contentHeight
-                        )
-                    } catch BrowserLayoutDocument.BrowserLayoutError.unsupportedFloatFragmentation {
-                        rows.append(CorpusRow(
-                            bookID: bookID,
-                            spineIndex: spineIndex,
-                            sourceLength: 0,
-                            scannerReasons: ["layout-unsupported-float-fragmentation"],
-                            boxLineDigest: nil,
-                            fragmentDigest: nil,
-                            pageRangeDigest: nil,
-                            pageCount: nil
-                        ))
-                        continue
-                    }
+                    let currentEvidence = try documentEvidence(
+                        html: chapter.html,
+                        css: chapter.css,
+                        config: config,
+                        images: images,
+                        contentHeight: contentHeight
+                    )
                     let row = corpusRow(
                         bookID: bookID,
                         spineIndex: spineIndex,
@@ -925,25 +895,10 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
                     config: config,
                     imageLoader: { images[$0] }
                 )
-                let pipeline: BrowserLayoutDocument.BrowserLayoutPipelineResult
-                do {
-                    pipeline = try document.makeLayout(
-                        containerSize: Self.viewport,
-                        fragmentHeight: contentHeight
-                    )
-                } catch BrowserLayoutDocument.BrowserLayoutError.unsupportedFloatFragmentation {
-                    rows.append(CorpusRow(
-                        bookID: bookID,
-                        spineIndex: spineIndex,
-                        sourceLength: 0,
-                        scannerReasons: ["layout-unsupported-float-fragmentation"],
-                        boxLineDigest: nil,
-                        fragmentDigest: nil,
-                        pageRangeDigest: nil,
-                        pageCount: nil
-                    ))
-                    continue
-                }
+                let pipeline = try document.makeLayout(
+                    containerSize: Self.viewport,
+                    fragmentHeight: contentHeight
+                )
                 let pages = PageFragmentation.fragment(
                     box: pipeline.rootBox,
                     pageSize: Self.viewport,

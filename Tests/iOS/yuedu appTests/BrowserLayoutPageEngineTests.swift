@@ -16,6 +16,8 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
 
     var chapters: [Chapter]
     var failChapterHTML: Set<Int> = []
+    /// Every `chapterHTML` call, by chapter: a settled failure must not be read again.
+    var chapterHTMLReads: [Int: Int] = [:]
     var failChapterCSS: Set<Int> = []
     var preparedFontRequests: [Set<BrowserFontRequest>] = []
 
@@ -27,6 +29,7 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
     func chapterTitle(at index: Int) -> String { chapters[safe: index]?.title ?? "" }
     func chapterSourceHref(at index: Int) -> String? { chapters[safe: index]?.href }
     func chapterHTML(at index: Int) async throws -> String {
+        chapterHTMLReads[index, default: 0] += 1
         if failChapterHTML.contains(index) { throw MockError.failed }
         return chapters[safe: index]?.html ?? ""
     }
@@ -508,20 +511,52 @@ struct BrowserLayoutPageEngineTests {
         #expect(vc is CoreTextPageViewController)
     }
 
-    @Test func engineFailureFallsBackWholeChapter() async throws {
+    /// A chapter the browser engine cannot show is its own failure page: one page,
+    /// never handed to the legacy engine, which would only have hidden why.
+    @Test func unreadableChapterShowsFailurePage() async throws {
         let chapter = plainChapter("Text that will fail to load.", index: 0)
         let (engine, resource, _) = await makeEngine(chapters: [chapter])
         resource.failChapterHTML.insert(0)
         await engine.notifyChapterDataChanged(at: 0)
-        let choice = engine.choice(for: 0)
-        guard case .legacyEngineFailure = choice else {
-            Issue.record("expected legacyEngineFailure, got \(String(describing: choice))")
+        #expect(engine.choice(for: 0)?.isBrowser == true)
+        guard case .failedDiagnostic(let page) = engine.testChapterLayoutStates[0] else {
+            Issue.record("expected failedDiagnostic, got \(String(describing: engine.testChapterLayoutStates[0]))")
             return
         }
-        // The whole chapter renders from the legacy engine — no partial browser
-        // pages.
-        let vc = engine.pageViewController(at: 0)
-        #expect(vc is CoreTextPageViewController)
+        #expect(page.reason == .resourceFailure("chapterHTML"))
+        #expect(engine.totalPages == 1)
+        #expect(engine.pageViewController(at: 0) is BrowserChapterFailureViewController)
+        #expect(engine.pageViewController(for: .chapterStart(0)) is BrowserChapterFailureViewController)
+        #expect(await engine.preloadChapter(at: 0) == .buildFailed)
+    }
+
+    /// A chapter that failed is settled: a refresh's cancel must not send it through
+    /// the engine again (it is retried only when its data or the layout changes).
+    @Test func failedChapterIsSettledAcrossCancels() async throws {
+        let chapters = [
+            plainChapter("First chapter.", index: 0),
+            plainChapter(String(repeating: "Second chapter text. ", count: 40), index: 1),
+        ]
+        let (engine, resource, _) = await makeEngine(chapters: chapters)
+        resource.failChapterHTML.insert(1)
+        await engine.notifyChapterDataChanged(at: 1)
+        await engine.preloadChapter(at: 1)
+        guard case .failedDiagnostic = engine.testChapterLayoutStates[1] else {
+            Issue.record("expected failedDiagnostic, got \(String(describing: engine.testChapterLayoutStates[1]))")
+            return
+        }
+        let reads = resource.chapterHTMLReads[1, default: 0]
+        for _ in 0..<3 {
+            engine.cancelPendingWork(cause: .refreshTransaction)
+            #expect(await engine.preloadChapter(at: 1) == .buildFailed)
+        }
+        #expect(resource.chapterHTMLReads[1, default: 0] == reads, "a settled failure was read again after a cancel")
+        #expect(engine.choice(for: 1)?.isBrowser == true)
+        // Its data changing is a reason to try again.
+        resource.failChapterHTML.remove(1)
+        await engine.notifyChapterDataChanged(at: 1)
+        #expect(await engine.preloadChapter(at: 1).isReady)
+        #expect(engine.testChapterLayoutStates[1] == .ready)
     }
 
     @Test func themeChangeKeepsBrowserPages() async throws {
@@ -567,30 +602,6 @@ struct BrowserLayoutPageEngineTests {
         #expect(engine.testSessionEnsureTotals[0] == 1, "a finished chapter was laid out again after a cancel")
         #expect(engine.totalPages == pages)
         #expect(engine.testChapterLayoutStates[0] == .ready)
-    }
-
-    /// A chapter whose layout ran past the timeout goes to the legacy engine, and must
-    /// not stay `.loading` — nothing is loading it any more.
-    @Test func timedOutChapterLeavesNoLoadingState() async throws {
-        let chapters = [
-            plainChapter("First chapter.", index: 0),
-            plainChapter(String(repeating: "Second chapter text. ", count: 40), index: 1),
-        ]
-        let builder = MockAttributedStringBuilder(texts: chapters.map { $0.title })
-        let (engine, _, _) = await makeEngine(chapters: chapters, builder: builder)
-        engine.chapterTimeoutNanos = 1
-        await engine.preloadChapter(at: 1)
-        guard case .legacyEngineFailure(.timeout) = engine.choice(for: 1) else {
-            Issue.record("expected a timeout fallback, got \(String(describing: engine.choice(for: 1)))")
-            return
-        }
-        #expect(engine.testChapterLayoutStates[1] != .loading)
-        for _ in 0..<3 {
-            engine.cancelPendingWork(cause: .refreshTransaction)
-            await engine.preloadChapter(at: 1)
-        }
-        #expect(engine.testSessionEnsureTotals[1] == 1)
-        #expect(builder.buildCounts[1] == 1, "the legacy engine built the timed-out chapter again after a cancel")
     }
 
     /// THE LIVELOCK REGRESSION: an image-only / zero-page chapter under
@@ -643,9 +654,9 @@ struct BrowserLayoutPageEngineTests {
         // pageViewController(at:)/(for:) returns the DIAGNOSTIC page VC — never
         // a placeholder that re-triggers ensure.
         let atVC = engine.pageViewController(at: 0)
-        #expect(atVC is BrowserForcedDiagnosticViewController)
+        #expect(atVC is BrowserChapterFailureViewController)
         let positionVC = engine.pageViewController(for: .chapterStart(0))
-        #expect(positionVC is BrowserForcedDiagnosticViewController)
+        #expect(positionVC is BrowserChapterFailureViewController)
 
         // Session-ensure seal: exactly ONE (generation, spine) session; 100
         // position queries must not start another (the livelock loops forever
@@ -678,7 +689,6 @@ struct BrowserLayoutPageEngineTests {
             html: Self.largeSyntheticChapterHTML(paragraphs: 1500),
             css: ["p{text-indent:1em;margin:0 0 .5em 0;text-align:justify} h1{text-align:center}"])
         let (engine, _, _) = await makeEngine(chapters: [plainChapter("Start.", index: 0), big])
-        engine.chapterTimeoutNanos = 120_000_000_000
         let watchdog = MainThreadWatchdog()
         watchdog.start()
         let start = ContinuousClock.now
