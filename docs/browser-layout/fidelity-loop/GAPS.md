@@ -43,6 +43,7 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 代表章節：kusamakura:3、kusamakura:8
 - 假設的根因：`html { margin: auto 1em; padding: 1em 0; max-height: 28em; font-size: 14pt }`。直排時 `max-height` 把每一行限制在 28em，上下的 auto margin 讓它置中；我們把字排滿整個高度。橫排版本的樣式表用的是 `max-width: 28em`，同一條規則
 - 完成的樣子：每行字數和對照組一致；kusamakura 走新引擎的章節 ≥ 80
+- 狀態：2026-11-22 完成（套件 0.28.0）。測試書 61.0 → 82.6（排版 99.5）；kusamakura 走新引擎的 14 章 81–84。測試書剩下的扣分在視覺（背景），和 S003、S014 是同一類，不是盒子
 
 ### S005 — 直排章節只要有圖就整章回退（redchamber-vertical 76.6、kusamakura）
 - 測試書：[`s005-vertical-images`](../../../scripts/fidelity/fixtures/gaps/S005-vertical-images/)（`gaps-2026-10-25`：66.1，行內記號（第 1 章）和區塊圖／行內區塊裡的圖（第 2 章）都讓整章回退 vertical-writing-mode）

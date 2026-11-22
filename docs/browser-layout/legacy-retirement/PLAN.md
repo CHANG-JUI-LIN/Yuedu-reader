@@ -97,7 +97,9 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | 1-5c | 有多個項目的 flex 容器（橫排）：橫列與直欄、`flex-wrap`、`gap`、`flex-grow`／`shrink`／`basis`、`justify-content`、`align-items`／`align-self`、auto margin；圖片項目；超過一頁的並排列跨頁時各項目仍並排 | **完成**：套件 0.27.0。**語料 567 章裡沒有一章因為這個回退**，所以沒有語料分數可以佐證；證據是測試書 S019（對照 WebKit 99.1，排版 99.7，80 個色塊與 4 張圖的位置大小全部對上，run `flex-items-6`）和全語料無回歸（套件提交 7e1f03f：565 章分數完全相同，另 2 章是走舊引擎的雜訊，run `flex-corpus-after` 對 `release-0251`，同時補上 0.26.0 欠的全語料複測；發佈的 0.27.1（2f9e6f2）再量一次，567 章全部相同，run `release-0271`）。**量測走的是捲動（連續）版面，分頁行為只有套件測試在看**。只包文字的容器（1-5a）改走同一條路徑，orv、全能遊戲設計師分數不變。未做：反向（`*-reverse`）、`order`、基線對齊、`align-content`、直欄的收縮、直排；`@supports` 區塊仍整個丟掉（book-8fbb4b7b 的整頁置中圖片規則寫在 `@supports (display: flex)` 裡，所以沒生效）；`.f > *:nth-child(2n)` 這個選擇器沒有套用（做測試書時發現，另案） |
 | 1-6a | 空的 `<svg>`（只有 viewBox，沒有內容；鬼吹燈各卷首頁）畫成同比例的空白圖；整章沒有可畫的東西時新引擎自己出一張空白頁，不回退（語料裡這種章節有 123 個）；空的區塊照 CSS 2.1 §8.3.1 自己折疊上下邊距 | **完成**：套件 0.24.0。鬼吹燈 93.9 → 96.1、book-3804b2ae 95.0 → 96.6、book-d53a7692 91.8 → 92.8，沒有書下降（run `collapse-after` 對 `collapse-before`）。book-3804b2ae 有三章各降約 4：章首位移現在和 WebKit 一致（+0.8，原本 +43），露出的是原本就有、被錯誤位移遮住的行距漂移（每行 −0.25），另案處理 |
 | 1-6b | `calc()`：長度與百分比的加減，用在 `width`、`max-width`、左右 margin／padding、`left`／`right` | **完成**：套件 0.26.0。語料裡唯一用到的一章（全能遊戲設計師第 56 章）67.3 → 93.8，改走新引擎（run `calc-after` 對 `calc-before`）。乘除、巢狀函式、`min()`／`max()`／`clamp()`、其他屬性、直排仍回退 |
-| 1-6c | `audio`（劍來 1 章，多看的朗讀元件）、直排的 `min-width`（草枕封面 1 章）、MathML、`iframe` 等 | 未開始 |
+| 1-6c | 沒有 `controls` 的 `audio` 不顯示東西、不再回退（html.css 的規則；舊引擎也是不顯示） | **完成**：套件 0.27.2。劍來 SONG 章 75.1（舊引擎）→ 99.5（run `audio-after` 對 `audio-before`）。有 `controls` 的 `audio`、MathML、`iframe` 仍回退，語料裡沒有 |
+| 1-6d | `html` 元素自己的盒子（GAPS S004）：margin（含 auto）、border、padding、`width`／`max-width`／`min-width`，直排時對應到欄長（`max-height`）。不新增盒子：在文件層算一次，`body` 排在剩下的寬度裡，周圍的留白併進 `body` 的 margin | **完成**：套件 0.28.0。草枕走新引擎的 14 章 67–70 → 81–84（達到 S004 訂的 ≥ 80），整本 66.3 → 79.7；測試書 S004 61.0 → 82.6（排版 62.9 → 99.5）；全語料 567 章只有草枕變動（run `root-corpus-after` 對 `release-0271`）。`html` 的邊框只佔位置不畫，`height`／`min-height` 不處理 |
+| 1-6e | 草枕封面（語料裡最後一個准入回退）：直排裡的浮動圖、`inline-block`、百分比高度、`min-width`、`max-height` | 未開始。四項都要各自做直排測試書對照 WebKit 再放行；實驗性全部放行時 61.4（舊引擎 41.8），未驗證、已改回 |
 | 1-7 | 排版失敗與逾時不再回退：修掉原因，或顯示錯誤頁 | 未開始 |
 | 1-8 | 元素自己的背景圖。讀程式看起來新引擎不畫非根元素的 `background-image`，還沒用測試書確認 | 未開始 |
 
@@ -110,6 +112,8 @@ YUEDU_DEST="id=7C0123B2-97C4-49CA-80A3-CF0FBFD8352D" bash scripts/fidelity/measu
 | 有向量內容的 SVG | 10 | 鬼吹燈 |
 | `position: absolute` | 9 | 全能遊戲設計師 |
 | 其他 | 3 | `calc()` 1、`audio` 1、直排 `min-width` 1 |
+
+**全書普查（2026-11-22，套件 0.27.1，每章用自己的書寫方向）：** 12,984 章只剩 2 章准入回退：草枕封面（直排，見 1-6e）與劍來 SONG 章（`audio`，0.27.2 已處理）。保真度報告裡 ナミヤ 第 11、12 章（版權頁）的回退不是真的：凍結的量測工具把每一章都用書的方向排（`RenderFidelityOracleTests` 以 `session.epubWritingMode` 決定），App 用每章自己的方向；用 App 的開書流程（捲動模式）驗證過，這兩章是橫排、走新引擎、沒有舊引擎區塊。分頁模式沒有另外驗證。
 
 普查不經過 App：App 對「沒有宣告書寫方向的章節」用書的方向，普查用橫排；排版失敗、逾時、整章翻譯造成的回退普查也看不到。普查工具是一支暫時放進套件測試的程式（`CorpusCensusTests`），沒有進版本庫。
 
@@ -149,3 +153,5 @@ EPUB 啟動時不再建立舊引擎；`BrowserLayoutPageEngine` 自己持有版�
 | 2026-11-22 | 1-6b `calc()`：套件 0.26.0 | `calc-after` |
 | 2026-11-22 | 1-5c 多項目 flex：套件 0.27.0。順帶修掉「量最大內容寬用的字型和排字用的不同」（兩個漢字的格子窄 0.3px 被折成兩行；inline-block、浮動、表格欄寬用同一個量法）；並排項目超過一頁時第二欄的字原本會掉到頁外，改成依上下位置交錯分頁；區塊排版每層堆疊 19 KB → 17 KB，堆疊用量改用量測斷言（`NestingStackCostTests`） | `flex-items-6`、`flex-corpus-after` |
 | 2026-11-22 | 套件 0.27.1：表格列跨頁時後面儲存格的字掉到頁外（0.22.0 起就有；量測是連續版面所以沒抓到）。表格列和多項目 flex 列一樣：放得下一頁就整列移到下一頁，超過一頁就由上往下交錯分頁 | 套件測試、`release-0271` |
+| 2026-11-22 | 1-6c 沒有 controls 的 audio：套件 0.27.2 | `audio-after` |
+| 2026-11-22 | 1-6d `html` 元素的盒子（S004）：套件 0.28.0。第一版把 `html` 的樣式整份放在排版路徑的結構裡，基礎堆疊用量 +26 KB，改成放陣列後回到原值 | `root-kusa-after`、`root-gaps-after`、`root-corpus-after` |
