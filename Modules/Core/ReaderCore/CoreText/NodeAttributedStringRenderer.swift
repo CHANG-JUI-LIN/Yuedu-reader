@@ -1727,12 +1727,40 @@ struct NodeAttributedStringRenderer: Sendable {
             || (config.centerStandaloneImages && attachmentStyle.textAlign == .natural)
         let imageAlignment: NSTextAlignment = shouldCenter ? .center : nsTextAlignment(from: attachmentStyle.textAlign)
 
-        let imageMetrics = await resolvedImageMetrics(
+        // Fitted to the page before anything is made of them: the block's drawn size and its
+        // line's height both come from these.
+        let imageMetrics = await pageFittedImageMetrics(
+            await resolvedImageMetrics(
+                image: image,
+                style: attachmentStyle,
+                font: blockCtx.font,
+                displayMode: .block,
+                availableWidthOverride: availableImageWidth(in: blockCtx)
+            ),
             image: image,
             style: attachmentStyle,
-            font: blockCtx.font,
-            displayMode: .block,
-            availableWidthOverride: availableImageWidth(in: blockCtx)
+            ctx: blockCtx,
+            displayMode: .block
+        )
+        let placeholder = NSMutableAttributedString(
+            attributedString: await makeImagePlaceholder(
+                image: image,
+                style: attachmentStyle,
+                ctx: blockCtx,
+                imageSource: payload.src,
+                imageAlt: payload.alt,
+                displayMode: .block,
+                precomputedMetrics: imageMetrics
+            )
+        )
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(
+                base: blockCtx.paragraphStyle,
+                metrics: imageMetrics,
+                isHorizontallyCentered: shouldCenter
+            ),
+            range: NSRange(location: 0, length: placeholder.length)
         )
         let blockImage = HTMLAttributedStringBuilder.BlockRenderStyle.BlockImage(
             image: image,
@@ -1745,28 +1773,7 @@ struct NodeAttributedStringRenderer: Sendable {
             paddingBottom: attachmentStyle.paddingBottom,
             paddingRight: attachmentStyle.paddingRight
         )
-
-        let placeholder = NSMutableAttributedString(
-            attributedString: await makeImagePlaceholder(
-                image: image,
-                style: attachmentStyle,
-                ctx: blockCtx,
-                imageSource: payload.src,
-                imageAlt: payload.alt,
-                displayMode: .block,
-                precomputedMetrics: imageMetrics
-            )
-        )
         let range = NSRange(location: 0, length: placeholder.length)
-        placeholder.addAttribute(
-            .paragraphStyle,
-            value: imageBlockParagraphStyle(
-                base: blockCtx.paragraphStyle,
-                metrics: imageMetrics,
-                isHorizontallyCentered: shouldCenter
-            ),
-            range: range
-        )
         if let href = payload.href {
             placeholder.addAttribute(HTMLAttributedStringBuilder.internalLinkAttribute, value: href, range: range)
         }
@@ -2171,7 +2178,8 @@ struct NodeAttributedStringRenderer: Sendable {
         displayMode: ImageRunInfo.DisplayMode,
         precomputedMetrics: ImageMetrics? = nil,
         linkRegions: [ImageLinkRegion] = [],
-        allowsPreview: Bool = true
+        allowsPreview: Bool = true,
+        fitsPage: Bool = true
     ) async -> NSAttributedString {
         var metrics: ImageMetrics
         if let precomputedMetrics {
@@ -2184,6 +2192,9 @@ struct NodeAttributedStringRenderer: Sendable {
                 displayMode: displayMode,
                 availableWidthOverride: availableImageWidth(in: ctx)
             )
+        }
+        if fitsPage {
+            metrics = await pageFittedImageMetrics(metrics, image: image, style: style, ctx: ctx, displayMode: displayMode)
         }
         if style.isTextSizedImage, displayMode == .inline, !isVertical(style) {
             metrics = textSizedClaim(metrics, ctx: ctx)
@@ -2502,6 +2513,78 @@ struct NodeAttributedStringRenderer: Sendable {
         return marker
     }
 
+    /// `metrics`, brought down until a page with nothing else on it takes the picture's line.
+    ///
+    /// A picture the page cannot take is never drawn, and leaves blank pages where it stood: a
+    /// folded iPhone Duo's page (466×678pt) lost every 2:3 illustration of an online chapter
+    /// (2026-11-22). The picture's own height is not what the page has to take: its line also
+    /// carries the body text's baseline offset, so a 503pt page took a 502pt picture at 20pt ×
+    /// 1.6, a 501pt one at 18pt × 1.8 and a 498pt one at 24pt × 2.0 (measured, iOS 26.5). So the
+    /// page is asked, and the picture comes down a point at a time until its line fits — as a
+    /// line of its own, which is what a paragraph holding a tall picture is given
+    /// (`relaxParagraphsContainingTallRuns`).
+    ///
+    /// Only a picture near the page's height is asked about: the 段評 bubbles of a chapter are
+    /// pictures too, hundreds of them. Vertical writing is left as it was sized.
+    private func pageFittedImageMetrics(
+        _ initial: ImageMetrics,
+        image: UIImage?,
+        style: RenderStyle,
+        ctx: RenderContext,
+        displayMode: ImageRunInfo.DisplayMode
+    ) async -> ImageMetrics {
+        guard let pageHeight = config.renderHeight, !isVertical(style),
+              initial.drawHeight > pageHeight * 0.75 else { return initial }
+        var metrics = initial
+        for _ in 0..<64 {
+            let line = NSMutableAttributedString(
+                attributedString: await makeImagePlaceholder(
+                    image: image,
+                    style: style,
+                    ctx: ctx,
+                    imageSource: "",
+                    displayMode: displayMode,
+                    precomputedMetrics: metrics,
+                    fitsPage: false
+                )
+            )
+            line.addAttribute(
+                .paragraphStyle,
+                value: imageBlockParagraphStyle(base: ctx.paragraphStyle, metrics: metrics),
+                range: NSRange(location: 0, length: line.length)
+            )
+            if Self.fitsEmptyPage(line, width: config.renderWidth, height: pageHeight) { return metrics }
+            guard metrics.drawHeight > 1 else { break }
+            metrics = await resolvedImageMetrics(
+                image: image,
+                style: style,
+                font: ctx.font,
+                displayMode: displayMode,
+                availableWidthOverride: availableImageWidth(in: ctx),
+                maxHeight: floor(metrics.drawHeight) - 1
+            )
+        }
+        AppLogger.render(
+            "⟐ picture does not fit its page page=\(config.renderWidth)x\(pageHeight) "
+                + "drawn=\(metrics.drawWidth)x\(metrics.drawHeight)"
+        )
+        return metrics
+    }
+
+    /// Whether a page with nothing else on it sets `line`: the question `CoreTextPaginator` asks
+    /// of every page, in a frame made the way it makes one.
+    private static func fitsEmptyPage(_ line: NSAttributedString, width: CGFloat, height: CGFloat) -> Bool {
+        guard line.length > 0, width > 0, height > 0 else { return true }
+        let framesetter = CTFramesetterCreateWithAttributedString(line)
+        let frame = CoreTextPaginator.makeFrame(
+            framesetter: framesetter,
+            range: CFRangeMake(0, line.length),
+            path: CGPath(rect: CGRect(x: 0, y: 0, width: width, height: height), transform: nil),
+            writingMode: .horizontal
+        )
+        return CTFrameGetVisibleStringRange(frame).length > 0
+    }
+
     private func imageBlockParagraphStyle(base: NSParagraphStyle, metrics: ImageMetrics, isHorizontallyCentered: Bool = false) -> NSParagraphStyle {
         let paragraph = base.mutableCopy() as! NSMutableParagraphStyle
         let reservedLineHeight = ceil(max(paragraph.minimumLineHeight, metrics.ascent + metrics.descent))
@@ -2594,11 +2677,19 @@ struct NodeAttributedStringRenderer: Sendable {
         style: RenderStyle,
         font: UIFont,
         displayMode: ImageRunInfo.DisplayMode = .inline,
-        availableWidthOverride: CGFloat? = nil
+        availableWidthOverride: CGFloat? = nil,
+        maxHeight: CGFloat? = nil
     ) async -> ImageMetrics {
         let baseWidth = availableWidthOverride ?? config.renderWidth
         let availableWidth = max(1, baseWidth - style.paddingLeft - style.paddingRight)
-        let maxDrawHeight = max(1, baseWidth * 1.5)
+        // No picture is taller than the page: CoreText sets no line taller than its frame, so one
+        // that is would never be drawn. One and a half times the column's width is taller than the
+        // page wherever the page is wider than two thirds of its height (a folded iPhone Duo's
+        // 426×516pt column). In vertical writing the picture's height runs down the column, which
+        // is the page's height as well. `maxHeight` is what the page was measured to take
+        // (`pageFittedImageMetrics`).
+        let pageLimit = config.renderHeight ?? .greatestFiniteMagnitude
+        let maxDrawHeight = max(1, min(baseWidth * 1.5, pageLimit, maxHeight ?? .greatestFiniteMagnitude))
         let isVertical = self.isVertical(style)
         let explicitWidth = style.rawWidthPercent.map { max(0, baseWidth * $0 / 100.0) } ?? style.width
 

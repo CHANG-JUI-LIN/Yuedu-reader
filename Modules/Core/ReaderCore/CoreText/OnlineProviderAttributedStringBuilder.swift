@@ -712,6 +712,12 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 textColor: themeTextColor,
                 fontFamily: UserReaderFontResolver.selectedPostScriptName,
                 renderWidth: cfg.renderWidth,
+                // The page's text area, as `EPUBAttributedStringBuilder` passes it and as
+                // `CoreTextPaginator.uiContentRect` lays it out: what a picture has to fit.
+                renderHeight: max(
+                    1,
+                    renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom
+                ),
                 resolvedFont: registeredFonts.map { fonts in
                     { @Sendable families, weight, italic, size in
                         fonts.resolve(families: families, weight: weight, italic: italic, size: size)

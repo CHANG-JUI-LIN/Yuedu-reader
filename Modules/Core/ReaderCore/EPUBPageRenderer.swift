@@ -913,7 +913,8 @@ final class EPUBPageRenderer: ObservableObject {
         // Into the Crashlytics log too: crashlytics db641b67 showed spine 0 laid out again
         // every ~4 s and nothing said which refresh asked for it.
         let refreshLine = "refresh transaction=\(transactionID) intent=\(request.intent) mode=\(request.mode) "
-            + "spine=\(request.position.spineIndex) viewport=\(request.viewportSize)"
+            + "spine=\(request.position.spineIndex) viewport=\(request.viewportSize) "
+            + "insets=\(request.settings.contentInsets)"
         AppLogger.render(refreshLine)
         CrashContext.breadcrumb(refreshLine)
 

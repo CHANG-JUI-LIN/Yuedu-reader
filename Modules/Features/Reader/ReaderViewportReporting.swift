@@ -111,6 +111,19 @@ struct ReaderWindowObstructions: Equatable {
         whileReading: ReaderWindowObstructions?
     ) -> (laidOut: ReaderWindowObstructions, whileReading: ReaderWindowObstructions?) {
         if statusBarHidden == true {
+            if measured.occlusions.isEmpty, let whileReading, !whileReading.occlusions.isEmpty,
+               measured.withOcclusions(whileReading: whileReading).occlusions == whileReading.occlusions {
+                // Fallback, disclosed: a report with no occlusions at all, for the window and
+                // the side safe areas a housing was just read beside, is one the system has not
+                // filled in yet. A folded iPhone Duo coming back to the foreground reported its
+                // 84pt side with nothing in it, and the housing in the next report (iOS 27.2
+                // simulator, 2026-11-22). Standing as measured, it has no housing to free the
+                // text from that side, and the text keeps 84pt clear on its right for as long as
+                // no later report arrives. The side safe area is there for the housing, so one
+                // cannot go without the other. Delete this once the system hands over a
+                // window's occlusions together with its safe areas.
+                return (measured.withOcclusions(whileReading: whileReading), whileReading)
+            }
             return (measured, measured)
         }
         return (measured.withOcclusions(whileReading: whileReading), whileReading)
@@ -197,8 +210,32 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
     private final class HeldObstructions {
         var latest: ReaderWindowObstructions?
         var awaitsWindow = false
-        /// The last report taken with the status bar hidden — what the page is laid out around.
-        var whileReading: ReaderWindowObstructions?
+        /// The last report taken with the status bar hidden — what the page is laid out around —
+        /// for each window it was taken in: its size and its side safe areas.
+        ///
+        /// One for each, not the last one alone. Going to the background, the system lays the
+        /// scene out at other sizes for its snapshots: a folded iPhone Duo's 466×678pt reader was
+        /// reported at 951×669pt and back, and the report that came back first had no occlusions
+        /// (iOS 27.2 simulator, 2026-11-22). With the 951pt report kept in place of the 466pt one,
+        /// that empty report had nothing to be read against and stood as measured: the text's
+        /// 84pt right inset, until the housing was reported again. A device has a handful of
+        /// such windows.
+        var whileReading: [WindowKey: ReaderWindowObstructions] = [:]
+    }
+
+    /// A window as a reading report belongs to it (`ReaderWindowObstructions.withOcclusions`).
+    private struct WindowKey: Hashable {
+        let width: CGFloat
+        let height: CGFloat
+        let left: CGFloat
+        let right: CGFloat
+
+        init(_ obstructions: ReaderWindowObstructions) {
+            width = obstructions.windowWidth
+            height = obstructions.windowHeight
+            left = obstructions.sideSafeArea.left
+            right = obstructions.sideSafeArea.right
+        }
     }
 
     func body(content: Content) -> some View {
@@ -310,9 +347,20 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
         let step = ReaderWindowObstructions.forReading(
             measured,
             statusBarHidden: statusBarHidden,
-            whileReading: held.whileReading
+            whileReading: held.whileReading[WindowKey(measured)]
         )
-        held.whileReading = step.whileReading
+        if let reading = step.whileReading {
+            held.whileReading[WindowKey(reading)] = reading
+        }
+        // What the text's side margins are decided from. A folded iPhone Duo's right margin
+        // moves by 84pt with these, and only this line says which report moved it.
+        AppLogger.render(
+            "⟐ readerObstructions window=\(Int(measured.windowWidth))x\(Int(measured.windowHeight)) "
+                + "sides=\(measured.sideSafeArea.left)/\(measured.sideSafeArea.right) "
+                + "statusBarHidden=\(statusBarHidden.map(String.init) ?? "unknown") "
+                + "measured=\(measured.occlusions) laidOut=\(step.laidOut.occlusions) "
+                + "reading=\(step.whileReading.map { "\($0.occlusions)" } ?? "none")"
+        )
         return step.laidOut
     }
 }

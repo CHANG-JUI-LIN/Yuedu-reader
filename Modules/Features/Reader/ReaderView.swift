@@ -176,6 +176,14 @@ struct ReaderView: View {
     /// and back again; laying the chapter out for each of those cost two full relayouts per
     /// visit to the home screen, for a picture taken before either finished.
     @State private var viewportSizeReportedInBackground: CGSize?
+    /// The last obstructions reported while the app was in the background, taken up when it
+    /// comes back — the other half of `viewportSizeReportedInBackground`. The snapshot's window
+    /// is reported with its own: a folded iPhone Duo's 466×678pt reader was told of a 951×669pt
+    /// window whose camera housing stands 2pt off its 84pt side, which is no housing, so the
+    /// text got its 84pt right inset back and the chapter was laid out narrow for a page still
+    /// 466pt wide, then wide again once the window was reported as it is (iOS 27.2 simulator,
+    /// 2026-11-22: two refreshes per visit to the home screen).
+    @State private var obstructionsReportedInBackground: ReaderWindowObstructions?
     /// What the window keeps the reader clear of, from `reportsReaderWindowObstructions`: the text
     /// and the 頁眉／頁腳 each keep clear of what reaches their own height (`readerTextSideInsets`,
     /// `readerBarSideInsets`). Nothing in an iPhone's portrait.
@@ -972,6 +980,16 @@ struct ReaderView: View {
             ),
             pagingStyle: ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle)
         )
+    }
+
+    /// What the window keeps the reader clear of, held like its size while the app is in the
+    /// background (`obstructionsReportedInBackground`).
+    func handleReaderWindowObstructions(_ obstructions: ReaderWindowObstructions) {
+        guard scenePhase != .background else {
+            obstructionsReportedInBackground = obstructions
+            return
+        }
+        readerWindowObstructions = obstructions
     }
 
     func handleReaderViewportSizeChange(_ newSize: CGSize) {
@@ -1817,7 +1835,7 @@ struct ReaderView: View {
         // content area under the navigation bar. See `reportsReaderViewport`.
         .reportsReaderViewport { handleReaderViewportSizeChange($0) }
         // Also keeps `readerWindow` pointed at the reader's window.
-        .reportsReaderWindowObstructions(in: readerWindow) { readerWindowObstructions = $0 }
+        .reportsReaderWindowObstructions(in: readerWindow) { handleReaderWindowObstructions($0) }
         .task {
             guard readerSessionCoordinator == nil else { return }
             let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
@@ -2493,6 +2511,10 @@ struct ReaderView: View {
                 if phase != .background, let size = viewportSizeReportedInBackground {
                     viewportSizeReportedInBackground = nil
                     handleReaderViewportSizeChange(size)
+                }
+                if phase != .background, let obstructions = obstructionsReportedInBackground {
+                    obstructionsReportedInBackground = nil
+                    handleReaderWindowObstructions(obstructions)
                 }
                 if phase == .active {
                     restoreReaderDisplayStateAfterResume()

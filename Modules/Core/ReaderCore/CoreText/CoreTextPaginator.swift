@@ -1316,6 +1316,18 @@ final class CoreTextPaginator: Sendable {
             let frame = makeFrame(framesetter: framesetter, range: searchRange, path: path, writingMode: writingMode)
             let visibleRange = CTFrameGetVisibleStringRange(frame)
 
+            if visibleRange.length == 0 {
+                // Nothing fits the page: its first line is taller than the frame, and the page
+                // comes out blank (a picture sized taller than the page did this on a folded
+                // iPhone Duo). Say what the line asked for.
+                let style = attrStr.attribute(.paragraphStyle, at: currentLocation, effectiveRange: nil) as? NSParagraphStyle
+                AppLogger.render(
+                    "⟐ paginate nothingFits spine=\(spineIndex) at=\(currentLocation) page=\(pageIndex) "
+                        + "frame=\(contentPathRect.size) lineHeight=\(style?.minimumLineHeight ?? -1)...\(style?.maximumLineHeight ?? -1) "
+                        + "multiple=\(style?.lineHeightMultiple ?? -1) spacing=\(style?.lineSpacing ?? -1) "
+                        + "before=\(style?.paragraphSpacingBefore ?? -1) after=\(style?.paragraphSpacing ?? -1)"
+                )
+            }
             // Prevent infinite loop: if visibleRange.length == 0, force advance by one character
             let proposedAdvance = min(visibleRange.length > 0 ? visibleRange.length : 1, remainingLength)
             let proposedEnd = currentLocation + proposedAdvance

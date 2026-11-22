@@ -105,6 +105,29 @@ struct ReaderWindowObstructionsTests {
         #expect(laidOut.dropFirst().allSatisfy { $0 == Self.foldedDuo })
     }
 
+    /// Coming back to the foreground, the folded iPhone Duo reports its 84pt side with no
+    /// occlusion in it, and the housing in the report after (simulator, iOS 27.2, 2026-11-22).
+    /// The empty one is not laid out: it made the chapter narrow, then wide again.
+    @Test func anEmptyReportBesideTheSameSidesKeepsTheReadingOcclusions() {
+        var empty = Self.foldedDuo
+        empty.occlusions = []
+        let step = ReaderWindowObstructions.forReading(empty, statusBarHidden: true, whileReading: Self.foldedDuo)
+        #expect(step.laidOut == Self.foldedDuo)
+        #expect(step.whileReading == Self.foldedDuo)
+        #expect(step.laidOut.sideInsets(across: 96...640) == .zero)
+
+        // Another window, or other sides: the housing may be gone with them, so it stands.
+        var otherSides = empty
+        otherSides.sideSafeArea = .zero
+        let moved = ReaderWindowObstructions.forReading(otherSides, statusBarHidden: true, whileReading: Self.foldedDuo)
+        #expect(moved.laidOut == otherSides)
+        #expect(moved.whileReading == otherSides)
+
+        // Nothing read yet: it stands.
+        let first = ReaderWindowObstructions.forReading(empty, statusBarHidden: true, whileReading: nil)
+        #expect(first.laidOut == empty)
+    }
+
     /// A report handed on later, by the reporter's deferred path, was measured before the status
     /// bar may have moved: it is laid out like a status-bar report and never kept as the reading one.
     @Test func aReportOfUnknownStatusBarIsNotKeptAsReading() {

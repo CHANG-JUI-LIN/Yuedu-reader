@@ -95,7 +95,9 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
             config: NodeAttributedStringRenderer.Config(
                 from: settings,
                 textColor: themeTextColor,
-                renderWidth: max(0, size.width - settings.contentInsets.left - settings.contentInsets.right)
+                renderWidth: max(0, size.width - settings.contentInsets.left - settings.contentInsets.right),
+                // The page's text area: what a picture has to fit (`resolvedImageMetrics`).
+                renderHeight: max(1, size.height - settings.contentInsets.top - settings.contentInsets.bottom)
             )
         )
 
