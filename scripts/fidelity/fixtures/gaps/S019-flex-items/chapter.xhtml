@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant">
+<head><title>Flex items</title><link rel="stylesheet" type="text/css" href="style.css"/></head>
+<body>
+<h2>並排</h2>
+<div class="f"><span>甲乙</span>丙<p>丁戊己</p></div>
+<div class="f between"><span>左邊</span><span>中間</span><span>右邊</span></div>
+<div class="f around"><span>左邊</span><span>中間</span><span>右邊</span></div>
+<div class="f evenly"><span>左邊</span><span>中間</span><span>右邊</span></div>
+<div class="f center"><span>左邊</span><span>中間</span></div>
+<div class="f end"><span>左邊</span><span>中間</span></div>
+<div class="f gap"><span>一</span><span>二</span><span>三</span></div>
+<h2>伸縮</h2>
+<div class="f grow"><div>甲</div><div>乙丙丁戊</div><div>己</div></div>
+<div class="f grow1"><div>甲</div><div class="g">乙</div><div>丙</div></div>
+<div class="f sized"><div class="a">甲</div><div class="b">乙</div><div class="c">丙</div><div>丁</div></div>
+<div class="f"><div>這一段文字很長，一行放不下，所以它會被壓窄，然後在自己的格子裡換行，旁邊的標籤也會跟著縮。</div><div>label</div></div>
+<div class="f noshrink"><div>這一段文字很長，一行放不下，所以它會被壓窄，然後在自己的格子裡換行。</div><div class="label">不縮的標籤</div></div>
+<div class="f"><div>A sentence in Latin letters that is too long for one line and wraps inside its item.</div><div>Another shorter sentence beside it.</div></div>
+<h2>換行</h2>
+<div class="f wrap"><div>第一格</div><div>第二格</div><div>第三格</div><div>第四格</div><div>第五格</div></div>
+<div class="f tags"><span>奇幻</span><span>冒險</span><span>長篇小說</span><span>翻譯文學</span><span>青少年</span><span>系列作品</span><span>魔法</span><span>成長</span></div>
+<h2>對齊</h2>
+<div class="f"><div>高<br/>高<br/>高</div><div>拉伸</div></div>
+<div class="f acenter"><div>高<br/>高<br/>高</div><div>置中</div><div class="self-end">靠下</div></div>
+<div class="f aend"><div>高<br/>高<br/>高</div><div>靠下</div></div>
+<div class="f astart"><div>高<br/>高<br/>高</div><div>靠上</div></div>
+<div class="f"><span>左</span><span class="push">推到右邊</span><span>右</span></div>
+<div class="f rowtall"><span>正中</span><span>央</span></div>
+<h2>直欄</h2>
+<div class="f col"><p>第一項</p><p>第二項</p><p>第三項</p></div>
+<div class="f ccenter"><div>置中的一項</div><div class="self-end">靠右</div><div>短</div></div>
+<div class="f tall"><div>書名</div><div>作者</div></div>
+<div class="f tallbetween"><div>上</div><div>下</div></div>
+<h2>巢狀與行內</h2>
+<div class="f nested"><div class="side">旁</div><div class="main"><div>第一行</div><div>第二行比較長</div></div></div>
+<p>行內的<span class="iflex"><span>甲</span><span>乙</span></span>容器。</p>
+<div class="f card"><div>圖</div><div class="text">卡片裡的說明文字，佔掉剩下的寬度，太長就在自己的格子裡換行，不會跑到圖的下面去。</div></div>
+<h2>圖片</h2>
+<div class="f acenter gap"><img src="plate.png" alt=""/><div>圖片旁邊的說明文字，垂直置中。</div></div>
+<div class="f tall"><img src="plate.png" alt=""/><div>圖說</div></div>
+<div class="f col"><img src="plate.png" alt=""/><div>預設拉伸的直欄</div></div>
+<div class="f"><img src="plate.png" alt=""/><div>預設拉伸的橫列<br/>第二行<br/>第三行<br/>第四行<br/>第五行</div></div>
+<p>後面的段落。</p>
+</body>
+</html>

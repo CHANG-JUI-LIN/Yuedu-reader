@@ -1,0 +1,6 @@
+{
+ "title": "S019 Flex items",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "PLAN 1-5c: a flex container holding more than one item sent its chapter to Legacy (reason flex-grid). Rows and columns of several items: justify-content, gap, flex-grow/shrink/basis, wrapping, align-items/align-self, auto margins, a column with a height, nested and inline containers, a picture-and-caption row."
+}
