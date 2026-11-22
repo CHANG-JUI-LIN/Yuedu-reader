@@ -341,31 +341,8 @@ struct VideoDetailView: View {
         return (maker.isEmpty ? [] : [maker]) + facts.prefix(DSLayout.videoHeroFactLimit)
     }
 
-    /// VidHub's action row: the play button, then the page's other actions together in one
-    /// glass capsule as tall as it (maintainer, 2026-11-01: 「那三個按鈕包在一個膠囊裡面」,
-    /// 「我要的是這樣的玻璃膠囊」); the capsule goes under it when the text is too large for
-    /// one line.
     private func heroActions(_ guide: VideoEpisodeGuide) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: DSSpacing.lg) {
-                playButton(guide)
-                actionCapsule(guide)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: DSSpacing.md) {
-                playButton(guide)
-                actionCapsule(guide)
-            }
-        }
-    }
-
-    private func actionCapsule(_ guide: VideoEpisodeGuide) -> some View {
-        HStack(spacing: 0) { iconButtons(guide) }
-            .font(DSFont.title3)
-            .foregroundStyle(DSColor.textPrimary)
-            .buttonStyle(.borderless)
-            .frame(maxHeight: .infinity)
-            .modifier(CardButtonGlass())
+        VideoHeroActionRow(action: playAction(guide)) { iconButtons(guide) }
     }
 
     /// 繼續播放 at the saved episode, else 開始播放 at the first; either names the episode.
@@ -380,39 +357,6 @@ struct VideoDetailView: View {
             detail: episode.map { VideoEpisodeNaming.resumeDetail($0, in: guide, title: episodeTitle) },
             action: { if let episode { play(chapterIndex: episode) } }
         )
-    }
-
-    /// The white capsule plezy, Infuse and VidHub lead with, in light and dark alike
-    /// (maintainer, 2026-11-01: 「給我調成白色吧，白天模式下」): its title, and the episode
-    /// it plays on a second line under it.
-    private func playButton(_ guide: VideoEpisodeGuide) -> some View {
-        let action = playAction(guide)
-        return Button(action: action.action) {
-            HStack(spacing: DSLayout.videoPlayIconSpacing) {
-                Image(systemName: action.systemImage)
-                    .font(DSFont.subheadline)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(action.title)
-                        .font(DSFont.footnote.weight(.semibold))
-                    if let detail = action.detail {
-                        Text(detail)
-                            .font(DSFont.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .lineLimit(1)
-            }
-            .padding(.vertical, DSSpacing.sm)
-            .padding(.horizontal, DSSpacing.lg)
-            .frame(maxWidth: DSLayout.videoPlayButtonMaxWidth)
-        }
-        .buttonStyle(BookDetailCardActionStyle(fill: DSColor.cardPrimaryActionFill,
-                                               label: DSColor.cardPrimaryActionLabel,
-                                               minHeight: DSLayout.videoPlayButtonHeight))
-        .disabled(!action.isEnabled)
-        .accessibilityLabel(action.title)
-        .accessibilityValue(action.detail ?? "")
     }
 
     @ViewBuilder
@@ -896,14 +840,6 @@ struct VideoDetailView: View {
 }
 
 /// An action in the capsule beside the play button: its icon, with a whole tap target.
-private struct VideoHeroCapsuleIcon: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .frame(width: DSLayout.videoActionSlotWidth, height: DSLayout.minimumTapTarget)
-            .contentShape(Rectangle())
-    }
-}
-
 #Preview {
     NavigationStack {
         VideoDetailView(book: OnlineBook(
