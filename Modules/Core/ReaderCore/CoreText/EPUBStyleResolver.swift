@@ -13,6 +13,8 @@ final class EPUBStyleResolver {
         let weight: Int
         let italic: Bool
         let resolvedURL: String
+        /// False when the face's `unicode-range` leaves out U+0020: see `RegisteredFontFace.isPrimaryCandidate`.
+        var coversSpace = true
     }
 
     struct RegisteredFontFace {
@@ -21,6 +23,12 @@ final class EPUBStyleResolver {
         let postScriptName: String
         var weight: Int = 400
         var isItalic: Bool = false
+        /// False for a face its `@font-face` limits, by `unicode-range`, to characters that do
+        /// not include the space. CSS Fonts 4 §5.2: such a face is not the "first available
+        /// font", the one a line's height and a ruby's size are measured from. 草枕 embeds a
+        /// seven-glyph font for dashes (`unicode-range: U+2013-2016`) and lists it first in
+        /// `font-family`; taken as the primary font, its metrics set every line of the book.
+        var isPrimaryCandidate = true
     }
 
     private let resourceProvider: any BookResourceProvider
@@ -182,7 +190,8 @@ final class EPUBStyleResolver {
                     familyName: registeredFont.familyName,
                     postScriptName: registeredFont.postScriptName,
                     weight: fontFace.weight,
-                    isItalic: fontFace.italic
+                    isItalic: fontFace.italic,
+                    isPrimaryCandidate: fontFace.coversSpace
                 )
                 if !(registeredFontVariants[alias] ?? []).contains(where: {
                     $0.weight == face.weight && $0.isItalic == face.isItalic
@@ -236,11 +245,13 @@ final class EPUBStyleResolver {
             // CSS font-family is a glyph fallback list, not just a search for the
             // first installed name. Resolve aliases before building the cascade so
             // subset EPUB faces can hand missing characters to the next authored face.
-            let fonts = families.compactMap { authoredName -> UIFont? in
+            var rangedOnly: [UIFont] = []
+            var fonts = families.compactMap { authoredName -> UIFont? in
                 let family = EPUBStyleResolver.normalizeFontName(authoredName)
                 guard !family.isEmpty else { return nil }
                 let baseFont: UIFont?
-                if let face = bestVariant(for: family, weight: weight, italic: italic) {
+                let face = bestVariant(for: family, weight: weight, italic: italic)
+                if let face {
                     baseFont = UIFont(name: face.postScriptName, size: size)
                         ?? UIFont(name: face.familyName, size: size)
                 } else {
@@ -261,8 +272,18 @@ final class EPUBStyleResolver {
                         font = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: font)
                     }
                 }
+                if face?.isPrimaryCandidate == false {
+                    rangedOnly.append(font)
+                    return nil
+                }
                 return font
             }
+            // A face limited to a range without the space follows the first font that is not:
+            // that one is the primary font, whose metrics the line takes. The limited face
+            // then supplies the characters the primary lacks. (Its range's characters that
+            // the primary does have are drawn by the primary: a cascade list has no way to
+            // prefer a later font for some characters.)
+            fonts.insert(contentsOf: rangedOnly, at: min(1, fonts.count))
             guard let primary = fonts.first else { return nil }
             let descriptor = primary.fontDescriptor.addingAttributes([
                 .cascadeList: fonts.dropFirst().map(\.fontDescriptor)
@@ -513,9 +534,45 @@ final class EPUBStyleResolver {
                 alias: alias,
                 weight: weight,
                 italic: italic,
-                resolvedURL: resolvedURL
+                resolvedURL: resolvedURL,
+                coversSpace: Self.unicodeRangeDescriptor(in: block).map(Self.unicodeRangeCoversSpace) ?? true
             )
         }
+    }
+
+    /// The `unicode-range` descriptor of an `@font-face` block, lowercased; nil when it has none.
+    private static func unicodeRangeDescriptor(in block: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"unicode-range\s*:\s*([^;}]+)"#, options: [.caseInsensitive])
+        else { return nil }
+        let ns = block as NSString
+        guard let match = regex.firstMatch(in: block, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        return ns.substring(with: match.range(at: 1)).lowercased()
+    }
+
+    /// Whether a `unicode-range` descriptor's value (`U+26`, `U+0-7F`, `U+4??`, comma-separated,
+    /// lowercased) includes U+0020. A value that does not parse limits nothing.
+    nonisolated static func unicodeRangeCoversSpace(_ value: String) -> Bool {
+        var parsedAny = false
+        for item in value.split(separator: ",") {
+            let token = item.trimmingCharacters(in: .whitespaces)
+            guard token.hasPrefix("u+") else { continue }
+            let body = token.dropFirst(2)
+            let bounds: (UInt32, UInt32)?
+            if body.contains("?") {
+                let low = UInt32(body.replacingOccurrences(of: "?", with: "0"), radix: 16)
+                let high = UInt32(body.replacingOccurrences(of: "?", with: "f"), radix: 16)
+                bounds = low.flatMap { low in high.map { (low, $0) } }
+            } else {
+                let parts = body.split(separator: "-", omittingEmptySubsequences: false)
+                let low = parts.first.flatMap { UInt32($0, radix: 16) }
+                let high = parts.count > 1 ? UInt32(parts[1], radix: 16) : low
+                bounds = low.flatMap { low in high.map { (low, $0) } }
+            }
+            guard let bounds else { continue }
+            parsedAny = true
+            if bounds.0 <= 0x20, 0x20 <= bounds.1 { return true }
+        }
+        return !parsedAny
     }
 
     /// Reads a single descriptor value (e.g. `font-weight: 700`) from an `@font-face` block, lowercased.
