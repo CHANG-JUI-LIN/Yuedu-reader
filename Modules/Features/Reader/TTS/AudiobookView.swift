@@ -407,87 +407,31 @@ struct AudiobookReaderView: View {
     private var moreButton: some View {
         Group {
             if usesSequencedMenus {
-                Button { showsMoreChooser = true } label: { moreLabel }
+                Button { showsMoreChooser = true } label: { AudiobookMoreLabel() }
             } else {
-                // Apple Books keeps 分享 on top and 移除… at the bottom even when the menu
-                // opens upwards, where the system would otherwise flip it.
-                Menu { moreMenuContent } label: { moreLabel }
-                    .menuOrder(.fixed)
+                // Its own view, compared by value: see `AudiobookMoreMenu`.
+                AudiobookMoreMenu(content: moreMenuState, perform: perform).equatable()
             }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(localized("更多"))
     }
 
-    private var moreLabel: some View {
-        Image(systemName: "ellipsis")
-            .font(DSFont.fixed(size: DSLayout.audiobookPlayerPillFontSize, weight: .bold))
-            .foregroundStyle(DSColor.audiobookPlayerPrimary)
-            .frame(width: DSLayout.audiobookPlayerMoreButtonSide, height: DSLayout.audiobookPlayerMoreButtonSide)
-            .background(Circle().fill(DSColor.audiobookPlayerChip))
-            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
-            .contentShape(Rectangle())
-    }
-
-    /// Apple Books' ••• in its order, on what Yuedu has; then what the recording lacks.
-    @ViewBuilder
-    private var moreMenuContent: some View {
-        ControlGroup {
-            if let shareURL {
-                ShareLink(item: shareURL, preview: SharePreview(player.bookTitle)) {
-                    Label(localized("分享"), systemImage: "square.and.arrow.up")
-                }
-            }
-            Button { perform(.addToGroup) } label: {
-                Label(localized("加入分組"), systemImage: "plus.circle")
-            }
-            .disabled(isTransient)
-        }
-        Section {
-            ForEach(primaryMoreRoutes, id: \.self) { route in
-                Button { perform(route) } label: { Label(route.title, systemImage: route.systemImage) }
-            }
-        }
-        Section {
-            Button { perform(.previousChapter) } label: {
-                Label(localized("上一章"), systemImage: "backward.end")
-            }
-            .disabled(!player.hasPreviousChapter)
-            Button { perform(.nextChapter) } label: {
-                Label(localized("下一章"), systemImage: "forward.end")
-            }
-            .disabled(!player.hasNextChapter)
-            Picker(selection: Binding(get: { player.playMode }, set: { perform(.playMode($0)) })) {
-                ForEach(AudiobookPlayMode.allCases, id: \.self) { mode in
-                    Label(mode.localizedTitle, systemImage: mode.systemImage).tag(mode)
-                }
-            } label: {
-                Label(localized("播放模式"), systemImage: player.playMode.systemImage)
-            }
-            .pickerStyle(.menu)
-            Picker(selection: Binding(get: { forwardButton }, set: { perform(.forwardButton($0)) })) {
-                ForEach(AudiobookForwardButton.allCases, id: \.self) { button in
-                    Label(button.localizedTitle, systemImage: button.systemImage).tag(button)
-                }
-            } label: {
-                Label(localized("快轉按鈕"), systemImage: forwardButton.systemImage)
-            }
-            .pickerStyle(.menu)
-            Button { perform(.skipCredits) } label: {
-                Label(localized("跳過片頭片尾"), systemImage: skipsCredits ? "forward.fill" : "forward")
-            }
-            .accessibilityValue(skipCreditsValue)
-            ForEach(sourceMoreRoutes, id: \.self) { route in
-                Button { perform(route) } label: { Label(route.title, systemImage: route.systemImage) }
-            }
-        }
-        if !isTransient {
-            Section {
-                Button(role: .destructive) { perform(.removeFromShelf) } label: {
-                    Label(AudiobookMoreRoute.removeFromShelf.title, systemImage: AudiobookMoreRoute.removeFromShelf.systemImage)
-                }
-            }
-        }
+    /// Everything the ••• menu shows, read off the player and the shelf once per update.
+    private var moreMenuState: AudiobookMoreMenu.Content {
+        AudiobookMoreMenu.Content(
+            shareURL: shareURL,
+            bookTitle: player.bookTitle,
+            isTransient: isTransient,
+            primaryRoutes: primaryMoreRoutes,
+            hasPreviousChapter: player.hasPreviousChapter,
+            hasNextChapter: player.hasNextChapter,
+            playMode: player.playMode,
+            forwardButton: forwardButton,
+            skipsCredits: skipsCredits,
+            skipCreditsValue: skipCreditsValue,
+            sourceRoutes: sourceMoreRoutes
+        )
     }
 
     /// 加入書架 (加入藏書), 標記為已讀完, 作品詳情 (在商店中檢視): what applies to this book.
@@ -815,22 +759,13 @@ struct AudiobookReaderView: View {
     private var sleepButton: some View {
         Group {
             if usesSequencedMenus {
-                Button { showsSleepChooser = true } label: { sleepLabel }
+                Button { showsSleepChooser = true } label: { AudiobookSleepLabel(isActive: sleepIsActive) }
             } else {
-                Menu {
-                    ForEach(AudiobookSleepChoice.menu, id: \.self) { choice in
-                        // A toggle per row: checked where the timer is, and each tap acts —
-                        // 自訂 again opens the wheel again.
-                        Toggle(choice.title, isOn: Binding(
-                            get: { AudiobookSleepChoice(player.sleepOption) == choice },
-                            set: { _ in choose(choice) }
-                        ))
-                    }
-                } label: {
-                    sleepLabel
-                }
-                // 自訂 on top, 關閉 at the bottom, as Apple Books lists them above the moon.
-                .menuOrder(.fixed)
+                // Its own view, compared by value: see `AudiobookMoreMenu`.
+                AudiobookSleepMenu(
+                    current: AudiobookSleepChoice(player.sleepOption), isActive: sleepIsActive, choose: choose
+                )
+                .equatable()
             }
         }
         .buttonStyle(.plain)
@@ -847,14 +782,6 @@ struct AudiobookReaderView: View {
 
     private var sleepIsActive: Bool { player.sleepOption != .off }
 
-    private var sleepLabel: some View {
-        Image(systemName: sleepIsActive ? "moon.zzz.fill" : "moon.zzz")
-            .font(DSFont.fixed(size: DSLayout.audiobookPlayerSleepIconSize))
-            .foregroundStyle(sleepIsActive ? DSColor.audiobookPlayerPrimary : DSColor.audiobookPlayerControl)
-            .shadow(color: sleepIsActive ? DSColor.audiobookPlayerActiveGlow : .clear, radius: DSSpacing.sm)
-            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
-            .contentShape(Rectangle())
-    }
 
     private var sleepAccessibilityValue: String {
         if let fireDate = player.sleepFireDate {
@@ -990,6 +917,166 @@ struct AudiobookReaderView: View {
 
 /// 作品詳情 over the player, by an identity of its own: a route is a value, and the same book's
 /// route opened twice is two presentations.
+// MARK: - Menus
+
+/// The player's ••• menu.
+///
+/// It is a view of its own, compared by `content` alone, because the page above it re-runs its
+/// body on every `AudiobookPlayer` change — twice a second while it plays, from the progress
+/// observer. Rebuilt with it, an open menu was rebuilt too, and on iOS 27 the system redrew its
+/// rows each time: the menu flashed every half second for as long as it stayed open (FB-245).
+/// `perform` is left out of `==`; it routes into the page's state, which outlives the closure.
+struct AudiobookMoreMenu: View {
+    struct Content: Equatable {
+        var shareURL: URL?
+        var bookTitle: String
+        var isTransient: Bool
+        var primaryRoutes: [AudiobookMoreRoute]
+        var hasPreviousChapter: Bool
+        var hasNextChapter: Bool
+        var playMode: AudiobookPlayMode
+        var forwardButton: AudiobookForwardButton
+        var skipsCredits: Bool
+        var skipCreditsValue: String
+        var sourceRoutes: [AudiobookMoreRoute]
+    }
+
+    let content: Content
+    let perform: (AudiobookMoreRoute) -> Void
+
+    var body: some View {
+        // Apple Books keeps 分享 on top and 移除… at the bottom even when the menu
+        // opens upwards, where the system would otherwise flip it.
+        Menu { items } label: { AudiobookMoreLabel() }
+            .menuOrder(.fixed)
+    }
+
+    /// Apple Books' ••• in its order, on what Yuedu has; then what the recording lacks.
+    @ViewBuilder
+    private var items: some View {
+        ControlGroup {
+            if let shareURL = content.shareURL {
+                ShareLink(item: shareURL, preview: SharePreview(content.bookTitle)) {
+                    Label(localized("分享"), systemImage: "square.and.arrow.up")
+                }
+            }
+            Button { perform(.addToGroup) } label: {
+                Label(localized("加入分組"), systemImage: "plus.circle")
+            }
+            .disabled(content.isTransient)
+        }
+        Section {
+            ForEach(content.primaryRoutes, id: \.self) { route in
+                Button { perform(route) } label: { Label(route.title, systemImage: route.systemImage) }
+            }
+        }
+        Section {
+            Button { perform(.previousChapter) } label: {
+                Label(localized("上一章"), systemImage: "backward.end")
+            }
+            .disabled(!content.hasPreviousChapter)
+            Button { perform(.nextChapter) } label: {
+                Label(localized("下一章"), systemImage: "forward.end")
+            }
+            .disabled(!content.hasNextChapter)
+            Picker(selection: Binding(get: { content.playMode }, set: { perform(.playMode($0)) })) {
+                ForEach(AudiobookPlayMode.allCases, id: \.self) { mode in
+                    Label(mode.localizedTitle, systemImage: mode.systemImage).tag(mode)
+                }
+            } label: {
+                Label(localized("播放模式"), systemImage: content.playMode.systemImage)
+            }
+            .pickerStyle(.menu)
+            Picker(selection: Binding(get: { content.forwardButton }, set: { perform(.forwardButton($0)) })) {
+                ForEach(AudiobookForwardButton.allCases, id: \.self) { button in
+                    Label(button.localizedTitle, systemImage: button.systemImage).tag(button)
+                }
+            } label: {
+                Label(localized("快轉按鈕"), systemImage: content.forwardButton.systemImage)
+            }
+            .pickerStyle(.menu)
+            Button { perform(.skipCredits) } label: {
+                Label(localized("跳過片頭片尾"), systemImage: content.skipsCredits ? "forward.fill" : "forward")
+            }
+            .accessibilityValue(content.skipCreditsValue)
+            ForEach(content.sourceRoutes, id: \.self) { route in
+                Button { perform(route) } label: { Label(route.title, systemImage: route.systemImage) }
+            }
+        }
+        if !content.isTransient {
+            Section {
+                Button(role: .destructive) { perform(.removeFromShelf) } label: {
+                    Label(AudiobookMoreRoute.removeFromShelf.title, systemImage: AudiobookMoreRoute.removeFromShelf.systemImage)
+                }
+            }
+        }
+    }
+}
+
+// Main-actor isolated, as the shelf's rows are (`BookRow`). Written instead as a nonisolated
+// `==` on the struct, `.equatable()` did not hold: on iOS 27.2 the menu's body still ran on
+// every progress update and the open menu still flashed.
+extension AudiobookMoreMenu: @MainActor Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.content == rhs.content }
+}
+
+/// The ••• button's face, for the menu and for iOS 17's chooser.
+struct AudiobookMoreLabel: View {
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(DSFont.fixed(size: DSLayout.audiobookPlayerPillFontSize, weight: .bold))
+            .foregroundStyle(DSColor.audiobookPlayerPrimary)
+            .frame(width: DSLayout.audiobookPlayerMoreButtonSide, height: DSLayout.audiobookPlayerMoreButtonSide)
+            .background(Circle().fill(DSColor.audiobookPlayerChip))
+            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
+    }
+}
+
+/// The sleep timer's menu, kept off the page's progress updates as `AudiobookMoreMenu` is.
+struct AudiobookSleepMenu: View {
+    let current: AudiobookSleepChoice
+    let isActive: Bool
+    let choose: (AudiobookSleepChoice) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(AudiobookSleepChoice.menu, id: \.self) { choice in
+                // A toggle per row: checked where the timer is, and each tap acts —
+                // 自訂 again opens the wheel again.
+                Toggle(choice.title, isOn: Binding(
+                    get: { current == choice },
+                    set: { _ in choose(choice) }
+                ))
+            }
+        } label: {
+            AudiobookSleepLabel(isActive: isActive)
+        }
+        // 自訂 on top, 關閉 at the bottom, as Apple Books lists them above the moon.
+        .menuOrder(.fixed)
+    }
+}
+
+extension AudiobookSleepMenu: @MainActor Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.current == rhs.current && lhs.isActive == rhs.isActive
+    }
+}
+
+/// The moon: lit while a sleep timer runs.
+struct AudiobookSleepLabel: View {
+    let isActive: Bool
+
+    var body: some View {
+        Image(systemName: isActive ? "moon.zzz.fill" : "moon.zzz")
+            .font(DSFont.fixed(size: DSLayout.audiobookPlayerSleepIconSize))
+            .foregroundStyle(isActive ? DSColor.audiobookPlayerPrimary : DSColor.audiobookPlayerControl)
+            .shadow(color: isActive ? DSColor.audiobookPlayerActiveGlow : .clear, radius: DSSpacing.sm)
+            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
+    }
+}
+
 struct AudiobookWorkDetail: Identifiable {
     let id = UUID()
     let route: WorkDetailRoute
@@ -1252,6 +1339,23 @@ extension AudiobookPlayMode {
 #Preview("橫向", traits: .landscapeLeft) {
     AudiobookReaderView(bookId: UUID())
         .environmentObject(BookStore())
+}
+
+#Preview("••• 與睡眠選單") {
+    HStack {
+        AudiobookSleepMenu(current: .off, isActive: false) { _ in }
+        AudiobookMoreMenu(
+            content: AudiobookMoreMenu.Content(
+                shareURL: nil, bookTitle: "有聲書", isTransient: false, primaryRoutes: [.markFinished, .workDetail],
+                hasPreviousChapter: false, hasNextChapter: true, playMode: .listEndStop,
+                forwardButton: .skipForward15, skipsCredits: false, skipCreditsValue: "", sourceRoutes: []
+            ),
+            perform: { _ in }
+        )
+    }
+    .buttonStyle(.plain)
+    .padding()
+    .environment(\.colorScheme, .dark)
 }
 
 #Preview("跳過片頭片尾") {
