@@ -8,7 +8,7 @@
 - layout: 0.0003
 - fragment: 0.0000
 - total: 0.0009
-- peak footprint delta: 114688 bytes
+- peak footprint delta: 16384 bytes
 
 ## Source-range parity
 - ranges ordered (no loss/dup/reorder): true
