@@ -67,3 +67,6 @@ Resources/Assets/ReaderThemes/
 legado-upstream/
 legado-md3/
 legado-E/
+
+# Python bytecode (scripts/trends, scripts/legado-compat)
+__pycache__/
