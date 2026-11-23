@@ -20,6 +20,10 @@ final class ASOScreenshotUITests: XCTestCase {
         var chapter: (contents: String, title: String)? = nil
         /// The work 作品詳情 opens from the results, when the query is not its title.
         var detail: String? = nil
+        /// A search of its own for 作品詳情, after the 搜尋 shot: a work with reviews when the
+        /// locale's own classics have none (Z-Library's, the one module with reviews, has no
+        /// review of こころ or 운수 좋은 날; checked 2026-11-19).
+        var detailQuery: String? = nil
     }
 
     private var out: String!
@@ -49,12 +53,12 @@ final class ASOScreenshotUITests: XCTestCase {
 
     @MainActor func testJapanese() throws {
         try walk(Locale(code: "ja", region: "ja_JP", explore: "見つける", shelf: "本棚", library: "ソース", search: "検索",
-                        book: "こころ", query: "こころ"))
+                        book: "こころ", query: "こころ", detailQuery: "Dracula"))
     }
 
     @MainActor func testKorean() throws {
         try walk(Locale(code: "ko", region: "ko_KR", explore: "탐색", shelf: "서재", library: "소스", search: "검색",
-                        book: "운수 좋은 날", query: "Alice"))
+                        book: "운수 좋은 날", query: "Alice", detailQuery: "Dracula"))
     }
 
     // MARK: - Walk
@@ -173,7 +177,18 @@ final class ASOScreenshotUITests: XCTestCase {
             if app.keyboards.firstMatch.exists { app.swipeDown(velocity: .slow) ; pause(1) }
             if wanted("search") { shoot("search") }
             if wanted("detail") || wanted("related") {
-                let title = locale.detail ?? locale.query
+                if let again = locale.detailQuery {
+                    let field = app.searchFields.firstMatch
+                    // The field's ⓧ, the first query gone. On iPad it also takes the keyboard's
+                    // focus away, so the field is tapped after it.
+                    let clear = field.buttons.firstMatch
+                    if clear.exists { clear.tap() }
+                    field.tap()
+                    field.typeText(again + "\n")
+                    pause(Double(env["ASO_SEARCH_WAIT"] ?? "16") ?? 16)
+                    if app.keyboards.firstMatch.exists { app.swipeDown(velocity: .slow) ; pause(1) }
+                }
+                let title = locale.detail ?? locale.detailQuery ?? locale.query
                 let work = app.descendants(matching: .any)
                     .matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
                 let plain = app.descendants(matching: .any)
@@ -189,10 +204,16 @@ final class ASOScreenshotUITests: XCTestCase {
                     // module has reviews of has no such title, and gets the drags' full count.
                     if wanted("related") {
                         let reviews = app.descendants(matching: .any)["detail.reviews.header"].firstMatch
-                        let top = app.frame.height * 0.2
-                        for _ in 0..<10 where !(reviews.exists && reviews.frame.minY < top) {
+                        // The reviews arrive after the page: drags made before them scroll the
+                        // page past where their section then appears (English, 2026-11-19).
+                        _ = reviews.waitForExistence(timeout: 25)
+                        let top = app.frame.height * 0.3
+                        // Slow drags held at their end: a drag let go moving flings the page on,
+                        // a long page (English) past the section in one throw.
+                        for _ in 0..<14 where !(reviews.exists && reviews.frame.minY < top) {
                             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58)))
+                                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58)),
+                                       withVelocity: .slow, thenHoldForDuration: 0.4)
                             pause(0.6)
                         }
                         pause(Double(env["ASO_RELATED_WAIT"] ?? "6") ?? 6)
