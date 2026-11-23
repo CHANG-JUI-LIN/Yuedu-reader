@@ -251,6 +251,30 @@ export function selectEntitlement(
   };
 }
 
+/**
+ * The `/bind` response. It carries `exists: true` because the iOS client decodes
+ * it with the same `GatewayEntitlementResponse` as `GET /entitlement`, where
+ * `exists` is required: without it every Gateway bind wrote the binding and then
+ * failed to decode on the device, which reported "無法將購買綁定到此帳號" and
+ * retried on every foreground. A successful bind always leaves an entitlement
+ * document behind, so `true` is the truth, not a placeholder.
+ */
+export function bindEntitlementResult(result: Record<string, unknown>): Record<string, unknown> {
+  const rawMilliseconds = result.expiresAtMilliseconds;
+  const expiresAtMilliseconds = typeof rawMilliseconds === "number" && Number.isFinite(rawMilliseconds) ?
+    rawMilliseconds :
+    null;
+  return {
+    exists: true,
+    isProActive: result.isProActive === true,
+    productIds: Array.isArray(result.productIds) ?
+      result.productIds.filter((value): value is string => typeof value === "string") :
+      null,
+    expiresAtMilliseconds,
+    environment: typeof result.environment === "string" ? result.environment : "production",
+  };
+}
+
 // MARK: - Input validation
 
 const EMAIL_PATTERN = /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/;

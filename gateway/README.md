@@ -60,7 +60,7 @@ Protected:
 | `DELETE /v1/avatar` | — | `{deleted:true}` |
 | `GET /v1/subscription/entitlement?environment=production\|sandbox` | — | `{exists,...}`; missing document is **never** "not Pro" |
 | `GET /v1/subscription/account-token` | — | `{token}` |
-| `POST /v1/subscription/bind` | `{signedTransaction}` | entitlement for the transaction environment |
+| `POST /v1/subscription/bind` | `{signedTransaction}` | `{exists:true,...}`, entitlement for the transaction environment (same shape the client decodes for `GET /entitlement`) |
 | `DELETE /v1/subscription/account-data` | — | `{deleted:true}` |
 | `POST /v1/subscription/testflight-request` | `{email}` | `{alreadySubmitted,status}` |
 

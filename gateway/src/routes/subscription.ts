@@ -3,7 +3,13 @@ import {Router} from "express";
 import {authenticatedUser, requireAuth} from "../auth.js";
 import type {GatewayContext} from "../context.js";
 import {ApiError, errorBody} from "../errors.js";
-import {requireEmail, requireShortString, selectEntitlement, type SubscriptionEnvironment} from "../policy.js";
+import {
+  bindEntitlementResult,
+  requireEmail,
+  requireShortString,
+  selectEntitlement,
+  type SubscriptionEnvironment,
+} from "../policy.js";
 
 export function subscriptionRouter(context: GatewayContext): Router {
   const router = Router();
@@ -50,7 +56,7 @@ export function subscriptionRouter(context: GatewayContext): Router {
       const body = asObject(request.body);
       const signedTransaction = requireShortString(body.signedTransaction, "signed transaction", 100_000);
       const result = await context.callables.call("bindSubscriptionPurchase", user.uid, {signedTransaction});
-      response.json(entitlementResult(result));
+      response.json(bindEntitlementResult(result));
     } catch (error) {
       next(error);
     }
@@ -111,19 +117,4 @@ function asObject(value: unknown): Record<string, unknown> {
     throw new ApiError("invalid-argument", "Expected a JSON object.");
   }
   return value as Record<string, unknown>;
-}
-
-function entitlementResult(result: Record<string, unknown>): Record<string, unknown> {
-  const rawMilliseconds = result.expiresAtMilliseconds;
-  const expiresAtMilliseconds = typeof rawMilliseconds === "number" && Number.isFinite(rawMilliseconds) ?
-    rawMilliseconds :
-    null;
-  return {
-    isProActive: result.isProActive === true,
-    productIds: Array.isArray(result.productIds) ?
-      result.productIds.filter((value): value is string => typeof value === "string") :
-      null,
-    expiresAtMilliseconds,
-    environment: typeof result.environment === "string" ? result.environment : "production",
-  };
 }

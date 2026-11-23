@@ -4,6 +4,7 @@ import {describe, it} from "node:test";
 import {ApiError} from "../src/errors.js";
 import {
   avatarObjectPath,
+  bindEntitlementResult,
   recentAuthSatisfied,
   requireEmail,
   requirePassword,
@@ -122,6 +123,35 @@ describe("selectEntitlement", () => {
       "sandbox"
     );
     assert.equal(sandboxOnly.isProActive, false);
+  });
+});
+
+describe("bindEntitlementResult", () => {
+  it("answers with exists so the iOS GatewayEntitlementResponse decodes it", () => {
+    assert.deepEqual(
+      bindEntitlementResult({
+        isProActive: true,
+        productIds: ["com.zhangruilin.yuedureader.pro.lifetime"],
+        expiresAtMilliseconds: null,
+        environment: "Production",
+      }),
+      {
+        exists: true,
+        isProActive: true,
+        productIds: ["com.zhangruilin.yuedureader.pro.lifetime"],
+        expiresAtMilliseconds: null,
+        environment: "Production",
+      }
+    );
+  });
+
+  it("normalizes a malformed callable result without dropping exists", () => {
+    const result = bindEntitlementResult({isProActive: "yes", productIds: [1, "monthly"], expiresAtMilliseconds: NaN});
+    assert.equal(result.exists, true);
+    assert.equal(result.isProActive, false);
+    assert.deepEqual(result.productIds, ["monthly"]);
+    assert.equal(result.expiresAtMilliseconds, null);
+    assert.equal(result.environment, "production");
   });
 });
 
