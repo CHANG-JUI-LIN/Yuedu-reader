@@ -174,3 +174,61 @@ extension JSCoreEngineTimeoutResetTests {
         #expect(engine.generation == generationBefore + 1)
     }
 }
+
+/// A script the timeout gave up on has to stop, not just stop being waited for. Crashlytics
+/// 9c4b0a95 (3.0.1 build 150, background check of 1424 sources): MetricKit reported 90 s of CPU
+/// in 93 s, 27 of 28 samples in a JavaScriptCore Yarr regex under `String.prototype.replace`
+/// inside `evaluateRuleStep`. The reset moved the engine to a new queue and context and left
+/// the script burning a core on the old one until the process died.
+///
+/// Each script here ends by itself at 50 s, so a failing run cannot bleed far into the next
+/// test. A stopped script is quiet by 33 s: the timeout fires at 30 s, and the watchdog stops
+/// the script within a tick plus the native call it is inside.
+extension JSCoreEngineTimeoutResetTests {
+    private func assertAbandonedScriptStops(_ name: String, script: (Double) -> String) {
+        let engine = JSCoreEngine()
+        let generationBefore = engine.generation
+        let start = Date().timeIntervalSince1970 * 1000
+
+        let result = engine.evaluateRuleStep(script(start), result: nil)
+        let returnedAfter = Date().timeIntervalSince1970 * 1000 - start
+        #expect(result == nil, "the rule step should have timed out")
+        #expect(engine.generation == generationBefore + 1)
+        // The reset used to wait for the abandoned script: building the new context wrote to
+        // the old one, whose VM lock the script held.
+        #expect(returnedAfter < 32_000, "the timeout returned after \(Int(returnedAfter)) ms")
+
+        let quietFrom = start + 33_000
+        let now = Date().timeIntervalSince1970 * 1000
+        if now < quietFrom { Thread.sleep(forTimeInterval: (quietFrom - now) / 1000) }
+        let busiest = RegexTimeoutCancellationTests.busiestThreadCPU()
+        let window = RegexTimeoutCancellationTests.window
+        print("⏱ \(name): timeout returned after \(Int(returnedAfter)) ms; busiest thread from 33 s: \(Int(busiest * 1000)) ms CPU of \(Int(window * 1000))")
+        #expect(busiest < 0.7 * window, "the abandoned script kept a thread at \(busiest) s of CPU per \(window) s")
+
+        // The engine still runs the next job.
+        #expect(engine.evaluate("1 + 1") == "2")
+    }
+
+    @Test("a rule step looping over a backtracking regex stops when it times out", .timeLimit(.minutes(2)))
+    func timedOutRegexLoopStops() {
+        // Yarr gives up a single `(a+)+$` match at its own backtrack limit (about 0.5 s here),
+        // so this shape is a rule calling such a replace again and again.
+        assertAbandonedScriptStops("regex loop") { start in """
+        var s = 'a'.repeat(40) + 'b';
+        while (Date.now() < \(start) + 50000) { s = s.replace(/(a+)+$/g, 'x') || s; }
+        s;
+        """ }
+    }
+
+    @Test("a rule step inside one long replace stops when it times out", .timeLimit(.minutes(2)))
+    func timedOutSingleReplaceStops() {
+        // One `replace` call that runs about 45 s by itself: each of its matches is costly
+        // but within Yarr's limit. The loop only keeps a fast machine busy until 50 s.
+        assertAbandonedScriptStops("single replace") { start in """
+        var s = ('a'.repeat(20) + '!c').repeat(330), n = 0;
+        do { n += s.replace(/(a+)+b|c/g, 'x').length; } while (Date.now() < \(start) + 50000);
+        n;
+        """ }
+    }
+}

@@ -17,10 +17,10 @@ struct RegexTimeoutCancellationTests {
     private static let input = String(repeating: "a", count: 40) + "!"
     private static let timeout: TimeInterval = 0.2
     /// How long CPU use is watched after the call has returned.
-    private static let window: TimeInterval = 1.0
+    static let window: TimeInterval = 1.0
 
     /// CPU time each live thread of the process has used, in seconds, keyed by thread id.
-    private static func threadCPUSeconds() -> [UInt64: Double] {
+    static func threadCPUSeconds() -> [UInt64: Double] {
         var threads: thread_act_array_t?
         var count: mach_msg_type_number_t = 0
         guard task_threads(mach_task_self_, &threads, &count) == KERN_SUCCESS, let threads else { return [:] }
@@ -55,7 +55,7 @@ struct RegexTimeoutCancellationTests {
     /// The most CPU any single thread used during `window` seconds of the test doing nothing.
     /// A match still backtracking keeps one thread at a full core (≈ `window`); the test host's
     /// own startup work is spread over several threads (busiest seen: 473 ms of 1000).
-    private static func busiestThreadCPU() -> Double {
+    static func busiestThreadCPU() -> Double {
         let before = threadCPUSeconds()
         Thread.sleep(forTimeInterval: window)
         let after = threadCPUSeconds()

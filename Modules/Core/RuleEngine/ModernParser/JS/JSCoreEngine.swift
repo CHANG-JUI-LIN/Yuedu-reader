@@ -41,6 +41,9 @@ class JSCoreEngine {
     }
 
     private var context: JSContext
+    /// Stops the current context's script once a timeout abandons it (`JSScriptWatchdog`).
+    /// Replaced with `context`, under `queueLock`.
+    private var contextWatchdog: JSScriptWatchdog.Handle?
     /// Stateless (it goes straight to `HTTPCookieStorage`), so every context shares it.
     private let cookieBridge = LegadoCookieBridge()
     /// Bridge for `cache.*` — persistent + memory key-value store. Lock-guarded (`LRUCache`,
@@ -380,6 +383,7 @@ class JSCoreEngine {
         self.cacheBridge = LegadoCacheBridge(sourceId: "")
 
         jsQueue.setSpecific(key: jsQueueKey, value: 0)
+        contextWatchdog = JSScriptWatchdog.arm(ctx)
         configureContext(ctx, bridges: currentBridges)
         configureJavaBridge(currentBridges.java)
     }
@@ -583,8 +587,12 @@ class JSCoreEngine {
         }
     }
 
-    private func updateRuntimeErrorContext() {
-        context.setObject([
+    /// `ctx` is the context being configured when a timeout's reset builds its replacement:
+    /// `context` is still the abandoned one then, its VM lock held by the script that ran out
+    /// of time, and writing to it waited for that script to end — the reset, and the caller
+    /// waiting on it, hung for as long as the runaway script ran.
+    private func updateRuntimeErrorContext(in ctx: JSContext? = nil) {
+        (ctx ?? context).setObject([
             "stage": executionStage,
             "sourceName": bookSource?.bookSourceName ?? "?",
             "sourceId": Self.redactedSourceIdentifier(bookSource?.bookSourceUrl),
@@ -851,8 +859,12 @@ class JSCoreEngine {
     func reset() {
         onJSQueue {
             let ctx = JSContext()!
+            let watchdog = JSScriptWatchdog.arm(ctx)
             configureContext(ctx, bridges: withQueueLock { currentBridges })
-            withQueueLock { self.context = ctx }
+            withQueueLock {
+                self.context = ctx
+                contextWatchdog = watchdog
+            }
             lastError = nil
         }
     }
@@ -863,7 +875,9 @@ class JSCoreEngine {
 
     /// Hard-reset the engine by creating a fresh serial queue and JSContext.
     /// Used after a JS evaluation timeout to break free from a hung script;
-    /// the old queue and context are abandoned and the script keeps running on them.
+    /// the old queue and context are abandoned, and the old context's script is stopped at
+    /// the watchdog's next tick (`JSScriptWatchdog`). Until then — and for good, if the
+    /// watchdog is unavailable — it runs on beside the new context.
     ///
     /// Nothing the abandoned script can reach is the new context's:
     /// - the new context gets its own `java`, `source`, `book` and `chapter` bridges — `book`
@@ -881,6 +895,7 @@ class JSCoreEngine {
         let label = "com.yuedu.jsengine.\(UUID().uuidString.prefix(8))"
         let newQueue = DispatchQueue(label: label, qos: .userInitiated)
         let newContext = JSContext()!
+        let newWatchdog = JSScriptWatchdog.arm(newContext)
         let bridges = ContextBridges(
             java: LegadoJSBridge(),
             source: old.source.replacementForNewContext(),
@@ -889,8 +904,8 @@ class JSCoreEngine {
         )
         configureContext(newContext, bridges: bridges)
 
-        let published: Bool = withQueueLock {
-            guard generation == staleGeneration else { return false }
+        let (published, abandonedWatchdog): (Bool, JSScriptWatchdog.Handle?) = withQueueLock {
+            guard generation == staleGeneration else { return (false, nil) }
             generation += 1
             newQueue.setSpecific(key: jsQueueKey, value: generation)
             // Under the lock: a delegate set on the engine during this reset is either read
@@ -899,8 +914,11 @@ class JSCoreEngine {
             currentBridges = bridges
             jsQueue = newQueue
             context = newContext
-            return true
+            let abandoned = contextWatchdog
+            contextWatchdog = newWatchdog
+            return (true, abandoned)
         }
+        abandonedWatchdog?.abandon()
         if published { lastError = nil }
     }
 
@@ -1538,7 +1556,7 @@ class JSCoreEngine {
 
         // Install the authoritative registry-backed Java/Android contract.
         LegadoJavaInteropRuntime.install(in: ctx)
-        updateRuntimeErrorContext()
+        updateRuntimeErrorContext(in: ctx)
 
         // org.jsoup.Jsoup polyfill.
         // Legado Android uses Rhino with full Java interop, so book sources can call
