@@ -2492,13 +2492,19 @@ final class CoreTextPaginator: Sendable {
                 && attributes[delegateKey] == nil
                 && CTRunGetTypographicBounds(candidate, CFRangeMake(0, 0), nil, nil, nil) > 0
         } ?? run
-        let attributes = CTRunGetAttributes(followed) as! [NSAttributedString.Key: Any]
+        return baselineY + textFace(of: followed) - drawHeight / 2
+    }
+
+    /// The middle of `run`'s face above the baseline, as it is raised: where a 段評 bubble
+    /// that follows it is centred (`textSizedImageBottom`, `ReviewBubbleLineFit.growLine`).
+    static func textFace(of run: CTRun) -> CGFloat {
+        let attributes = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
         let raise = (attributes[.baselineOffset] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
         guard let font = attributes[.font] as? UIFont else {
-            AppLogger.render("textSizedImageBottom: run without a font", context: ["location": location])
-            return baselineY + raise - drawHeight / 2
+            AppLogger.render("textSizedImageBottom: run without a font", context: ["location": CTRunGetStringRange(run).location])
+            return raise
         }
-        return baselineY + raise + (font.ascender + font.descender) / 2 - drawHeight / 2
+        return raise + (font.ascender + font.descender) / 2
     }
 
     /// True when `imageRunRange` is the only visible content on its CTLine — every other character on the

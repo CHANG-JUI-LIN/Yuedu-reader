@@ -61,16 +61,23 @@ enum ReviewBubbleLineFit {
         return changed
     }
 
-    /// Makes the line of a bubble taller than it as tall as the bubble — that line, and none
-    /// of its paragraph's others. A body line's height is fixed (`minimumLineHeight` =
-    /// `maximumLineHeight`) and CoreText reads a line's paragraph style at its first character,
-    /// so the style raised to the bubble's height over the bubble's line leaves the lines
-    /// before it alone. Raised over the whole paragraph, every one of its lines took the height
-    /// of the font its Han characters fell back to: PingFang's own 28pt in the 25pt lines of a
-    /// 20pt × 1.2 body (iOS 27 simulator, 2026-10-25). The bubble claims its box centred on its
-    /// text's face (`NodeAttributedStringRenderer.textSizedClaim`), so the line grows as much
-    /// above as below: 2pt each there for a 整體大小 ×2 bubble. Runs after the squeeze, on the
-    /// lines it leaves.
+    /// Grows the line of a bubble taller than it — that line, and none of its paragraph's
+    /// others — as much above as below, until the bubble, drawn centred on the face of the text
+    /// it follows (`CoreTextPaginator.textSizedImageBottom`), lies inside it.
+    ///
+    /// A body line's height is fixed (`minimumLineHeight` = `maximumLineHeight`) and CoreText
+    /// reads a line's paragraph style at its first character, so the style raised over the
+    /// bubble's line leaves the lines before it alone. Raised over the whole paragraph, every one
+    /// of its lines took the height of the font its Han characters fell back to: PingFang's own
+    /// 28pt in the 25pt lines of a 20pt × 1.2 body (iOS 27 simulator, 2026-10-25).
+    ///
+    /// Where the baseline sits in its line is the text's: a face whose own leading is more than
+    /// the line gives it sits low, with the line's room above it — Hiragino Mincho at 18pt × 1.3,
+    /// its baseline 2.2pt off the bottom of a 23.4pt line. A bubble centred on that face and
+    /// claiming as much below as above grew the line −1pt above and 4.6pt below at 整體大小 ×2
+    /// (feedback #249). So the line is measured as it is without the bubble, and the bubble
+    /// claims what puts the grown line's baseline half the growth up from where it was. Runs
+    /// after the squeeze, on the lines it leaves.
     private static func growLine(of bubble: Int, in string: NSMutableAttributedString, text: NSString, lineWidth: CGFloat) -> Bool {
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
         guard let delegate = string.attribute(delegateKey, at: bubble, effectiveRange: nil) else { return false }
@@ -85,12 +92,59 @@ enum ReviewBubbleLineFit {
         else { return false }
         let lines = lineRanges(of: paragraph, in: string, style: paragraphStyle, lineWidth: lineWidth)
         guard let line = lines.first(where: { NSLocationInRange(bubble, $0) }),
-              let style = string.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle
+              let style = string.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle,
+              style.maximumLineHeight > 0,
+              let resting = restingLine(upTo: bubble - 1, from: line.location, in: string, height: style.maximumLineHeight)
         else { return false }
+
+        // In points above the baseline: the line's bottom is at -resting.bottom; the bubble
+        // spans face ± half its height. Grown by `growth`, the baseline rises growth / 2 off the
+        // bottom and the top moves growth / 2 further from the baseline.
+        let height = style.maximumLineHeight
+        let half = info.drawHeight / 2
+        let needed = max(info.drawHeight - height,
+                         2 * (half - resting.face - resting.bottom),
+                         2 * (half + resting.face + resting.bottom - height))
+        let grownHeight = ceil(height + needed)
+        let baseline = resting.bottom + (grownHeight - height) / 2
+        // CoreText raises a run delegate's ascent by a positive offset, and leaves its descent
+        // and a negative offset alone (`NodeAttributedStringRenderer.textSizedClaim`).
+        let raise = (string.attribute(.baselineOffset, at: bubble, effectiveRange: nil) as? NSNumber)
+            .map { CGFloat($0.doubleValue) } ?? 0
+        let claim = info.claiming(ascent: grownHeight - baseline - max(0, raise), descent: baseline)
+        guard let replacement = RunDelegateProvider.delegate(for: claim) else {
+            AppLogger.render("reviewBubbleLineFit: no run delegate for a grown bubble", context: ["location": bubble])
+            return false
+        }
+        string.addAttribute(delegateKey, value: replacement, range: NSRange(location: bubble, length: 1))
         let grown = style.mutableCopy() as! NSMutableParagraphStyle
-        grown.maximumLineHeight = max(style.maximumLineHeight, ceil(info.drawHeight))
+        grown.minimumLineHeight = grownHeight
+        grown.maximumLineHeight = grownHeight
         string.addAttribute(.paragraphStyle, value: grown, range: line)
         return true
+    }
+
+    /// The line from `start` up to `end` as it lies without the bubble, `height` tall: how far
+    /// its baseline sits above its bottom, and the face the bubble is centred on, above the
+    /// baseline (`CoreTextPaginator.textSizedImageBottom`). Nil when nothing comes before the
+    /// bubble on its line, which its glue does not allow.
+    private static func restingLine(upTo end: Int, from start: Int, in string: NSAttributedString, height: CGFloat)
+        -> (bottom: CGFloat, face: CGFloat)? {
+        guard end > start else { return nil }
+        let rest = string.attributedSubstring(from: NSRange(location: start, length: end - start))
+        let frameHeight: CGFloat = 10_000
+        let framesetter = CTFramesetterCreateWithAttributedString(rest)
+        // Wide enough to hold the whole of it on one line: the line is the one CoreText broke.
+        let path = CGPath(rect: CGRect(x: 0, y: 0, width: 100_000, height: frameHeight), transform: nil)
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+        guard let line = (CTFrameGetLines(frame) as! [CTLine]).first,
+              let text = (CTLineGetGlyphRuns(line) as! [CTRun]).last(where: {
+                  CTRunGetTypographicBounds($0, CFRangeMake(0, 0), nil, nil, nil) > 0
+              })
+        else { return nil }
+        var origin = CGPoint.zero
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 1), &origin)
+        return (origin.y - (frameHeight - height), CoreTextPaginator.textFace(of: text))
     }
 
     private static func keepUp(bubble: Int, in string: NSMutableAttributedString, text: NSString, lineWidth: CGFloat) -> Bool {

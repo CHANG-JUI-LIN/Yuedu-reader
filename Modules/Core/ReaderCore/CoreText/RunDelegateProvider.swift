@@ -67,6 +67,15 @@ class ImageRunInfo {
         self.linkRegions = linkRegions
         self.allowsPreview = allowsPreview
     }
+
+    /// This image claiming `ascent` and `descent` of its line instead: drawn the same, laid out
+    /// in a line of another height (`ReviewBubbleLineFit.growLine`).
+    func claiming(ascent: CGFloat, descent: CGFloat) -> ImageRunInfo {
+        ImageRunInfo(image: image, width: width, height: height, drawWidth: drawWidth, drawHeight: drawHeight,
+                     ascent: ascent, descent: descent, paddingLeft: paddingLeft, paddingRight: paddingRight,
+                     source: source, alt: alt, displayMode: displayMode, opacity: opacity, isTextSized: isTextSized,
+                     linkRegions: linkRegions, allowsPreview: allowsPreview)
+    }
 }
 
 /// Sizes one 縦中横 cell in a vertical line: the first character of the cell carries
@@ -147,6 +156,33 @@ final class InlineAnnotationRunInfo: ImageRunInfo {
 }
 
 enum RunDelegateProvider {
+    /// The run delegate an image placeholder carries: it lays the run out by `info`'s claim
+    /// and width, and keeps `info` alive for the drawing pass that reads it back.
+    static func delegate(for info: ImageRunInfo) -> CTRunDelegate? {
+        var callbacks = CTRunDelegateCallbacks(
+            version: kCTRunDelegateCurrentVersion,
+            dealloc: { pointer in
+                Unmanaged<ImageRunInfo>.fromOpaque(pointer).release()
+            },
+            getAscent: { pointer in
+                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().ascent
+            },
+            getDescent: { pointer in
+                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().descent
+            },
+            getWidth: { pointer in
+                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().width
+            }
+        )
+
+        let retained = Unmanaged.passRetained(info).toOpaque()
+        guard let delegate = CTRunDelegateCreate(&callbacks, retained) else {
+            Unmanaged<ImageRunInfo>.fromOpaque(retained).release()
+            return nil
+        }
+        return delegate
+    }
+
     static func makeImagePlaceholder(
         image: UIImage?,
         font: UIFont,
@@ -166,22 +202,6 @@ enum RunDelegateProvider {
         linkRegions: [ImageLinkRegion] = [],
         allowsPreview: Bool = true
     ) -> NSAttributedString {
-        var callbacks = CTRunDelegateCallbacks(
-            version: kCTRunDelegateCurrentVersion,
-            dealloc: { pointer in
-                Unmanaged<ImageRunInfo>.fromOpaque(pointer).release()
-            },
-            getAscent: { pointer in
-                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().ascent
-            },
-            getDescent: { pointer in
-                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().descent
-            },
-            getWidth: { pointer in
-                Unmanaged<ImageRunInfo>.fromOpaque(pointer).takeUnretainedValue().width
-            }
-        )
-
         let info = ImageRunInfo(
             image: image,
             width: totalWidth,
@@ -201,8 +221,7 @@ enum RunDelegateProvider {
             allowsPreview: allowsPreview
         )
 
-        let retained = Unmanaged.passRetained(info).toOpaque()
-        guard let delegate = CTRunDelegateCreate(&callbacks, retained) else {
+        guard let delegate = delegate(for: info) else {
             return NSAttributedString(
                 string: "\u{FFFC}",
                 attributes: [

@@ -25,7 +25,8 @@ struct ModuleBubbleLineSpacingTests {
     }
 
     /// A module's bubble moves its line as a 來源配置's own bubble on the same paragraph does —
-    /// the same font, size, line height and bubble size: not at all when it fits the line. On
+    /// the same font, size, line height and bubble size: not at all when it fits the line, as
+    /// much above as below when it is taller (feedback #249: −1pt and 4.6pt in Hiragino Mincho). On
     /// every route a chapter's paragraphs come from: HTML, HTML whose CSS sizes its text, and
     /// plain text (which has no bubbles of its own).
     @Test("a module's bubble sits on its line as a source's own does, in any reader font")
@@ -72,13 +73,7 @@ struct ModuleBubbleLineSpacingTests {
                                 }
                                 let display = try await moduleDisplay(body: plain, settings: renderSettings)
                                 let module = try #require(measure(display, against: built), "\(setup): no module bubble line")
-                                if module.claim.drawHeight > module.lineHeight {
-                                    // Grown as `ReviewBubbleLineFit` grows it; how evenly is
-                                    // `CommentBubbleLineEndTests`'s, in the system font.
-                                    if module.above + module.below > 0.5 { grown += 1 } else {
-                                        failures.append("\(setup): a module bubble \(module.claim.drawHeight)pt tall left its \(module.lineHeight)pt line as it was")
-                                    }
-                                }
+                                if module.claim.drawHeight > module.lineHeight { grown += 1 }
                                 var moved = [("module", module)]
 
                                 // A 來源配置's own bubble, drawn in the paragraph, where a source can have one.
@@ -92,10 +87,19 @@ struct ModuleBubbleLineSpacingTests {
                                                         + "and \(-module.below)pt from the one below; a source's own, \(source.above)pt and \(-source.below)pt")
                                     }
                                 }
-                                // Either bubble, on a line it fits: the line keeps its place.
-                                for (label, step) in moved
-                                where step.claim.drawHeight <= step.lineHeight && (abs(step.above) > 0.5 || abs(step.below) > 0.5) {
-                                    failures.append("\(setup): a \(label) bubble that fits moved its line \(step.above)pt above, \(step.below)pt below")
+                                // Either bubble: a line it fits keeps its place; a line it is taller
+                                // than grows as much above as below (origins are whole points, so
+                                // within 1pt), by at least as much as the bubble is taller.
+                                for (label, step) in moved {
+                                    if step.claim.drawHeight <= step.lineHeight {
+                                        if abs(step.above) > 0.5 || abs(step.below) > 0.5 {
+                                            failures.append("\(setup): a \(label) bubble that fits moved its line \(step.above)pt above, \(step.below)pt below")
+                                        }
+                                    } else if abs(step.above - step.below) > 1
+                                                || step.above + step.below < step.claim.drawHeight - step.lineHeight - 0.5 {
+                                        failures.append("\(setup): a \(label) bubble \(step.claim.drawHeight)pt tall grew its \(step.lineHeight)pt line "
+                                                        + "\(step.above)pt above and \(step.below)pt below")
+                                    }
                                 }
                             }
                         }
@@ -106,7 +110,7 @@ struct ModuleBubbleLineSpacingTests {
         }
         #expect(measuredFonts > 0 && !setInReaderFont.isEmpty,
                 "no reader font other than the system's set the chapter's text: the test no longer reaches the case")
-        #expect(grown > 0, "no module bubble grew a line it is taller than: the test no longer reaches `ReviewBubbleLineFit`")
+        #expect(grown > 0, "no module bubble was taller than its line: the test no longer reaches `ReviewBubbleLineFit`")
         #expect(failures.isEmpty, "\(failures.joined(separator: "\n"))")
     }
 
