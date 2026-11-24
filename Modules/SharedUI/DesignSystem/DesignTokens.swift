@@ -1157,6 +1157,10 @@ enum DSLayout {
     static let interfaceGlowOuterOpacity: Double = 0.5
     /// Inner glow opacity at 光暈強度 100%.
     static let interfaceGlowInnerOpacity: Double = 0.3
+    /// How far a grouped-section row's glass overhangs the row top and bottom, so the
+    /// glass rim lands in the clipped-off overhang rather than between rows (FB-205).
+    /// Comfortably wider than the rim and its edge refraction.
+    static let interfaceSectionGlassBleed: CGFloat = 40
     /// Height of the 界面效果 live preview card.
     static let interfaceEffectPreviewHeight: CGFloat = 220
     /// The app icon on 新手導覽's welcome page.

@@ -102,6 +102,9 @@ private struct InterfaceSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
     /// layer, where the system design puts glass unconditionally. Content-layer
     /// cards pass 分組卡片, which is opt-in.
     let glassAllowed: Bool
+    /// How far the glass overhangs the shape top and bottom. Only list rows pass one:
+    /// see `InterfaceSectionSurfaceModifier`.
+    var glassVerticalBleed: CGFloat = 0
 
     @Bindable private var settings = GlobalSettings.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -141,12 +144,12 @@ private struct InterfaceSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
                         AppearanceCardArtwork(layer: cardLayer, paintOpacity: paintOpacity)
                             .clipShape(shape)
                     )
-                    .modifier(FrostedGlassBackground(shape: shape))
+                    .modifier(FrostedGlassBackground(shape: shape, verticalBleed: glassVerticalBleed))
             } else {
                 content
                     // Fades in over the blur as 透明度 drops; invisible at 100%.
                     .background(fill.opacity(paintOpacity), in: shape)
-                    .modifier(FrostedGlassBackground(shape: shape))
+                    .modifier(FrostedGlassBackground(shape: shape, verticalBleed: glassVerticalBleed))
             }
         } else if let cardLayer {
             // Without glass the artwork replaces the plain fill entirely — a card
@@ -241,10 +244,17 @@ private struct InterfaceCardSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
 ///
 /// `listRowBackground` paints this per row and the list clips it to the card's
 /// rounded corners, so the surface is a plain rectangle and the rounding stays the
-/// list's job. One consequence on iOS 26: each row carries its own glass edge, so
-/// row boundaries inside a section can show a faint seam that a single section-wide
-/// glass would not have. SwiftUI has no section-level material to paint instead; if
-/// one ships, this is the place to switch.
+/// list's job. SwiftUI has no section-level background, and each row's background
+/// lives in its own cell, so a section's glass is necessarily one glass per row.
+///
+/// iOS 26 glass draws a lit rim along every edge of its shape. Drawn per row, that put
+/// a bright rim on the bottom of one row and the top of the next — a glowing groove
+/// between every pair of rows instead of a hairline (FB-205; `glassEffectUnion` cannot
+/// merge them, the rows are in different cells). So the row's glass overhangs the row
+/// top and bottom by `DSLayout.interfaceSectionGlassBleed`: the cell clips the
+/// overhang, the rims fall outside what is drawn, and adjacent rows read as one
+/// continuous surface with the list's own separator between them. This relies on the
+/// list clipping each row's background to the row, which iOS 26 and 27 both do.
 private struct InterfaceSectionSurfaceModifier: ViewModifier {
     let fill: Color
 
@@ -256,7 +266,8 @@ private struct InterfaceSectionSurfaceModifier: ViewModifier {
                 InterfaceSurfaceModifier(
                     shape: Rectangle(),
                     fill: fill,
-                    glassAllowed: settings.interfaceGlassCards
+                    glassAllowed: settings.interfaceGlassCards,
+                    glassVerticalBleed: DSLayout.interfaceSectionGlassBleed
                 )
             )
         )
@@ -286,11 +297,23 @@ private struct FloatingSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
 /// in the Xcode 26 SDK, and the project still has to compile on older toolchains.
 private struct FrostedGlassBackground<SurfaceShape: Shape>: ViewModifier {
     let shape: SurfaceShape
+    /// Glass only: the material below has no rim, so it never needs to overhang.
+    let verticalBleed: CGFloat
 
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
+            if verticalBleed > 0 {
+                // The glass needs a view taller than the content: it never draws past
+                // its own view's frame, however far its shape's path reaches.
+                content.background {
+                    Color.clear
+                        .glassEffect(.regular, in: shape)
+                        .padding(.vertical, -verticalBleed)
+                }
+            } else {
+                content.glassEffect(.regular, in: shape)
+            }
         } else {
             content.background(.regularMaterial, in: shape)
         }
