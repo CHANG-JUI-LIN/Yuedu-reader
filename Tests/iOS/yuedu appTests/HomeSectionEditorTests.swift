@@ -90,9 +90,53 @@ struct HomeSectionEditorTests {
         editor.choose(.sourceCategories([hot]), itemTitle: "熱門")
         #expect(editor.draft.title.isEmpty)
 
+        // A new source is new content: the title the reader gave the old one goes with it
+        // (maintainer, 2026-11-24, FB-252). The field is there to name it again.
         editor.setTitle("我的書單")
         editor.choose(.gutenbergFeed(url: "https://g.test/popular"), itemTitle: "熱門")
-        #expect(editor.draft.title == "我的書單", "a title the reader gave stays")
+        #expect(editor.draft.title == "熱門")
+    }
+
+    @Test("FB-252: a section on the home takes the title of the source it is changed to")
+    func reopenedSectionTakesTheNewChoicesTitle() throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+        // The report: a row titled by the reader, showing Gutenberg's 最新, changed to 青空文庫's
+        // 新上架作品 kept 「资治通鉴 · 全本」.
+        let titled = HomeSection(layout: .row, title: "资治通鉴 · 全本", binding: .gutenbergShelf(id: "new"))
+        store.edit { $0.appendSection(titled) }
+        let editor = HomeSectionEditor(section: titled, store: store, preview: preview())
+        editor.choose(.aozoraNew)
+        let written = try #require(store.page?.sections.first { $0.id == titled.id })
+        #expect(written.binding == .aozoraNew)
+        #expect(written.title.isEmpty, "a source that names itself is followed")
+
+        // A feed chosen, the form left, opened again and another feed chosen.
+        editor.choose(.gutenbergFeed(url: "https://g.test/a"), itemTitle: "A")
+        let saved = try #require(store.page?.sections.first { $0.id == titled.id })
+        #expect(saved.title == "A")
+        let reopened = HomeSectionEditor(section: saved, store: store, preview: preview())
+        reopened.choose(.gutenbergFeed(url: "https://g.test/b"), itemTitle: "B")
+        #expect(store.page?.sections.first { $0.id == titled.id }?.title == "B")
+    }
+
+    @Test("FB-252: a reopened section of one feed card gives its title back when a card is added")
+    func reopenedFeedCardFollowsTheCards() throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+        let feed = HomeSection(layout: .bannerCards, title: "A", binding: .gutenbergFeed(url: "https://g.test/a"))
+        store.edit { $0.appendSection(feed) }
+        let editor = HomeSectionEditor(section: feed, store: store, preview: preview())
+        editor.addCards([.picked(.gutenbergShelf(id: "new"), parameters: [:], name: "")])
+        #expect(editor.listCards.count == 2)
+        #expect(editor.draft.title.isEmpty, "more cards take the one card's name back, so the section follows its source")
+
+        // A title the reader gave a section of several cards is the reader's: adding one keeps it.
+        editor.setTitle("我的清單")
+        let named = try #require(store.page?.sections.first { $0.id == feed.id })
+        let again = HomeSectionEditor(section: named, store: store, preview: preview())
+        again.addCards([.picked(.gutenbergShelf(id: "popular"), parameters: [:], name: "")])
+        #expect(again.draft.title == "我的清單")
     }
 
     @Test("最新 keeps one category per book source, in its parameters")

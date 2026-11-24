@@ -40,8 +40,6 @@ final class HomeSectionEditor: ObservableObject {
     private let aggregation: AggregationSettingsStore
     /// 新增欄目's 顯示在最新 choices, written on 新增 (`isNew` only).
     @Published private var pendingLatest: [SourceInstanceKey: Bool] = [:]
-    /// The title the last choice gave, which the next one may replace.
-    private var chosenTitle = ""
 
     /// 新增欄目: `layout` chosen first (Rex's order, decision 23).
     init(newSectionIn store: HomePageStore? = nil, layout: HomeSectionLayout,
@@ -91,20 +89,19 @@ final class HomeSectionEditor: ObservableObject {
     /// 選擇內容來源's choice, with the parameters that go with it; those of the binding it
     /// replaces go.
     /// - Parameter itemTitle: the choice's name, for a binding that cannot name itself (a
-    ///   feed): it becomes the title (design §13.3: 「預設帶入子項目名稱」), unless the reader
-    ///   gave one. A binding that names itself leaves the title empty, to follow it.
+    ///   feed): it becomes the title (design §13.3: 「預設帶入子項目名稱」). A binding that names
+    ///   itself leaves the title empty, to follow it. Either way the title the section had goes,
+    ///   the reader's too: it named what the section showed before (maintainer, 2026-11-24,
+    ///   FB-252: a row changed to 青空文庫's 新上架作品 kept the title of the Gutenberg list it was).
     func choose(_ binding: HomeSectionBinding, parameters: [String: String] = [:], itemTitle: String = "") {
         let ownName = HomeSection(layout: draft.layout, binding: binding).displayTitle(sourceName: "")
-        let followsChoice = draft.title.isEmpty || draft.title == chosenTitle
-        let title = ownName.isEmpty ? itemTitle : ""
         change {
             $0.binding = binding
             $0.parameters = parameters
-            if followsChoice { $0.title = title }
+            $0.title = ownName.isEmpty ? itemTitle : ""
             // What is lists alone is drawn only by the layouts of lists (`HomeLayoutStyle.choices`).
             if !HomeLayoutStyle.choices(for: binding).contains($0.layout.style) { $0.layout = .collection }
         }
-        if followsChoice { chosenTitle = title }
     }
 
     /// A module list's parameter (Phase 6f), by its name; nil goes back to the module's default.
@@ -242,10 +239,11 @@ final class HomeSectionEditor: ObservableObject {
             kept += stored.filter(\.isDrawable).flatMap(\.expanded).dropFirst(HomeSection.listCardLimit)
                 + stored.filter { !$0.isDrawable }
         }
-        let followsChoice = draft.title.isEmpty || draft.title == chosenTitle
-        // Only a list with no name of its own titles the section: a name the reader gave a card
-        // is the card's, not the header's.
-        let title = cards.count == 1 && !cards[0].binding.namesItsList ? cards[0].title : ""
+        // The title follows the cards while it is the one they give, read from the cards the
+        // section has, so a section opened again follows them as the one just chosen does
+        // (FB-252: a title kept only for the form's life was the reader's once the form closed).
+        let followsChoice = draft.title.isEmpty || draft.title == Self.title(givenBy: listCards)
+        let title = Self.title(givenBy: cards)
         // Titled first: a feed's one card is written as the section only when the section's
         // title is the card's name (`HomeSection.settingCards`).
         let base = HomeSection(id: draft.id, layout: draft.layout, title: followsChoice ? title : draft.title,
@@ -257,7 +255,12 @@ final class HomeSectionEditor: ObservableObject {
             $0.parameters = written.parameters
             if followsChoice { $0.title = title }
         }
-        if followsChoice { chosenTitle = title }
+    }
+
+    /// The title cards give the section: only a list with no name of its own titles it, and only
+    /// alone; a name the reader gave a card is the card's, not the header's.
+    private static func title(givenBy cards: [HomeListCard]) -> String {
+        cards.count == 1 && !cards[0].binding.namesItsList ? cards[0].title : ""
     }
 
     // MARK: 最新's libraries
