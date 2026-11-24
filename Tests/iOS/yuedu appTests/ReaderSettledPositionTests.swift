@@ -83,6 +83,31 @@ struct ReaderSettledPositionTests {
         #expect(relaid == saved)
     }
 
+    /// A page of nothing but comment cards shares its offset with the text page after it; the
+    /// saved place says which it is (`translationOffset`). At the reopen that page is not there
+    /// and the place shows on the text page at its offset; the comments arrive and it is on the
+    /// cards' page again.
+    @Test("a book left on a page of comment cards is back on it once they arrive")
+    func reopenOnPageOfCards() async throws {
+        let chapter = Self.chapter()
+        let spliced = try #require(ReaderTranslationLayout.splice(chapter.plain, mode: .off, decorations: chapter.decorations) { _ in nil })
+        let decorated = await Self.layout(spliced.display, translation: spliced.layout)
+        let plain = await Self.layout(chapter.plain)
+
+        let left = try #require((1..<decorated.pageRanges.count).first { Self.pageStart($0, in: decorated).translationOffset != nil },
+                                "the fixture has a page that starts among the cards")
+        let saved = Self.pageStart(left, in: decorated)
+        let reopenedPage = try #require(Self.page(of: saved, in: plain))
+        let reopenedStart = Self.pageStart(reopenedPage, in: plain)
+        #expect(reopenedStart != saved)
+
+        let settled = ReaderSettledPosition.resolve(
+            pageStart: reopenedStart, held: saved, readerDriven: false, isPlaceholder: false,
+            pageIndex: { Self.page(of: $0, in: plain) })
+        #expect(settled == saved, "the reopen keeps the place among the cards, not the text page's start")
+        #expect(settled.flatMap { Self.page(of: $0, in: decorated) } == left)
+    }
+
     @Test("a turn the reader makes, a page elsewhere, a placeholder and the chapter's end take the page's start")
     func pageStartWhenNotTheSamePlace() async throws {
         let chapter = Self.chapter()

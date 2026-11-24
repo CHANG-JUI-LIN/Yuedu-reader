@@ -28,43 +28,6 @@ final class ReaderOpeningRestore {
     /// after it and is found by this.
     var target: (chapterIndex: Int, charOffset: Int, translationOffset: Int?)?
 
-    /// A restore to a place inside what is added to a chapter (a page of a module's comment
-    /// cards), and the page it was shown on. The additions arrive after the chapter's first
-    /// layout, so at the open their page is not there yet and the restore lands on the page of
-    /// the chapter's own text at that offset. Once they arrive it is owed again
-    /// (`additionsArrived`), unless the reader has settled anywhere else meanwhile
-    /// (`readerSettled`): a turn made since is never undone (feedback #112).
-    private(set) var awaitingAdditions: (position: CoreTextReadingPosition, shownAs: CoreTextReadingPosition)?
-
-    /// The restore is on screen: `position` is what was saved, `shownAs` the position of the
-    /// page showing it.
-    func restoreShown(at position: CoreTextReadingPosition, shownAs: CoreTextReadingPosition?) {
-        guard position.translationOffset != nil, let shownAs, shownAs != position else {
-            awaitingAdditions = nil
-            return
-        }
-        awaitingAdditions = (position, shownAs)
-    }
-
-    /// A page settled at `position`. Any page but the one the restore was shown on is the
-    /// reader's own move.
-    func readerSettled(at position: CoreTextReadingPosition) {
-        if let waiting = awaitingAdditions, waiting.shownAs != position { awaitingAdditions = nil }
-    }
-
-    /// What was added to `spine` is laid out. Returns the saved position when it now has a page
-    /// of its own; `pagePosition` is the position of the page a position is on.
-    func additionsArrived(
-        spine: Int,
-        pagePosition: (CoreTextReadingPosition) -> CoreTextReadingPosition?
-    ) -> CoreTextReadingPosition? {
-        guard let waiting = awaitingAdditions, waiting.position.spineIndex == spine,
-              let now = pagePosition(waiting.position), now != waiting.shownAs
-        else { return nil }
-        awaitingAdditions = nil
-        return waiting.position
-    }
-
     /// A page settled on screen. Returns whether it delivered the restore.
     @discardableResult
     func pageSettled(_ page: Int, pageIndex: (CoreTextReadingPosition) -> Int?) -> Bool {

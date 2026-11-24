@@ -247,15 +247,6 @@ extension ReaderView {
                 let needsPlacement = await contentUpdate.supply(
                     to: pagedEngine, chapterIndex: chapterIndex
                 )
-                // The book opened at a place among this chapter's comment cards, before they
-                // had arrived (`ReaderOpeningRestore.awaitingAdditions`): its page is there now.
-                if let owed = openingRestore.additionsArrived(spine: chapterIndex, pagePosition: { position in
-                    pagedEngine.pageIndex(for: position).flatMap { pagedEngine.readingPosition(forPage: $0) }
-                }) {
-                    progressTrace("restore to added content placed at=(\(owed.spineIndex),\(owed.charOffset),\(owed.translationOffset ?? -1))")
-                    setCoreTextExternalTarget(owed)
-                    return
-                }
                 guard needsPlacement else { return }
             }
             guard isVisibleChapter else {
