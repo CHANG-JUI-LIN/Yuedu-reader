@@ -241,6 +241,32 @@ struct NodeAttributedStringRenderer: Sendable {
         return result
     }
 
+    /// A 段評 bubble for the end of a paragraph that is already set — a module's, added to a
+    /// chapter its builder made (`ReaderCommentPieces`) — sized and raised as a 來源配置's own
+    /// bubble is inside that paragraph: in a body paragraph's font, raised and judged by
+    /// `lineHeight`, the paragraph's fixed line height, so it claims the line its text is
+    /// centred in. Rendered as a top-level node it had the body context's system font and that
+    /// font's raise: in any other reader font its claim reached above the text and moved its
+    /// line 1–2pt (feedback #249).
+    func paragraphCommentBadge(
+        count: String,
+        reviewURL: String,
+        title: String,
+        traits: CommentBubbleTraits,
+        lineHeight: CGFloat?
+    ) async -> NSAttributedString {
+        let body = RenderContext.makeBody(config: config, cjkTypographyStyle: cjkTypographyStyle(for: []))
+        var ctx = applyBlockStyle(.none, to: body, isHeading: false)
+        if let lineHeight, lineHeight > 0 {
+            let style = ctx.paragraphStyle.mutableCopy() as! NSMutableParagraphStyle
+            style.minimumLineHeight = lineHeight
+            style.maximumLineHeight = lineHeight
+            ctx.paragraphStyle = style
+            ctx.baselineOffset = ReaderTypographyCorrection.baselineOffset(font: ctx.font, targetLineHeight: lineHeight)
+        }
+        return await renderCommentBadge(count: count, reviewURL: reviewURL, title: title, traits: traits, ctx: ctx)
+    }
+
     /// TXT owns paragraph typography; inline nodes reuse the EPUB ruby renderer.
     /// This entry preserves TXT's literal characters and paragraph attributes.
     func renderInlineContent(

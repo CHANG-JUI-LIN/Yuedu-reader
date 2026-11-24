@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import YueduCoreText
 
 /// Immutable output of one chapter content build.
 ///
@@ -123,6 +124,7 @@ final class ChapterDocumentStore {
                     return ChapterDocument(spineIndex: request.spineIndex, buildResult: result)
                 }
                 var decorations: ReaderTranslationLayout.Decorations?
+                var columnWidth: CGFloat?
                 let built = result.attributedString
                 if let decorationSource, let width = builder.decorationRenderWidth, built.length > 0,
                    !ReaderCommentPieces.hasSourceComments(built) {
@@ -131,8 +133,10 @@ final class ChapterDocumentStore {
                         forSpine: request.spineIndex, title: builder.chapterTitle(at: request.spineIndex),
                         paragraphs: paragraphs.map(\.key)) {
                         let insets = request.settings.contentInsets
+                        let column = max(1, width - insets.left - insets.right)
+                        columnWidth = column
                         let pieces = ReaderCommentPieces(settings: request.settings, textColor: request.themeTextColor,
-                                                         columnWidth: max(1, width - insets.left - insets.right))
+                                                         columnWidth: column)
                         decorations = await pieces.decorations(placements, in: built, paragraphs: paragraphs)
                     }
                 }
@@ -141,9 +145,17 @@ final class ChapterDocumentStore {
                 guard source != nil || decorations != nil else {
                     return ChapterDocument(spineIndex: request.spineIndex, buildResult: result)
                 }
-                let spliced = ReaderTranslationLayout.splice(result.attributedString, mode: source == nil ? .off : presentation.mode,
+                var spliced = ReaderTranslationLayout.splice(result.attributedString, mode: source == nil ? .off : presentation.mode,
                                                              decorations: decorations) {
                     source?.translation(forParagraph: $0, language: presentation.language)
+                }
+                // A module's bubbles join the chapter after its builder fitted its own
+                // (`fittingReviewBubbles`): the line a bubble's tail would leave short, or a
+                // bubble taller than its line, is fitted here, in the column it is laid out in.
+                // Only `.kern` and paragraph styles change, never the text, so `layout` holds.
+                if decorations != nil, let columnWidth, !request.settings.writingMode.isVertical, let display = spliced?.display {
+                    let fitted = NSMutableAttributedString(attributedString: display)
+                    if ReviewBubbleLineFit.fit(fitted, lineWidth: columnWidth) > 0 { spliced?.display = fitted }
                 }
                 return ChapterDocument(spineIndex: request.spineIndex, buildResult: result, translated: spliced)
             }

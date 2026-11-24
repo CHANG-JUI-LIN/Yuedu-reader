@@ -60,18 +60,16 @@ struct ReaderCommentPieces {
     }
 
     /// A 段評 bubble with `count` in it, for the end of the paragraph whose last character has
-    /// `host`'s attributes: on that paragraph's line, in its paragraph style.
+    /// `host`'s attributes: on that paragraph's line, in its paragraph style, sized as a
+    /// 來源配置's own bubble in that paragraph is.
     func bubble(count: Int, href: String, title: String, traits: CommentBubbleTraits = .plain,
                 host: [NSAttributedString.Key: Any]) async -> NSAttributedString {
-        let rendered = await renderer().render([.commentBadge(count: String(count), reviewURL: href, title: title, traits: traits)])
+        let style = host[.paragraphStyle] as? NSParagraphStyle
+        let rendered = await renderer().paragraphCommentBadge(count: String(count), reviewURL: href, title: title,
+                                                              traits: traits, lineHeight: style?.maximumLineHeight)
+        guard let style, rendered.length > 0 else { return rendered }
         let piece = NSMutableAttributedString(attributedString: rendered)
-        // The renderer ends a top-level run with its paragraph's line break; the bubble joins a
-        // paragraph that has its own.
-        while piece.string.hasSuffix("\n") { piece.deleteCharacters(in: NSRange(location: piece.length - 1, length: 1)) }
-        guard piece.length > 0 else { return piece }
-        if let style = host[.paragraphStyle] {
-            piece.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: piece.length))
-        }
+        piece.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: piece.length))
         return piece
     }
 
