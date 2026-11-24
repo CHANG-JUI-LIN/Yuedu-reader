@@ -379,6 +379,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 let package = try await self.chapterFetcher.fetchChapter(
                     book: self.book, chapterIndex: index, priority: .immediate, store: self.store)
                 guard self.loadToken == token else { return }
+                guard await self.noteChapterContent(package.content, chapterIndex: index) != .movedToTextReader
+                else { return }
                 let localDir = MangaChapterParser.chapterDirectory(bookId: self.book.id, chapterIndex: index)
                 let pages = MangaChapterParser.pages(
                     from: package.content, headers: self.headers, localDir: localDir, imageDecoder: self.imageDecoder
@@ -400,6 +402,15 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 self.state.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// A chapter this reader shows, read as evidence of the book's reader: a book its source
+    /// declares text that came here on image-only chapters goes back to the text reader on its
+    /// first prose chapter (feedback #251). `BookReaderView` swaps reactively.
+    private func noteChapterContent(_ content: String, chapterIndex: Int) async -> BookStore.ChapterContentVerdict {
+        guard book.isOnline, let store else { return .unchanged }
+        return await store.noteChapterContent(bookId: book.id, content: content, chapterIndex: chapterIndex,
+                                              readingChapter: self.chapterIndex)
     }
 
     private var isLocalFixedPageBook: Bool {
@@ -691,6 +702,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         do {
             let package = try await chapterFetcher.fetchChapter(
                 book: book, chapterIndex: nextIndex, priority: .immediate, store: store)
+            guard await noteChapterContent(package.content, chapterIndex: nextIndex) != .movedToTextReader
+            else { return nil }
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)
             let pages = MangaChapterParser.pages(
                 from: package.content, headers: headers, localDir: localDir, imageDecoder: imageDecoder
@@ -718,6 +731,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         do {
             let package = try await chapterFetcher.fetchChapter(
                 book: book, chapterIndex: prevIndex, priority: .immediate, store: store)
+            guard await noteChapterContent(package.content, chapterIndex: prevIndex) != .movedToTextReader
+            else { return nil }
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: prevIndex)
             let pages = MangaChapterParser.pages(
                 from: package.content, headers: headers, localDir: localDir, imageDecoder: imageDecoder

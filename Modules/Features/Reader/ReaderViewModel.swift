@@ -512,7 +512,8 @@ final class ReaderViewModel: ObservableObject {
                 self.recordParagraphReviewsIfPresent(in: package.content)
             }
             if shouldDetectMedia, let store,
-               !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex) {
+               await store.noteChapterContent(bookId: book.id, content: package.content, chapterIndex: chapterIndex)
+                == .unchanged {
                 store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
             }
         }
@@ -614,10 +615,11 @@ final class ReaderViewModel: ObservableObject {
                     self.recordParagraphReviewsIfPresent(in: package.content)
                 }
                 if case .ready = result, let store {
-                    // Aggregation sources serve manga under a text (type-0) source; once the
-                    // first chapter comes back as an image list, flip the book to the manga
-                    // reader. `BookReaderView` swaps reactively.
-                    if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex) {
+                    // Aggregation sources serve comics under a text (type-0) source: once
+                    // enough chapters come back as image lists, the book moves to the image
+                    // reader (`noteChapterContent`). `BookReaderView` swaps reactively.
+                    if await store.noteChapterContent(bookId: book.id, content: package.content, chapterIndex: chapterIndex)
+                        == .unchanged {
                         store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
                     }
                 }

@@ -60,16 +60,10 @@ struct MangaChapterParserTests {
 
     // MARK: - Auto manga detection
 
-    @Test("imageStyle FULL is treated as manga regardless of content")
-    func detectByImageStyle() {
-        #expect(MangaChapterParser.looksLikeMangaContent("anything", imageStyle: "FULL"))
-        #expect(MangaChapterParser.looksLikeMangaContent("anything", imageStyle: "full"))
-    }
-
     @Test("a JSON array of images is detected as manga")
     func detectJSONArray() {
         let content = #"["https://c.example.com/1.jpg","https://c.example.com/2.jpg","https://c.example.com/3.jpg"]"#
-        #expect(MangaChapterParser.looksLikeMangaContent(content))
+        #expect(MangaChapterParser.contentShape(of: content) == .imagePages)
     }
 
     @Test("an image-only <img> chapter is detected as manga")
@@ -79,7 +73,7 @@ struct MangaChapterParserTests {
         <img src="https://c.example.com/2.jpg">
         <img src="https://c.example.com/3.jpg">
         """
-        #expect(MangaChapterParser.looksLikeMangaContent(content))
+        #expect(MangaChapterParser.contentShape(of: content) == .imagePages)
     }
 
     @Test("prose with a single inline image is not manga")
@@ -88,19 +82,19 @@ struct MangaChapterParserTests {
         他推开门，看见院子里那株老槐树。<img src="https://c.example.com/x.jpg">
         风很大，叶子落了一地，他忽然想起很多年前的那个夏天，那些再也回不来的人和事。
         """
-        #expect(!MangaChapterParser.looksLikeMangaContent(content))
+        #expect(MangaChapterParser.contentShape(of: content) == .prose)
     }
 
     @Test("a normal text chapter is not manga")
     func detectPlainTextNotManga() {
         let content = "第一段。\n第二段。\n第三段，没有任何图片链接。"
-        #expect(!MangaChapterParser.looksLikeMangaContent(content))
+        #expect(MangaChapterParser.contentShape(of: content) == .prose)
     }
 
     @Test("too few images is not manga")
     func detectTooFewImages() {
         let content = "https://c.example.com/1.jpg\nhttps://c.example.com/2.jpg"
-        #expect(!MangaChapterParser.looksLikeMangaContent(content))
+        #expect(MangaChapterParser.contentShape(of: content) == .undetermined)
     }
 
     // MARK: - Legado `url,{headers}` image syntax (aggregation manga sources)
@@ -123,7 +117,7 @@ struct MangaChapterParserTests {
 
     @Test("headered image content is detected as manga")
     func detectsHeaderedImageContent() {
-        #expect(MangaChapterParser.looksLikeMangaContent(Self.headeredContent))
+        #expect(MangaChapterParser.contentShape(of: Self.headeredContent) == .imagePages)
     }
 
     @Test("pages merge per-image headers over the source defaults")

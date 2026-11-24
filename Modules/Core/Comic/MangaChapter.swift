@@ -96,26 +96,32 @@ enum MangaChapterParser {
             .compactMap { parseImageToken($0) }
     }
 
-    /// Heuristic that decides whether a fetched chapter is actually a manga page
-    /// list rather than prose. Used to auto-route books from aggregation sources
-    /// (which report `bookSourceType == 0` yet serve manga) to the image reader.
-    ///
-    /// Positive when the source explicitly flagged `imageStyle == "FULL"`, or the
-    /// content resolves to several images and carries essentially no body text.
-    static func looksLikeMangaContent(_ content: String, imageStyle: String? = nil) -> Bool {
-        if imageStyle?.uppercased() == "FULL" { return true }
+    /// What one fetched chapter's content is: a page list, prose, or too little to tell.
+    enum ContentShape: Equatable {
+        /// Several images and essentially no body text — a comic chapter, or a light novel's
+        /// 插圖 chapter. One such chapter does not make a book a comic (feedback #251).
+        case imagePages
+        /// Body text, with or without pictures among it.
+        case prose
+        /// Empty, or one or two images with no text.
+        case undetermined
+    }
 
+    /// Classifies a fetched chapter for `BookStore.noteChapterContent`, which reads several
+    /// chapters before it moves a book whose source declares text to the image reader.
+    ///
+    /// Image pages when the content resolves to at least three images and, once the image
+    /// references and markup are stripped, at most 16 characters remain; prose when more
+    /// text than that remains.
+    static func contentShape(of content: String) -> ContentShape {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty else { return .undetermined }
 
         let urls = imageURLs(from: content)
-        guard urls.count >= 3 else { return false }
-
         // A JSON array of image URLs is unambiguous.
-        if trimmed.hasPrefix("[") { return true }
+        if urls.count >= 3, trimmed.hasPrefix("[") { return .imagePages }
 
-        // Otherwise require the chapter to be *predominantly* images: strip the
-        // image references and confirm little prose remains.
+        // Strip the image references and see how much prose remains.
         var residual = trimmed.replacingOccurrences(
             of: #"(?is)<img\b[^>]*>"#, with: "", options: .regularExpression)
         residual = residual
@@ -126,7 +132,8 @@ enum MangaChapterParser {
             of: #"<[^>]+>"#, with: "", options: .regularExpression)
         residual = urls.reduce(residual) { $0.replacingOccurrences(of: $1, with: "") }
         residual = residual.trimmingCharacters(in: .whitespacesAndNewlines)
-        return residual.count <= 16
+        if residual.count > 16 { return .prose }
+        return urls.count >= 3 ? .imagePages : .undetermined
     }
 
     /// Pull pages out of `<img>` tags. The src is captured up to the tag's closing `>` so the

@@ -316,7 +316,7 @@ enum DirectChapterAudioResolver {
     /// stream rather than prose. Aggregation sources serve audiobooks under a
     /// text (`bookSourceType == 0`) source, so the only reliable signal is the
     /// content itself: a single audio direct link with essentially no body text.
-    /// Mirrors `MangaChapterParser.looksLikeMangaContent` (strip the media
+    /// Mirrors `MangaChapterParser.contentShape(of:)` (strip the media
     /// reference + markup, confirm little prose remains).
     static func looksLikeAudioContent(_ content: String) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)

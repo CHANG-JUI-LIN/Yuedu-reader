@@ -232,6 +232,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// aside. Writing would replace the only copy of data nobody has seen.
     private var metadataWritesBlocked = false
     private var lastPersistedPositionSnapshots: [UUID: PersistedPositionSnapshot] = [:]
+    /// `noteChapterContent`'s reading of each online book's chapters this launch.
+    private var chapterContentEvidence: [UUID: ChapterContentEvidence] = [:]
     private var lastPersistedPositionSaveUptimeByBook: [UUID: TimeInterval] = [:]
 
     private static let minimumProgressDeltaForMetadataWrite = 0.0025
@@ -1677,29 +1679,113 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         return true
     }
 
-    /// Promote an online book to the manga pipeline once a fetched chapter turns out
-    /// to be an image page list. Aggregation sources report `bookSourceType == 0`
-    /// (text) even when serving manga, so the only reliable signal is the content
-    /// itself. After this flips, `BookReaderView` reactively swaps to the image
-    /// reader and the change persists for future opens. Idempotent and cheap.
+    /// Which reader a book's own chapters say it belongs in: what this launch has read of them.
+    struct ChapterContentEvidence {
+        var imageChapters: Set<Int> = []
+        var sawProse = false
+    }
+
+    /// How many distinct image-only chapters, with no prose among the chapters read, move a
+    /// book its source declares text to the image reader. Light novels carry 插圖 / 彩頁
+    /// chapters at the start or end of each volume, at most two side by side; a comic served
+    /// under a text source (an aggregation source, `bookSourceType == 0`) is images in every
+    /// chapter. A table of contents shorter than this needs all of its chapters.
+    nonisolated static let imageChaptersToPromote = 3
+
+    enum ChapterContentVerdict: Equatable {
+        case unchanged
+        /// Moved to the image reader, at the chapter the text reader was reading.
+        case movedToImageReader
+        /// Moved back to the text reader, at the chapter the image reader was reading.
+        case movedToTextReader
+    }
+
+    /// Reads one fetched chapter of an online book as evidence for the reader it belongs in.
     ///
-    /// `chapterIndex` is the chapter whose content was detected — the one the text reader
-    /// was opened at. The image reader restores from `mangaChapterIndex`, not the position
-    /// store, so without it a comic opened from 目錄 at any chapter flipped to its first.
+    /// Legado, Sigma and MD3 pick the image reader from the book's type alone. Aggregation
+    /// sources declare text (`bookSourceType == 0`) yet serve comics, so this app also reads
+    /// the chapters — but a single image-only chapter is a light novel's 插圖 as often as a
+    /// comic's page list, and flipping on one turned whole novels into comics (feedback #251).
+    ///
+    /// - A book read as text moves to the image reader once `imageChaptersToPromote` distinct
+    ///   chapters (fewer when the table of contents is shorter) came back as images and none
+    ///   as prose. It opens there at the chapter the text reader was at.
+    /// - A book in the image reader whose source declares text — one this moved there, the
+    ///   only way such a book gets there — moves back the first time a chapter comes back as
+    ///   prose, and opens at the chapter the image reader has open. That is also how books moved
+    ///   by the single-chapter rule before 3.0.3 come back. A book its source declares a comic
+    ///   is never moved back.
+    ///
+    /// - Parameters:
+    ///   - readingChapter: the chapter the image reader has open, when it is the caller;
+    ///     nil reads its saved place.
+    ///   - positionStore: where the text reader keeps its place.
     @discardableResult
-    func upgradeToMangaIfDetected(
-        bookId: UUID, content: String, imageStyle: String? = nil, atChapter chapterIndex: Int
-    ) -> Bool {
-        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
-        guard records[idx].isOnline,
+    func noteChapterContent(
+        bookId: UUID,
+        content: String,
+        chapterIndex: Int,
+        readingChapter: Int? = nil,
+        positionStore: any ReadingPositionStore = JSONFileReadingPositionStore()
+    ) async -> ChapterContentVerdict {
+        guard let book = records.first(where: { $0.id == bookId }), book.isOnline,
+              book.contentPipelineKind != .video, book.contentPipelineKind != .audio
+        else { return .unchanged }
+
+        let shape = MangaChapterParser.contentShape(of: content)
+        var evidence = chapterContentEvidence[bookId] ?? ChapterContentEvidence()
+        switch shape {
+        case .imagePages: evidence.imageChapters.insert(chapterIndex)
+        case .prose: evidence.sawProse = true
+        case .undetermined: break
+        }
+        chapterContentEvidence[bookId] = evidence
+
+        if book.contentPipelineKind == .manga {
+            guard shape == .prose, declaresText(book) else { return .unchanged }
+            let chapter = readingChapter ?? book.mangaChapterIndex
+            await positionStore.save(CoreTextReadingPosition(spineIndex: chapter, charOffset: 0),
+                                     for: bookId.uuidString)
+            guard let idx = records.firstIndex(where: { $0.id == bookId }),
+                  records[idx].contentPipelineKind == .manga else { return .unchanged }
+            records[idx].contentPipelineKind = OnlineBookContentKind.text.pipelineKind
+            saveMeta()
+            AppLogger.info("⟐ reader kind: prose chapter in a text-declared book, back to the text reader", context: [
+                "book": bookId.uuidString, "chapter": chapterIndex, "opensAt": chapter,
+            ])
+            return .movedToTextReader
+        }
+
+        let tableLength = book.totalChapterNum ?? 0
+        let needed = tableLength > 0 ? min(Self.imageChaptersToPromote, tableLength) : Self.imageChaptersToPromote
+        guard !evidence.sawProse, evidence.imageChapters.count >= needed else { return .unchanged }
+        let readingChapter = await positionStore.load(for: bookId.uuidString)?.spineIndex ?? chapterIndex
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
               records[idx].contentPipelineKind != .manga,
-              records[idx].contentPipelineKind != .video else { return false }
-        guard MangaChapterParser.looksLikeMangaContent(content, imageStyle: imageStyle) else { return false }
+              records[idx].contentPipelineKind != .video,
+              records[idx].contentPipelineKind != .audio,
+              chapterContentEvidence[bookId]?.sawProse != true else { return .unchanged }
         records[idx].contentPipelineKind = .manga
-        records[idx].mangaChapterIndex = chapterIndex
+        records[idx].mangaChapterIndex = readingChapter
         records[idx].mangaPage = 0
         saveMeta()
-        return true
+        AppLogger.info("⟐ reader kind: image-only chapters in a text-declared book, to the image reader", context: [
+            "book": bookId.uuidString, "imageChapters": evidence.imageChapters.sorted().map(String.init).joined(separator: ","),
+            "opensAt": readingChapter,
+        ])
+        return .movedToImageReader
+    }
+
+    /// Whether `book`'s source, still installed, declares it text — what it was stored as
+    /// before its chapters moved it (`addOnlineBook` infers the same way). A book without a
+    /// source on this device, or read through a module, is never taken as declared text.
+    private func declaresText(_ book: ReadingBook) -> Bool {
+        guard book.module == nil, let sourceId = book.bookSourceId,
+              BookSourceStore.shared.source(id: sourceId) != nil else { return false }
+        return Self.inferredOnlineContentKind(
+            explicit: nil, sourceId: sourceId, runtimeVariables: book.runtimeVariables,
+            bookInfoURL: book.bookInfoURL ?? book.source, tocURL: book.tocURL
+        ) == .text
     }
 
     /// Promote an online book to the audio pipeline once a fetched chapter turns
