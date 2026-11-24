@@ -5,15 +5,20 @@ import UIKit
 // MARK: - Scope
 
 /// Which app page a page-background config applies to. `global` is the default
-/// every tab falls back to; the tab cases mirror `RootTabItem` raw values so a
-/// tab and its scope stay in sync by construction.
+/// every tab falls back to; every other case shares its raw value with a drawn
+/// `RootTabItem`, so `editorScopes(tabOrder:)` lists exactly the tab bar.
 enum AppearancePageBackgroundScope: String, CaseIterable, Codable, Identifiable {
     case global
     case bookshelf
     case explore
-    case rss
+    /// 資源庫, and every RSS screen, which lives inside it since decision 30 (FB-250).
+    case library
     case settings
     case search
+    /// No longer a page of its own (decision 30): RSS is inside 資源庫. Kept only so the
+    /// `rss` key that older settings, saved themes and theme packs carry still decodes;
+    /// `migratingLegacyKeys(_:)` moves it to `library`. Never listed, never drawn.
+    case rss
 
     var id: String { rawValue }
 
@@ -22,6 +27,7 @@ enum AppearancePageBackgroundScope: String, CaseIterable, Codable, Identifiable 
         case .global: return "全局默認"
         case .bookshelf: return "書架"
         case .explore: return "探索"
+        case .library: return "資源庫"
         case .rss: return "RSS 訂閱"
         case .settings: return "設定"
         case .search: return "搜索"
@@ -29,6 +35,31 @@ enum AppearancePageBackgroundScope: String, CaseIterable, Codable, Identifiable 
     }
 
     var localizedTitle: String { localized(titleKey) }
+
+    /// What 頁面背景 › 編輯範圍 offers: 全局默認, then one scope per tab in the order the
+    /// reader arranged the tab bar (`GlobalSettings.orderedRootTabs`). Hidden tabs stay
+    /// listed: their pages are still reachable (RSS from 探索) and their backgrounds editable.
+    nonisolated static func editorScopes(tabOrder: [RootTabItem]) -> [AppearancePageBackgroundScope] {
+        [.global] + tabOrder.compactMap { AppearancePageBackgroundScope(rawValue: $0.rawValue) }
+    }
+
+    /// Moves a background saved under the retired `rss` key to `library`, in one
+    /// assignment so the file reclaim never sees the image unreferenced.
+    /// Guards: settings and saved themes from builds before FB-250 (3.0.2 and earlier)
+    /// and theme packs naming an `rss` tab. Only moves when `library` is unset, so a
+    /// background the reader set on 資源庫 is never overwritten. Can be deleted once no
+    /// supported build or shared pack writes `rss`.
+    nonisolated static func migratingLegacyKeys(
+        _ backgrounds: [String: AppearancePageBackgroundConfig]
+    ) -> [String: AppearancePageBackgroundConfig] {
+        guard let legacy = backgrounds[rss.rawValue], backgrounds[library.rawValue] == nil else {
+            return backgrounds
+        }
+        var migrated = backgrounds
+        migrated.removeValue(forKey: rss.rawValue)
+        migrated[library.rawValue] = legacy
+        return migrated
+    }
 }
 
 // MARK: - Config

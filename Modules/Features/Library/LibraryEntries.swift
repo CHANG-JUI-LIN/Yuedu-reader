@@ -233,8 +233,8 @@ struct LibrarySourcesView: View {
                 ContentUnavailableView { UnavailableLabel(localized("沒有來源配置"), systemImage: "square.grid.2x2") }
             }
         }
-        .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
-        .pageBackgroundToolbar(for: .explore)
+        .background(PageBackgroundView(scope: .library).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .library)
         .navigationTitle(group ?? localized("所有來源配置"))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {

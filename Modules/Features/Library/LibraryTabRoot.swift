@@ -96,8 +96,8 @@ struct LibraryTabRoot: View {
             }
             .rootTabSearchScrollEdges()
             .scrollDismissesKeyboard(.immediately)
-            .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
-            .pageBackgroundToolbar(for: .explore)
+            .background(PageBackgroundView(scope: .library).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .library)
             .rootTabTitle(localized("資源庫"), onScroll: .minimizesBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { moreControl }

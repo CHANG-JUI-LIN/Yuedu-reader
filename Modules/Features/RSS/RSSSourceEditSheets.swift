@@ -73,7 +73,7 @@ struct EditRSSSourceSheet: View {
             .softScrollEdges()
             .navigationTitle(localized("編輯訂閱"))
             .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .rss)
+            .themedAppSurface(for: .library)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -246,7 +246,7 @@ struct RSSOrganizeSheet: View {
             .environment(\.editMode, $editMode)
             .navigationTitle(localized("整理訂閱"))
             .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .rss)
+            .themedAppSurface(for: .library)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

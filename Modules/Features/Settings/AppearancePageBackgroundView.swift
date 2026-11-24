@@ -15,7 +15,7 @@ struct AppearancePageBackgroundView: View {
         Form {
             Section {
                 Picker(selection: $pageBackgroundScope) {
-                    ForEach(AppearancePageBackgroundScope.allCases) { scope in
+                    ForEach(AppearancePageBackgroundScope.editorScopes(tabOrder: settings.orderedRootTabs)) { scope in
                         Text(scope.localizedTitle).tag(scope)
                     }
                 } label: {

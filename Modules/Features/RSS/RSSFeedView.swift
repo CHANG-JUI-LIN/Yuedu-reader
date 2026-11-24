@@ -105,7 +105,7 @@ struct RSSSmartFeedView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .rss)
+        .themedAppSurface(for: .library)
         .hidesRootTabBar()
         .navigationDestination(item: $selectedArticleID) { articleID in
             RSSArticleReaderView(articleID: articleID)
@@ -334,7 +334,7 @@ struct RSSFeedView: View {
             SafariView(url: url)
         }
         .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .rss)
+        .themedAppSurface(for: .library)
         .hidesRootTabBar(hasBottomBar: true)
         .navigationDestination(item: $selectedArticleID) { articleID in
             RSSArticleReaderView(articleID: articleID)

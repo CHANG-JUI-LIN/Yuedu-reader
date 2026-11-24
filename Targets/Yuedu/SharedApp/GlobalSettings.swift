@@ -1684,6 +1684,14 @@ class GlobalSettings {
     /// 保存為新主題 / theme selection / 導入主題.
     var appearancePageBackgrounds: [String: AppearancePageBackgroundConfig] {
         didSet {
+            // Every writer (theme selection, restore, import) lands here, so a legacy
+            // `rss` key is moved to `library` on its way in (FB-250).
+            let migrated = AppearancePageBackgroundScope.migratingLegacyKeys(appearancePageBackgrounds)
+            if migrated != appearancePageBackgrounds {
+                appearancePageBackgrounds = migrated
+                reclaimDroppedPageBackgroundFiles(from: oldValue)
+                return
+            }
             Self.savePageBackgrounds(appearancePageBackgrounds)
             updateActiveThemeExtras { $0.pageBackgrounds = appearancePageBackgrounds }
             // After the write-back, so artwork the selected theme still names is not
@@ -3625,7 +3633,8 @@ class GlobalSettings {
               ) else {
             return [:]
         }
-        return decoded
+        // `didSet` does not run from init; the same migration as the property's.
+        return AppearancePageBackgroundScope.migratingLegacyKeys(decoded)
     }
 
     private static func savePageBackgrounds(_ value: [String: AppearancePageBackgroundConfig]) {
