@@ -1612,8 +1612,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                !(usesMidSpine && (pageViewController.viewControllers ?? []).contains {
                    committedReadingPosition(of: $0)?.spineIndex == spineIndex
                }) {
-                if let page = currentEngine.pageIndex(for: visiblePosition) {
-                    publishCurrentPage(page, position: visiblePosition, notify: true)
+                // Another chapter landed; the reader's page is untouched, and so is where on it
+                // they are. Its start would overwrite a restored place mid-page (回饋中心 #247).
+                let position = settledPosition(of: visible, readerDriven: false) ?? visiblePosition
+                if let page = currentEngine.pageIndex(for: position) {
+                    publishCurrentPage(page, position: position, notify: true)
                 }
                 return
             }
@@ -1974,8 +1977,22 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ///   drag, or a turn command from a tap or a volume key. The initial stack is not.
         func captureStablePosition(from viewController: UIViewController, readerDriven: Bool = false) {
             setCurrentPosition(
-                readingPosition(from: viewController),
+                settledPosition(of: viewController, readerDriven: readerDriven),
                 .settled(readerDriven: readerDriven, isPlaceholder: isPlaceholderDisplay(viewController))
+            )
+        }
+
+        /// The position `viewController` stands for once on screen: the reader's own position
+        /// when the app re-placed the page it is on, else the page's start
+        /// (`ReaderSettledPosition`, 回饋中心 #247).
+        private func settledPosition(of viewController: UIViewController, readerDriven: Bool) -> CoreTextReadingPosition? {
+            ReaderSettledPosition.resolve(
+                pageStart: readingPosition(from: viewController),
+                held: currentCoreTextPosition,
+                readerDriven: readerDriven,
+                isPlaceholder: isPlaceholderDisplay(viewController),
+                pageCount: (viewController as? ReaderSpreadPageViewController)?.pageViewControllers.count ?? 1,
+                pageIndex: { currentEngine.pageIndex(for: $0) }
             )
         }
 
@@ -2105,7 +2122,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) -> Int? {
             let fallbackPage = (viewController as? any PageIndexProviding)?.globalPageIndex ?? currentPage
 
-            if let position = readingPosition(from: viewController) {
+            if let position = settledPosition(of: viewController, readerDriven: readerDriven) {
                 setCurrentPosition(
                     position,
                     .settled(
