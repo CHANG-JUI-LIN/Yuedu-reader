@@ -242,27 +242,31 @@ struct NodeAttributedStringRenderer: Sendable {
     }
 
     /// A 段評 bubble for the end of a paragraph that is already set — a module's, added to a
-    /// chapter its builder made (`ReaderCommentPieces`) — sized and raised as a 來源配置's own
-    /// bubble is inside that paragraph: in a body paragraph's font, raised and judged by
-    /// `lineHeight`, the paragraph's fixed line height, so it claims the line its text is
-    /// centred in. Rendered as a top-level node it had the body context's system font and that
-    /// font's raise: in any other reader font its claim reached above the text and moved its
-    /// line 1–2pt (feedback #249).
+    /// chapter its builder made (`ReaderCommentPieces`) — sized, raised and judged by that
+    /// paragraph's text: `font` and `baselineOffset` are its text's, `lineHeight` its fixed line
+    /// height. A 來源配置's own bubble, rendered inside the paragraph, has these from the
+    /// paragraph's context; this one is given them, so it claims the line its text is centred in
+    /// whichever builder set the paragraph (online HTML or plain text, TXT, EPUB with its own
+    /// fonts and sizes). Rendered as a top-level node it had the body context's system font and
+    /// that font's raise: in any other reader font its claim reached above the text and moved
+    /// its line 1–2pt (feedback #249).
     func paragraphCommentBadge(
         count: String,
         reviewURL: String,
         title: String,
         traits: CommentBubbleTraits,
+        font: UIFont,
+        baselineOffset: CGFloat,
         lineHeight: CGFloat?
     ) async -> NSAttributedString {
-        let body = RenderContext.makeBody(config: config, cjkTypographyStyle: cjkTypographyStyle(for: []))
-        var ctx = applyBlockStyle(.none, to: body, isHeading: false)
+        var ctx = RenderContext.makeBody(config: config, cjkTypographyStyle: cjkTypographyStyle(for: []))
+        ctx.font = font
+        ctx.baselineOffset = baselineOffset
         if let lineHeight, lineHeight > 0 {
             let style = ctx.paragraphStyle.mutableCopy() as! NSMutableParagraphStyle
             style.minimumLineHeight = lineHeight
             style.maximumLineHeight = lineHeight
             ctx.paragraphStyle = style
-            ctx.baselineOffset = ReaderTypographyCorrection.baselineOffset(font: ctx.font, targetLineHeight: lineHeight)
         }
         return await renderCommentBadge(count: count, reviewURL: reviewURL, title: title, traits: traits, ctx: ctx)
     }
@@ -2171,9 +2175,14 @@ struct NodeAttributedStringRenderer: Sendable {
     /// left the line where it was and the font's descender moved it 1pt up, as on iOS 26.5;
     /// 3pt of ascent over the ascender moved it 1pt down, and a 整體大小 ×2 bubble claiming its
     /// own 29pt moved it 4pt down. So a bubble that fits its line claims no more than its text:
-    /// the font's ascender and no descent. The share of the font's line height other inline
-    /// images claim rose above that ascender — PingFang on iOS 17: 5.7pt more space above every
-    /// line with a bubble (feedback #63).
+    /// the font's ascender and no descent. A text lowered in its line (a font whose own leading
+    /// is more than the line gives it: Hiragino Mincho at 18pt × 1.8 sits 1.8pt down) has its
+    /// top that much under its ascender, and CoreText does not take a negative offset off a run
+    /// delegate's ascent: claiming the ascender, the bubble moved its line 1pt down whenever
+    /// nothing else on the line stood higher (feedback #249). It claims the ascender less that.
+    /// The share of the font's line height other inline images claim rose above that
+    /// ascender — PingFang on iOS 17: 5.7pt more space above every line with a bubble
+    /// (feedback #63).
     ///
     /// A bubble taller than its line claims the box it is drawn in — centred on the font's face,
     /// raised as its text is — and `ReviewBubbleLineFit` lets that one line grow to its height,
@@ -2190,7 +2199,7 @@ struct NodeAttributedStringRenderer: Sendable {
             drawWidth: metrics.drawWidth,
             drawHeight: metrics.drawHeight,
             totalWidth: metrics.totalWidth,
-            ascent: fits ? font.ascender : face + metrics.drawHeight / 2,
+            ascent: fits ? font.ascender + min(0, ctx.baselineOffset) : face + metrics.drawHeight / 2,
             descent: fits ? 0 : max(0, metrics.drawHeight / 2 - face - ctx.baselineOffset)
         )
     }

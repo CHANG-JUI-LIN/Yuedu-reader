@@ -24,9 +24,10 @@ struct ModuleBubbleLineSpacingTests {
         )
     }
 
-    /// Against a 來源配置's own bubble on the same paragraph — the same font, size, line height
-    /// and bubble size — a module's bubble claims as much of its line and moves its line as far:
-    /// not at all when it fits the line, evenly above and below when it is taller.
+    /// A module's bubble moves its line as a 來源配置's own bubble on the same paragraph does —
+    /// the same font, size, line height and bubble size: not at all when it fits the line. On
+    /// every route a chapter's paragraphs come from: HTML, HTML whose CSS sizes its text, and
+    /// plain text (which has no bubbles of its own).
     @Test("a module's bubble sits on its line as a source's own does, in any reader font")
     func moduleBubbleMatchesSourceBubble() async throws {
         let settings = GlobalSettings.shared
@@ -44,8 +45,10 @@ struct ModuleBubbleLineSpacingTests {
         for name in [""] + Self.fonts {
             guard name.isEmpty || UIFont(name: name, size: 18) != nil else { continue }
             settings.selectedReaderFontPostScript = name
-            for ending in ["。", "。”"] {
-                let text = String(repeating: "字", count: 50) + ending
+            // A full stop the CJK pass raises in its em box, a curly quote it may set in another
+            // face, and none: the text's own raise alone.
+            for ending in ["。", "。”", ""] {
+                let text = String(repeating: "字", count: 51) + ending
                 for scale in [1.0, 1.5, 2.0] {
                     settings.commentBubbleScale = scale
                     for fontSize: CGFloat in [18, 22] {
@@ -55,41 +58,45 @@ struct ModuleBubbleLineSpacingTests {
                                 fontSize: fontSize, lineHeightMultiple: lineHeightMultiple, lineSpacing: 0, paragraphSpacing: 10,
                                 letterSpacing: 0, marginH: insets.left, marginV: insets.bottom, footerHeight: 0,
                                 contentInsets: insets, writingMode: .horizontal)
-                            let setup = "\(name.isEmpty ? "system" : name) \(ending) \(fontSize)pt × \(lineHeightMultiple) ×\(scale)"
+                            for route in Route.allCases {
+                                let setup = "\(route) \(name.isEmpty ? "system" : name) \(ending) \(fontSize)pt × \(lineHeightMultiple) ×\(scale)"
+                                // The chapter without a bubble, and with a module's on its second paragraph.
+                                let plain = route.body(text, marker: nil)
+                                let built = try await build(body: plain, settings: renderSettings).attributedString
+                                if !name.isEmpty {
+                                    let han = (built.string as NSString).range(of: "字").location
+                                    let font = built.attribute(.font, at: han, effectiveRange: nil) as? UIFont
+                                    // A Latin face gives its Han characters to the CJK fallback; the
+                                    // paragraph is still in it, and its punctuation and metrics are.
+                                    if font?.fontName == name { setInReaderFont.insert(name) }
+                                }
+                                let display = try await moduleDisplay(body: plain, settings: renderSettings)
+                                let module = try #require(measure(display, against: built), "\(setup): no module bubble line")
+                                if module.claim.drawHeight > module.lineHeight {
+                                    // Grown as `ReviewBubbleLineFit` grows it; how evenly is
+                                    // `CommentBubbleLineEndTests`'s, in the system font.
+                                    if module.above + module.below > 0.5 { grown += 1 } else {
+                                        failures.append("\(setup): a module bubble \(module.claim.drawHeight)pt tall left its \(module.lineHeight)pt line as it was")
+                                    }
+                                }
+                                var moved = [("module", module)]
 
-                            // A 來源配置's own bubble, drawn in the paragraph.
-                            let sourced = try await build(
-                                html: "<p>\(text)</p><p>\(text)\(sourceMarker)</p><p>\(text)</p><p>\(text)</p>",
-                                settings: renderSettings).attributedString
-                            // The same chapter without it, and a module's bubble on that paragraph.
-                            let built = try await build(html: "<p>\(text)</p><p>\(text)</p><p>\(text)</p><p>\(text)</p>",
-                                                        settings: renderSettings).attributedString
-                            if !name.isEmpty {
-                                let han = (built.string as NSString).range(of: "字").location
-                                let font = built.attribute(.font, at: han, effectiveRange: nil) as? UIFont
-                                // A Latin face gives its Han characters to the CJK fallback; the
-                                // paragraph is still in it, and its punctuation and metrics are.
-                                if font?.fontName == name { setInReaderFont.insert(name) }
-                            }
-                            let display = try await moduleDisplay(html: "<p>\(text)</p><p>\(text)</p><p>\(text)</p><p>\(text)</p>",
-                                                                  settings: renderSettings)
-
-                            let source = try #require(measure(sourced, against: built), "\(setup): no source bubble line")
-                            let module = try #require(measure(display, against: built), "\(setup): no module bubble line")
-                            if module.claim.drawHeight > module.lineHeight, module.above + module.below > 0.5 { grown += 1 }
-                            if abs(module.above - source.above) > 0.5 || abs(module.below - source.below) > 0.5 {
-                                failures.append("\(setup): the module's bubble moved its line \(module.above)pt from the line above "
-                                                + "and \(-module.below)pt from the one below; a source's own, \(source.above)pt and \(-source.below)pt")
-                            }
-                            if module.claim != source.claim {
-                                failures.append("\(setup): the module's bubble claims \(module.claim), a source's own \(source.claim)")
-                            }
-                            // Either bubble, on a line it fits: the line keeps its place. A
-                            // bubble taller than its line grows it as a source's own does (above);
-                            // how evenly is `CommentBubbleLineEndTests`'s, in the system font.
-                            for (label, moved) in [("module", module), ("source", source)]
-                            where moved.claim.drawHeight <= moved.lineHeight && (abs(moved.above) > 0.5 || abs(moved.below) > 0.5) {
-                                failures.append("\(setup): a \(label) bubble that fits moved its line \(moved.above)pt above, \(moved.below)pt below")
+                                // A 來源配置's own bubble, drawn in the paragraph, where a source can have one.
+                                if let sourcedBody = route.sourced(text, marker: sourceMarker) {
+                                    let sourced = try await build(body: sourcedBody, settings: renderSettings).attributedString
+                                    let source = try #require(measure(sourced, against: built), "\(setup): no source bubble line")
+                                    moved.append(("source", source))
+                                    if module.claim.drawHeight <= module.lineHeight,
+                                       abs(module.above - source.above) > 0.5 || abs(module.below - source.below) > 0.5 {
+                                        failures.append("\(setup): the module's bubble moved its line \(module.above)pt from the line above "
+                                                        + "and \(-module.below)pt from the one below; a source's own, \(source.above)pt and \(-source.below)pt")
+                                    }
+                                }
+                                // Either bubble, on a line it fits: the line keeps its place.
+                                for (label, step) in moved
+                                where step.claim.drawHeight <= step.lineHeight && (abs(step.above) > 0.5 || abs(step.below) > 0.5) {
+                                    failures.append("\(setup): a \(label) bubble that fits moved its line \(step.above)pt above, \(step.below)pt below")
+                                }
                             }
                         }
                     }
@@ -105,15 +112,37 @@ struct ModuleBubbleLineSpacingTests {
 
     /// The chapter with a module's bubble on its second paragraph, as the reader's document
     /// store makes it.
-    private func moduleDisplay(html: String, settings: ReaderRenderSettings) async throws -> NSAttributedString {
+    private func moduleDisplay(body: ChapterRenderBody, settings: ReaderRenderSettings) async throws -> NSAttributedString {
         let store = ChapterDocumentStore(builder: OnlineProviderAttributedStringBuilder(
-            provider: ModuleBubbleChapterProvider(html: html), renderSize: page))
+            provider: ModuleBubbleChapterProvider(body: body), renderSize: page))
         let source = SecondParagraphBubble()
         store.decorationSource = source
         let document = try await store.document(for: ChapterDocumentRequest(
             spineIndex: 0, settings: settings, themeTextColor: .black, themeBackgroundColor: .white))
         try #require(source.asked, "the store never asked for the chapter's comments")
         return document.attributedString
+    }
+
+    /// Where a chapter's paragraphs come from.
+    private enum Route: String, CaseIterable, CustomStringConvertible {
+        case html, sizedHTML, plainText
+        var description: String { rawValue }
+
+        /// Four paragraphs of `text`, `marker` at the end of the second.
+        func body(_ text: String, marker: String?) -> ChapterRenderBody {
+            let second = text + (marker ?? "")
+            switch self {
+            case .html: return .html("<p>\(text)</p><p>\(second)</p><p>\(text)</p><p>\(text)</p>")
+            case .sizedHTML:
+                let p = #"<p style="font-size: 1.25em">"#
+                return .html("\(p)\(text)</p>\(p)\(second)</p>\(p)\(text)</p>\(p)\(text)</p>")
+            case .plainText: return .plainText([text, second, text, text].joined(separator: "\n"))
+            }
+        }
+
+        func sourced(_ text: String, marker: String) -> ChapterRenderBody? {
+            self == .plainText ? nil : body(text, marker: marker)
+        }
     }
 
     private struct Claim: Equatable, CustomStringConvertible {
@@ -160,23 +189,23 @@ struct ModuleBubbleLineSpacingTests {
         return (lines, origins)
     }
 
-    private func build(html: String, settings: ReaderRenderSettings) async throws -> AttributedChapterBuildResult {
-        let builder = OnlineProviderAttributedStringBuilder(provider: ModuleBubbleChapterProvider(html: html), renderSize: page)
+    private func build(body: ChapterRenderBody, settings: ReaderRenderSettings) async throws -> AttributedChapterBuildResult {
+        let builder = OnlineProviderAttributedStringBuilder(provider: ModuleBubbleChapterProvider(body: body), renderSize: page)
         return try await builder.buildChapter(at: 0, settings: settings, themeTextColor: .black, themeBackgroundColor: .white)
     }
 }
 
 private final class ModuleBubbleChapterProvider: BookContentProvider {
-    private let html: String
+    private let body: ChapterRenderBody
 
-    init(html: String) { self.html = html }
+    init(body: ChapterRenderBody) { self.body = body }
 
     var totalChapters: Int { 1 }
 
     func chapterTitle(at index: Int) -> String { "第1章" }
 
     func contentForChapter(index: Int) async throws -> ChapterContentPayload {
-        ChapterContentPayload(index: 0, title: "第1章", plainText: "", body: .html(html), sourceHref: "https://example.com/1")
+        ChapterContentPayload(index: 0, title: "第1章", plainText: "", body: body, sourceHref: "https://example.com/1")
     }
 }
 

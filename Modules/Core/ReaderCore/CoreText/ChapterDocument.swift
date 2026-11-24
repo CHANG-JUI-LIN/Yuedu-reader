@@ -155,7 +155,10 @@ final class ChapterDocumentStore {
                 // Only `.kern` and paragraph styles change, never the text, so `layout` holds.
                 if decorations != nil, let columnWidth, !request.settings.writingMode.isVertical, let display = spliced?.display {
                     let fitted = NSMutableAttributedString(attributedString: display)
-                    if ReviewBubbleLineFit.fit(fitted, lineWidth: columnWidth) > 0 { spliced?.display = fitted }
+                    let changed = SourcePerfTrace.span("reader.reviewBubbleLineFit", "module chars=\(fitted.length)") {
+                        ReviewBubbleLineFit.fit(fitted, lineWidth: columnWidth)
+                    }
+                    if changed > 0 { spliced?.display = fitted }
                 }
                 return ChapterDocument(spineIndex: request.spineIndex, buildResult: result, translated: spliced)
             }

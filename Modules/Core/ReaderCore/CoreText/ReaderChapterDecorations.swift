@@ -59,18 +59,41 @@ struct ReaderCommentPieces {
             renderWidth: columnWidth, imageLoader: { _ in image }))
     }
 
-    /// A 段評 bubble with `count` in it, for the end of the paragraph whose last character has
-    /// `host`'s attributes: on that paragraph's line, in its paragraph style, sized as a
-    /// 來源配置's own bubble in that paragraph is.
+    /// A 段評 bubble with `count` in it, for the end of a paragraph whose text has `host`'s
+    /// attributes (`hostAttributes`): on that paragraph's line, in its paragraph style, in its
+    /// text's font and raise, as a 來源配置's own bubble in that paragraph is.
     func bubble(count: Int, href: String, title: String, traits: CommentBubbleTraits = .plain,
                 host: [NSAttributedString.Key: Any]) async -> NSAttributedString {
         let style = host[.paragraphStyle] as? NSParagraphStyle
-        let rendered = await renderer().paragraphCommentBadge(count: String(count), reviewURL: href, title: title,
-                                                              traits: traits, lineHeight: style?.maximumLineHeight)
+        let font = host[.font] as? UIFont ?? .systemFont(ofSize: settings.fontSize)
+        let raised = (host[.baselineOffset] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+        let rendered = await renderer().paragraphCommentBadge(count: String(count), reviewURL: href, title: title, traits: traits,
+                                                              font: font, baselineOffset: raised,
+                                                              lineHeight: style?.maximumLineHeight)
         guard let style, rendered.length > 0 else { return rendered }
         let piece = NSMutableAttributedString(attributedString: rendered)
         piece.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: piece.length))
         return piece
+    }
+
+    /// The attributes of `paragraph`'s text: its last letter, digit or ideograph's. Its last
+    /// character may be a mark set apart — a CJK full stop raised in its em box (+4.7pt against
+    /// the text's −1.8pt in Hiragino Mincho at 18pt × 1.8), a curly quote in Georgia — and the
+    /// bubble belongs on the line its text is centred in. A paragraph of marks alone has its
+    /// first character's.
+    static func hostAttributes(of paragraph: NSRange, in built: NSAttributedString) -> [NSAttributedString.Key: Any] {
+        let text = built.string as NSString
+        let wordy = CharacterSet.letters.union(.decimalDigits)
+        var index = NSMaxRange(paragraph) - 1
+        while index > paragraph.location {
+            let character = text.rangeOfComposedCharacterSequence(at: index)
+            if text.substring(with: character).unicodeScalars.contains(where: wordy.contains) {
+                index = character.location
+                break
+            }
+            index = max(paragraph.location, character.location - 1)
+        }
+        return built.attributes(at: index, effectiveRange: nil)
     }
 
     /// `placements` as the pieces spliced into `built`, the chapter as its builder made it, whose
@@ -80,7 +103,7 @@ struct ReaderCommentPieces {
         var decorations = ReaderTranslationLayout.Decorations()
         for (position, bubble) in placements.bubbles.sorted(by: { $0.key < $1.key }) {
             guard paragraphs.indices.contains(position), paragraphs[position].range.length > 0 else { continue }
-            let host = built.attributes(at: NSMaxRange(paragraphs[position].range) - 1, effectiveRange: nil)
+            let host = Self.hostAttributes(of: paragraphs[position].range, in: built)
             let piece = await self.bubble(count: bubble.count, href: bubble.href, title: bubble.title, traits: bubble.traits, host: host)
             guard piece.length > 0 else { continue }
             decorations.paragraphs[position, default: .init()].trailing = piece
