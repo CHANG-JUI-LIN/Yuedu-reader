@@ -3401,6 +3401,11 @@ struct ReaderView: View {
         // shelf progress, which syncs with the shelf, names the chapter instead (FB-179).
         let position = shelfProgressOpeningPosition() ?? restored.coreTextPosition
         savedCoreTextRestoreTarget = (position.spineIndex, max(0, position.charOffset), position.translationOffset)
+        // The restore is asked for here, before the executor commits the pages it shows on the
+        // way there (the saved chapter's 載入中 page among them). Declared only when the restore
+        // settled (`settleCoreTextRestore`), those commits arrived first, and an open into a
+        // chapter two or more past the start reported G2 every time (YD-HBA2-QUW3, FB-256).
+        declarePositionIntent(for: .restored, target: position)
         setCoreTextExternalTarget(position)
         currentChapterIndex = position.spineIndex
         scrollVisibleChapter = position.spineIndex
