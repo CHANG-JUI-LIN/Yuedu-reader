@@ -585,6 +585,49 @@ struct BrowserLayoutPageEngineTests {
         #expect(restored == page)
     }
 
+    /// 回饋中心 #256: a book reopened on the first page of the chapter it was closed in. The
+    /// opening restore is delivered by the executor settling on the restore's page, and asks
+    /// the engine for that page with `pageIndex(for:)`, which must name a page only once the
+    /// chapter's layout covers the offset. The browser engine answered for a chapter with no
+    /// layout yet (its 載入中 page, the chapter's base) and for one with only its first page
+    /// published (every offset clamped to that page), so the executor showing the chapter's
+    /// start "delivered" the restore and the reader stayed there.
+    @Test func openingRestoreIsNotDeliveredByAChapterStillLayingOut() async throws {
+        let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 200)
+        let (engine, _, _) = await makeEngine(chapters: [plainChapter("Cover", index: 0), plainChapter(text, index: 1)])
+        let chapterStart = engine.pageIndex(forSpine: 1, charOffset: 0)
+        let saved = CoreTextReadingPosition(spineIndex: 1, charOffset: 6000)
+
+        // No layout: the chapter is one 載入中 page, which is not the restore's page.
+        #expect(engine.pageIndex(for: saved) == nil, "a chapter with no layout named a page for a saved offset")
+        #expect(engine.estimatedGlobalPage(for: saved) == chapterStart)
+        let restore = ReaderOpeningRestore()
+        restore.target = (chapterIndex: 1, charOffset: saved.charOffset, translationOffset: nil)
+        #expect(!restore.pageSettled(chapterStart, pageIndex: { engine.pageIndex(for: $0) }),
+                "the 載入中 page delivered the restore")
+
+        // First page published, the rest still laying out: the executor shows the chapter's
+        // first page, which is not the restore's page either.
+        var settledOnFirstPublish: Bool?
+        engine.onChapterReady = { spine in
+            guard spine == 1, settledOnFirstPublish == nil else { return }
+            settledOnFirstPublish = restore.pageSettled(chapterStart, pageIndex: { engine.pageIndex(for: $0) })
+        }
+        let resolution = await restore.resolve(
+            chapterCount: 2,
+            preload: { _ = await engine.preloadChapter(at: $0) },
+            pageIndex: { engine.pageIndex(for: $0) }
+        )
+        #expect(settledOnFirstPublish == false, "the chapter's first page delivered the restore before the chapter was laid out")
+        guard case let .restore(position, page) = resolution else {
+            Issue.record("the restore was not applied once the chapter was laid out: \(resolution)")
+            return
+        }
+        #expect(position == saved)
+        #expect(page > chapterStart, "the restore landed on the chapter's first page")
+        #expect(engine.charOffset(forPage: page).charOffset <= saved.charOffset)
+    }
+
     /// Crashlytics db641b67: every refresh transaction calls `cancelPendingWork` and the
     /// paged refresh then preloads the visible spine. Cancelling dropped the finished
     /// chapter's `.ready`, so each refresh laid the whole chapter out again — 3–5 s of

@@ -558,12 +558,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         delegate.onNavigateToPage = { [weak self] page in
             guard let self, let position = self.delegate.readingPosition(forPage: page),
-                  let mapped = self.pageIndex(for: position) else { return }
+                  let mapped = self.pageIndex(for: position) ?? self.estimatedGlobalPage(for: position) else { return }
             self.onNavigateToPage?(mapped)
         }
         delegate.onLinkNavigate = { [weak self] page in
             guard let self, let position = self.delegate.readingPosition(forPage: page),
-                  let mapped = self.pageIndex(for: position) else { return }
+                  let mapped = self.pageIndex(for: position) ?? self.estimatedGlobalPage(for: position) else { return }
             self.onLinkNavigate?(mapped)
         }
     }
@@ -1215,7 +1215,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             guard isCurrentWork(generation) else { return }
         }
         rebuildOffsets()
-        if let restore, let page = pageIndex(for: restore) {
+        if let restore, let page = pageIndex(for: restore) ?? estimatedGlobalPage(for: restore) {
             currentPage = page
             onNavigateToPage?(page)
         }
@@ -1294,7 +1294,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     func updateReadingPosition(_ position: CoreTextReadingPosition) {
         delegate.updateReadingPosition(position)
-        if let page = pageIndex(for: position) {
+        if let page = pageIndex(for: position) ?? estimatedGlobalPage(for: position) {
             currentPage = max(0, min(page, max(totalPages - 1, 0)))
         }
     }
@@ -1307,14 +1307,43 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// A position inside pictures added to a browser chapter carries which one in
     /// `translationOffset`, as a position inside a translation does on the CoreText path: the
     /// page of nothing but such pictures is found by it (`BrowserChapterLayout.pageAddedStarts`).
+    ///
+    /// Exact, as `StablePositionResolving` asks: nil until the chapter's layout reaches the
+    /// position, the same answer `CoreTextPageEngine` gives. A chapter with no layout is one
+    /// 載入中 page and one with only its first page published clamps every offset to that
+    /// page; answering for either named the chapter's start, so the reader settling there
+    /// delivered the opening restore and a reopened book stayed on the chapter's first page
+    /// (回饋中心 #256). `estimatedGlobalPage(for:)` keeps the estimate.
     func pageIndex(for position: CoreTextReadingPosition) -> Int? {
+        guard layoutReaches(position) else { return nil }
+        return composedPageIndex(for: position)
+    }
+
+    func estimatedGlobalPage(for position: CoreTextReadingPosition) -> Int? {
+        composedPageIndex(for: position)
+    }
+
+    private func composedPageIndex(for position: CoreTextReadingPosition) -> Int {
         let base = spinePageOffsets.indices.contains(position.spineIndex) ? spinePageOffsets[position.spineIndex] : 0
         return base + localPageIndex(in: position.spineIndex, charOffset: position.charOffset,
                                      addedIndex: position.translationOffset)
     }
 
-    func estimatedGlobalPage(for position: CoreTextReadingPosition) -> Int? {
-        pageIndex(for: position)
+    /// Whether the chapter's layout covers `position`: laid out, or its failure page, or — while
+    /// the rest of its pages are still being laid out (`browserSessions` holds its owner until
+    /// `finishBrowserChapter`) — the pages published so far reach the offset.
+    private func layoutReaches(_ position: CoreTextReadingPosition) -> Bool {
+        let spine = position.spineIndex
+        switch choices[spine] ?? .browser {
+        case .browser:
+            if chapterLayoutStates[spine]?.diagnosticPage != nil { return true }
+            guard let layout = browserChapters[spine], !layout.pages.isEmpty else { return false }
+            guard browserSessions[spine] != nil else { return true }
+            let coveredEnd = layout.pageSourceRanges.last.map { $0.location + $0.length } ?? 0
+            return position.charOffset < coveredEnd
+        case .legacyFallback, .legacyEngineFailure:
+            return delegate.pageIndex(for: position) != nil
+        }
     }
 
     func readingPosition(forPage page: Int) -> CoreTextReadingPosition? {
