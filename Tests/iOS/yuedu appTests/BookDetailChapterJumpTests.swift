@@ -69,35 +69,6 @@ struct BookDetailChapterJumpTests {
         }
     }
 
-    /// A comic from a source typed as text opens in the text reader at the chosen chapter and
-    /// moves to the image reader once enough chapters come back as images (feedback #251: one
-    /// is not enough); it opens there at the chapter the text reader was at, not at whichever
-    /// chapter's fetch came back last.
-    @Test("a comic detected from its content keeps the chapter it was opened at")
-    func detectedComicKeepsOpenedChapter() async throws {
-        try await withStore { store, positions in
-            let book = store.addOnlineBook(name: "聚合漫畫", author: "", sourceId: UUID(),
-                                           bookInfoURL: "https://aggregate.test/1", contentKind: .text,
-                                           chapters: Self.chapters(12))
-            await ReadingChapterPlace(store: store, positionStore: positions).open(atChapter: 7, bookId: book.id)
-            func pages(_ chapter: Int) -> String {
-                (1...4).map { "https://img.test/\(chapter)/\($0).jpg" }.joined(separator: "\n")
-            }
-
-            for chapter in [7, 8] {
-                #expect(await store.noteChapterContent(bookId: book.id, content: pages(chapter), chapterIndex: chapter,
-                                                       positionStore: positions) == .unchanged)
-            }
-            #expect(await store.noteChapterContent(bookId: book.id, content: pages(6), chapterIndex: 6,
-                                                   positionStore: positions) == .movedToImageReader)
-
-            let flipped = try #require(store.readingBook(id: book.id))
-            #expect(flipped.resolvedPipelineKind == .manga)
-            #expect(flipped.mangaChapterIndex == 7)
-            #expect(flipped.mangaPage == 0)
-        }
-    }
-
     // MARK: - Helpers
 
     private static func chapters(_ count: Int) -> [OnlineChapterRef] {

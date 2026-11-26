@@ -511,9 +511,7 @@ final class ReaderViewModel: ObservableObject {
             if shouldInspectParagraphReviews {
                 self.recordParagraphReviewsIfPresent(in: package.content)
             }
-            if shouldDetectMedia, let store,
-               await store.noteChapterContent(bookId: book.id, content: package.content, chapterIndex: chapterIndex)
-                == .unchanged {
+            if shouldDetectMedia, let store {
                 store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
             }
         }
@@ -615,13 +613,9 @@ final class ReaderViewModel: ObservableObject {
                     self.recordParagraphReviewsIfPresent(in: package.content)
                 }
                 if case .ready = result, let store {
-                    // Aggregation sources serve comics under a text (type-0) source: once
-                    // enough chapters come back as image lists, the book moves to the image
-                    // reader (`noteChapterContent`). `BookReaderView` swaps reactively.
-                    if await store.noteChapterContent(bookId: book.id, content: package.content, chapterIndex: chapterIndex)
-                        == .unchanged {
-                        store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
-                    }
+                    // A comic is read in the image reader only when its source declares one
+                    // (feedback #251): chapters never move a book there.
+                    store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
                 }
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
             } catch {

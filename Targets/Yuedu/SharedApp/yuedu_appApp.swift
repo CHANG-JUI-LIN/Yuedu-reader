@@ -341,6 +341,11 @@ struct yuedu_appApp: App {
                     Task { await WebDAVIndexCoordinator.shared.attach(store: bookStore.remoteRecords) }
                     // Unified library 3d: empty covers and descriptions fill in the foreground, on Wi-Fi.
                     bookStore.metadataFill.setActive(scenePhase == .active)
+                    // The image reader follows the source's declared type; books an image-only
+                    // chapter moved there through 3.0.2 go back (feedback #251).
+                    BookSourceStore.shared.whenLoaded { [bookStore] _ in
+                        Task { await bookStore.returnTextDeclaredComicsToTextReader() }
+                    }
                     // Seamless iCloud: merge with the cloud on launch, then look for new chapters.
                     launchOwnsChapterRefresh = true
                     syncThenRefreshChapters(syncReason: GlobalSettings.shared.iCloudAutoSync ? "launch" : nil)
