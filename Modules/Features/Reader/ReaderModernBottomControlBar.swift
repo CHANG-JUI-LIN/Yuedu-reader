@@ -90,9 +90,17 @@ struct ReaderModernBottomControlBar: View {
                 scrubberRow
                     .frame(maxWidth: .infinity, minHeight: rowHeight)
                     .floatingSurface(in: Capsule(), fill: palette.bottomFill)
-                toolRow
+                toolRow(showsMore: false)
                     .frame(maxWidth: .infinity, minHeight: rowHeight)
                     .floatingSurface(in: Capsule(), fill: palette.bottomFill)
+                    // 更多 sits over the capsule, not in it. The system menu grows out of
+                    // the glass its button is drawn in, so a 更多 inside the capsule took
+                    // the whole capsule into the menu and grew it back from the menu on
+                    // close — wider than the scrubber for a few frames, then snapping
+                    // back (FB-225). Out here the menu grows out of 更多 alone.
+                    .overlay {
+                        toolRow(showsMore: true)
+                    }
             }
         }
         .overlay(alignment: .top) {
@@ -188,12 +196,23 @@ struct ReaderModernBottomControlBar: View {
 
     /// Same shared list 自定義 edits, so hiding a tool or importing an icon applies
     /// here, and so does the order the reader arranged there.
-    private var toolRow: some View {
+    ///
+    /// Drawn twice over the same layout, so every slot lines up: once in the glass with
+    /// the tools and an empty slot for 更多, once over it with only 更多 (see `body`).
+    private func toolRow(showsMore: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(settings.visibleReaderChromeToolItems) { item in
-                toolButton(for: item)
+                if showsMore {
+                    toolButton(for: item).hidden()
+                } else {
+                    toolButton(for: item)
+                }
             }
-            moreButton
+            if showsMore {
+                moreButton
+            } else {
+                moreLabel.hidden()
+            }
         }
         .padding(.horizontal, DSSpacing.sm)
     }
