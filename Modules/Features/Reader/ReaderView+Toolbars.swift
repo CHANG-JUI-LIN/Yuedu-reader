@@ -98,7 +98,7 @@ extension ReaderView {
     /// gesture.
     private var modernTitleButton: some View {
         Button {
-            showModernBookCard = true
+            openModernBookCard()
         } label: {
             VStack(spacing: 0) {
                 Text(modernBookTitle)
@@ -130,7 +130,7 @@ extension ReaderView {
 
     private var modernCoverButton: some View {
         Button {
-            showModernBookCard = true
+            openModernBookCard()
         } label: {
             modernCoverThumbnail
         }
@@ -148,16 +148,18 @@ extension ReaderView {
         // ~0.4 s, but UIKit only finishes the one out of the cover ~1.0 s after it
         // starts and the one back ~1.2 s after it starts (iOS 27.2 simulator, Debug).
         // A blank popover here, without `preferredColorScheme`, measured the same.
-        // Until the dismissal finishes `showModernBookCard` is still true, so a tap on
-        // the cover in that window does nothing.
+        // Until the dismissal finishes `showModernBookCard` is still true; see
+        // `openModernBookCard` for what a tap in that window does.
         .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
             modernBookCard
                 // Keep it a popover on iPhone too — the card belongs to the cover it
                 // hangs off, which a sheet would break.
                 .presentationCompactAdaptation(.popover)
                 // `.popover` has no `onDismiss`; the card's disappearance is the real
-                // dismissal the deferred route waits on (see `modernBookCard`). It comes
-                // when UIKit finishes that ~1.2 s dismissal, not when the card looks gone.
+                // dismissal the deferred route waits on. After a tap outside it comes when
+                // UIKit finishes that ~1.2 s dismissal; an action asks for the card to close
+                // without animation, which iOS 27 honours, so there it is at once (see
+                // `closeModernBookCard`).
                 .onDisappear(perform: presentDeferredModernBookCardRoute)
                 // The popover starts from the system appearance, so it is told the
                 // reader's. The preference, not `.environment(\.colorScheme)`: on iOS 27
@@ -230,30 +232,60 @@ extension ReaderView {
                 // is why running the action in the same turn as `showModernBookCard = false`
                 // left 聽書 (then in the card) dead: the card slid back into the thumbnail and
                 // no panel came up.
-                // Retain the route and let the popover's real dismissal run it.
                 ReaderSecondaryAction(id: action.id, icon: action.icon, label: action.label, isLocked: action.isLocked) {
-                    modernBookCardPresentation.select(.secondary(action.id))
-                    showModernBookCard = false
+                    closeModernBookCard(opening: .secondary(action.id))
                 }
             },
             palette: modernPalette,
-            // Same deferral as the actions above: `ReaderBookSearchView` is a sheet, and a
-            // sheet asked for while the popover is still dismissing never appears.
-            onOpenSearch: {
-                modernBookCardPresentation.select(.search)
-                showModernBookCard = false
-            },
-            onOpenDetail: book == nil ? nil : {
-                modernBookCardPresentation.select(.bookDetail)
-                showModernBookCard = false
-            }
+            // `ReaderBookSearchView` is a sheet too.
+            onOpenSearch: { closeModernBookCard(opening: .search) },
+            onOpenDetail: book == nil ? nil : { closeModernBookCard(opening: .bookDetail) }
         )
+    }
+
+    /// Closes the book card for one of its actions; the popover's real dismissal opens
+    /// `route` (`presentDeferredModernBookCardRoute`).
+    ///
+    /// Without animation. Animated, the card looks gone in ~0.4 s but UIKit finishes the
+    /// dismissal only ~1.2 s in, and the page waited for that: ~1.45 s from the tap to
+    /// its first frame. Closed in place, the dismissal finishes in the same turn and the
+    /// page starts ~0.24 s after the tap, still sliding up as usual (iOS 27.2 simulator).
+    /// iOS 26.5 ignores the request: the popover still dismisses animated and finishes
+    /// ~0.9 s after the tap, the same as without it, and the page still opens then.
+    /// The wait for the real dismissal stays: asked for in the same turn, the page was
+    /// dropped even with the card closed in place, unless it lost its own animation too.
+    private func closeModernBookCard(opening route: ReaderModernBookCardRoute) {
+        modernBookCardPresentation.select(route)
+        withTransaction(\.disablesAnimations, true) {
+            showModernBookCard = false
+        }
+    }
+
+    /// Opens the book card from the cover or 書名.
+    ///
+    /// After the card closes, `showModernBookCard` stays true until UIKit finishes the
+    /// popover's dismissal — ~1.2 s after the card starts closing, ~0.8 s after it looks
+    /// gone (iOS 27.2) — so setting it again in that window changed nothing and the tap
+    /// was lost: the cover looked dead. The tap is kept instead and the card opens again
+    /// from that same real dismissal. While the card is open its dimming view takes every
+    /// tap, so the flag being set here can only mean that tail. An action the card is
+    /// already on its way to open wins over reopening it.
+    func openModernBookCard() {
+        guard showModernBookCard else {
+            showModernBookCard = true
+            return
+        }
+        if modernBookCardPresentation.pendingRoute == nil {
+            modernBookCardPresentation.select(.reopen)
+        }
     }
 
     /// Opens whatever the 現代 book card was asked for, once the popover is actually gone.
     func presentDeferredModernBookCardRoute() {
         guard let route = modernBookCardPresentation.consumeAfterDismissal() else { return }
         switch route {
+        case .reopen:
+            showModernBookCard = true
         case .bookDetail:
             openWorkDetail()
         case .secondary(let id):

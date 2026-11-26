@@ -46,8 +46,8 @@ struct ReaderSecondaryAction: Identifiable {
 
 /// What the 現代 book-card popover was asked to open.
 ///
-/// Every one of these opens a sheet, and iOS drops a sheet requested while the popover
-/// it came from is still dismissing — 聽書, when the card still had it, was the visible
+/// Every one of these but `reopen` opens a sheet, and iOS drops a sheet requested while
+/// the popover it came from is still dismissing — 聽書, when the card still had it, was the visible
 /// casualty: the card slid back into the cover thumbnail and no TTS panel ever appeared. So the tap records the route
 /// here and `ReaderView` opens it from the popover's real dismissal, never in the same
 /// turn as `showModernBookCard = false`.
@@ -58,6 +58,9 @@ enum ReaderModernBookCardRoute: Hashable {
     /// stays out of the list the book-scoped actions share and out of 自定義's show/hide
     /// roster.
     case search
+    /// The card itself, tapped open again while the last one was still dismissing; see
+    /// `ReaderView.openModernBookCard`.
+    case reopen
 }
 
 /// What the reader quick panel asked to open after it closes.

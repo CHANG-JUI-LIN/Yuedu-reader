@@ -2341,6 +2341,10 @@ struct ReaderView: View {
             readerNavigator?.readerChromeVisibilityDidChange(visible)
             guard !visible else { return }
             showModernBookCard = false
+            // A reopen tapped on the cover belongs to the chrome that is now gone.
+            if modernBookCardPresentation.pendingRoute == .reopen {
+                modernBookCardPresentation.cancel()
+            }
         }
         // The reveal holds while the reading menu or one of the panel's own sheets
         // is over the page — and only then. 目錄 and 設置 used to let it run on
