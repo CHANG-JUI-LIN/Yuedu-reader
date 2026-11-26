@@ -33,15 +33,10 @@ extension View {
         modifier(FloatingSurfaceModifier(shape: shape, fill: fill, glowTint: glowTint))
     }
 
-    /// The floating surface without the 光暈, for a surface something else clips —
-    /// a glow drawn behind it could never show past the clip anyway.
+    /// The floating surface without the 光暈.
     ///
-    /// 現代's book card is the caller: its surface is the popover's, handed over
-    /// through `presentationBackground`, and the popover clips it to its own
-    /// rounded shape and cuts the arrow out of it.
-    ///
-    /// The reading assistant's composer and the controls floating with it are the other
-    /// callers: glass samples the glow drawn behind it, so the whole input surface turns
+    /// The reading assistant's composer and the controls floating with it need this:
+    /// glass samples the glow drawn behind it, so the whole input surface turns
     /// accent-tinted, reads as a focused field, and its placeholder loses contrast.
     func floatingSurfaceBackground<SurfaceShape: Shape>(
         in shape: SurfaceShape,

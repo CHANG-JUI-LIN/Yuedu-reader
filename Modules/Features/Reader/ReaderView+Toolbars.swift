@@ -143,38 +143,26 @@ extension ReaderView {
         // off the trailing edge of the screen on iOS 27. The card filling the popover's
         // whole width is what keeps the two side margins equal; see
         // `DSLayout.readerModernBookCardMaxWidth`.
+        //
+        // A plain system popover, its own surface included. Both zooms look done in
+        // ~0.4 s, but UIKit only finishes the one out of the cover ~1.0 s after it
+        // starts and the one back ~1.2 s after it starts (iOS 27.2 simulator, Debug).
+        // A blank popover here, without `preferredColorScheme`, measured the same.
+        // Until the dismissal finishes `showModernBookCard` is still true, so a tap on
+        // the cover in that window does nothing.
         .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
             modernBookCard
                 // Keep it a popover on iPhone too — the card belongs to the cover it
                 // hangs off, which a sheet would break.
                 .presentationCompactAdaptation(.popover)
-                // The popover's own surface — corners and arrow included, which is
-                // why the card itself paints nothing. On iOS 26 this is the same
-                // glass the 現代 bottom bar wears, with 自定義's panelFill fading in
-                // as 透明度 drops; a flat `panelFill` is what it was before, and what
-                // it still is with 毛玻璃 off. A plain rectangle because the popover
-                // does the clipping.
-                .presentationBackground {
-                    Color.clear.floatingSurfaceBackground(
-                        in: Rectangle(),
-                        fill: modernPalette.panelFill
-                    )
-                }
-                // `.popover` has no `onDismiss`, so the card's own disappearance is the
-                // dismissal signal the deferred route waits on. Deliberately a real
-                // lifecycle callback, not a timer.
+                // `.popover` has no `onDismiss`; the card's disappearance is the real
+                // dismissal the deferred route waits on (see `modernBookCard`). It comes
+                // when UIKit finishes that ~1.2 s dismissal, not when the card looks gone.
                 .onDisappear(perform: presentDeferredModernBookCardRoute)
-                // A presentation starts again from the system appearance, so the whole
-                // popover is told the reader's: the card's system colours, the surface in
-                // `presentationBackground` above, and the popover's own glass under it.
-                // The preference stops at the popover — the reader behind it and the app
-                // outside keep the device's appearance (checked on iOS 17.5, 26.5, 27.2).
-                //
-                // It has to be the preference, not `.environment(\.colorScheme)`: the
-                // environment reaches SwiftUI's views only, and on iOS 27 the popover's
-                // glass follows the presentation's UIKit trait, so the card sat on light
-                // grey glass over a night page for as long as it was open (FB-239; the
-                // environment was feedback #78's fix, enough on iOS 26.5 at the time).
+                // The popover starts from the system appearance, so it is told the
+                // reader's. The preference, not `.environment(\.colorScheme)`: on iOS 27
+                // the popover's glass follows the presentation's UIKit trait, and stayed
+                // light over a night page (FB-239). It stops at the popover.
                 .preferredColorScheme(readerColorScheme)
         }
     }

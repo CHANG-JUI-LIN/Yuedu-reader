@@ -10,15 +10,13 @@ import UIKit
 /// sit directly on the card. The card was a single flat rectangle before, with the whole
 /// thing reading as one undifferentiated block.
 ///
-/// The popover supplies the shape, the arrow and the shadow; the surface comes from
-/// 界面效果 through `presentationBackground` at the call site, so on iOS 26 the card
-/// is the same Liquid Glass as the 現代 bottom bar below it and 自定義's `panelFill`
-/// is what shows through as 透明度 drops. The card itself paints no fill — an opaque
-/// background here would sit on top of that surface and hide it, which is what made
-/// the card read as a flat slab over a glass toolbar. The inset behind the identity is
-/// a tint of the panel's own text colour for the same reason: it lifts on a light card
-/// and on a dark one without either assuming an opaque fill. Local books have no detail
-/// page, so `onOpenDetail` is nil for them and the identity block isn't tappable.
+/// The popover supplies the shape, the arrow, the shadow and the surface — its own
+/// glass on iOS 26 and later. The card itself paints no fill: an opaque background
+/// here would hide that surface, which is what made the card read as a flat slab over
+/// a glass toolbar. The inset behind the identity is a tint of the panel's own text
+/// colour for the same reason: it lifts on a light card and on a dark one without
+/// either assuming an opaque fill. Local books have no detail page, so `onOpenDetail`
+/// is nil for them and the identity block isn't tappable.
 struct ReaderModernBookCard: View {
     let coverImage: UIImage?
     let bookTitle: String
