@@ -33,4 +33,12 @@ struct ReaderPremiumVisibilityPolicy {
     func showsCommentBubbleSettings(hasParagraphReviews: Bool) -> Bool {
         isProActive && hasParagraphReviews
     }
+
+    /// 使用 App 內建評論列表 as a tapped source bubble obeys it. On forces every source's comments
+    /// into the app's list, and the switch lives in Pro's 氣泡設定: without Pro it counts as off,
+    /// so a lapsed reader is never held in the list by a switch they cannot reach (maintainer,
+    /// 2026-11-24). The stored value is kept for when Pro returns.
+    func usesAppCommentList(setting: Bool) -> Bool {
+        isProActive && setting
+    }
 }

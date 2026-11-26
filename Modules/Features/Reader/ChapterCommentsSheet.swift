@@ -35,6 +35,37 @@ struct ChapterCommentsSheet: View {
     }
 }
 
+/// 使用 App 內建評論列表 on, a 來源配置's comment page that no installed module reads: said in the
+/// app's list, in the list's own chrome, rather than opened as the source's page — on means the
+/// app draws every source's comments (maintainer, 2026-11-24). Off opens the page again.
+struct UnreadableSourceCommentsSheet: View {
+    /// The bubble's or card's own title, as the source's page would have been headed.
+    let title: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView {
+                UnavailableLabel(localized("沒有模組能讀這個評論頁"), systemImage: "text.bubble")
+            } description: {
+                Text(localized("要看來源配置自己的網頁，請到 氣泡設定 關閉「使用 App 內建評論列表」。"))
+            }
+            .accessibilityIdentifier("chapterComments.unreadableSource")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(PageBackgroundView(scope: .global, base: DSColor.background).ignoresSafeArea())
+            .navigationTitle(title.isEmpty ? localized("評論") : title)
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { Image(systemName: "xmark").accessibilityHidden(true) }
+                        .accessibilityLabel(localized("關閉"))
+                        .accessibilityIdentifier("chapterComments.close")
+                }
+            }
+        }
+    }
+}
+
 /// One list of comments, or of one comment's replies: the sheet's first page, and each
 /// 查看全部回覆 pushed onto it.
 private struct ChapterCommentsList: View {
@@ -234,4 +265,8 @@ private struct CommentRepliesPage: View {
 #Preview("段評：找不到") {
     ChapterCommentsSheet(model: ChapterCommentsModel(heading: "「你們是蟲子。」", paragraphID: "7", findThread: { nil },
                                                      readPage: { _, _, _, _ in [] }))
+}
+
+#Preview("來源評論頁：沒有模組能讀") {
+    UnreadableSourceCommentsSheet(title: "段評")
 }

@@ -16,6 +16,7 @@ struct ReaderPremiumVisibilityPolicyTests {
         #expect(!policy.allowsAI)
         #expect(!policy.showsAISelectionActions)
         #expect(!policy.allowsFontImport)
+        #expect(!policy.usesAppCommentList(setting: true))
     }
 
     @Test("Pro users see premium customization surfaces")
@@ -32,5 +33,7 @@ struct ReaderPremiumVisibilityPolicyTests {
         #expect(policy.allowsAI)
         #expect(policy.showsAISelectionActions)
         #expect(policy.allowsFontImport)
+        #expect(policy.usesAppCommentList(setting: true))
+        #expect(!policy.usesAppCommentList(setting: false))
     }
 }

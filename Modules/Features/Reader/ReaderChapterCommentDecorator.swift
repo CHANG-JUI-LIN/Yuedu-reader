@@ -177,15 +177,19 @@ final class ReaderChapterCommentDecorator: ReaderChapterDecorationSource {
 }
 
 /// What a tapped bubble or card opens: a module's comments in the app's own list, a source's
-/// in its own page — or, with 使用 App 內建評論列表 on, in the app's list too when a module reads
-/// that page (`ModuleCommentSourcePages`).
+/// in its own page — or, with 使用 App 內建評論列表 on, always in the app's list: the comments of
+/// the module that reads that page (`ModuleCommentSourcePages`), or, when none does, that no
+/// module reads it. On never opens the source's page (maintainer, 2026-11-24); off does, and
+/// so does on without Pro (`ReaderPremiumVisibilityPolicy.usesAppCommentList`).
 struct ReaderReviewSheetContent: View {
     let target: ReaderHTMLUtilities.ReviewTarget
     let onDismiss: (_ body: String?) -> Void
 
     private enum Route {
         case appList(ModuleCommentTarget)
-        case sourcePage
+        /// No installed module reads this page — nor a page whose source JS gives HTML, or a
+        /// bubble with no address, which no module can be asked about.
+        case unreadable
     }
 
     /// Where a source's comments open, once the modules are asked.
@@ -194,21 +198,21 @@ struct ReaderReviewSheetContent: View {
     var body: some View {
         if let comments = ModuleCommentTargets.target(target.moduleToken) {
             ChapterCommentsSheet(target: comments)
-        } else if !GlobalSettings.shared.commentsUseAppList {
+        } else if !ReaderPremiumVisibilityPolicy(isProActive: SubscriptionStore.shared.isProActive)
+            .usesAppCommentList(setting: GlobalSettings.shared.commentsUseAppList) {
             LegadoReviewBrowserView(target: target, onDismiss: onDismiss)
         } else {
             switch route {
             case .appList(let comments):
                 ChapterCommentsSheet(target: comments)
-            case .sourcePage:
-                LegadoReviewBrowserView(target: target, onDismiss: onDismiss)
+            case .unreadable:
+                UnreadableSourceCommentsSheet(title: target.title)
             case nil:
                 ProgressView()
                     .accessibilityLabel(localized("讀取中"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .task {
-                        // No module reads this page: the source's own, as with the setting off.
-                        route = await ModuleCommentSourcePages.target(for: target).map(Route.appList) ?? .sourcePage
+                        route = await ModuleCommentSourcePages.target(for: target).map(Route.appList) ?? .unreadable
                     }
             }
         }

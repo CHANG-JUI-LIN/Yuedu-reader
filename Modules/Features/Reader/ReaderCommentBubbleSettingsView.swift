@@ -59,7 +59,7 @@ struct ReaderCommentBubbleSettingsView: View {
                 }
                 .accessibilityIdentifier("commentSettings.listStyle")
             } footer: {
-                Text(localized("來源配置的評論頁有模組能讀時，改在 App 的列表顯示；沒有對應模組的仍開來源的網頁。"))
+                Text(localized("開啟後，來源配置的評論一律在 App 的列表顯示；沒有模組能讀的評論頁會說明讀不到，不再開來源的網頁。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

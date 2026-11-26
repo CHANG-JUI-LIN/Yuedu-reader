@@ -136,7 +136,8 @@ struct ModuleCommentTarget: Equatable, Sendable {
 /// module reads (`comments.sourcePages`) is opened as that module's comments, in the app's own
 /// list. The page's address gives the record's id, the chapter's and the paragraph's, and
 /// nothing else of it is kept or sent: a source's address can carry the reader's token. A page
-/// no module reads opens as the source's own page, as before.
+/// no module reads is said to be unreadable in that list, not opened as the source's own page
+/// (maintainer, 2026-11-24: on is forced); with the setting off every source page opens as before.
 enum ModuleCommentSourcePages {
     /// The values a page's address can give.
     nonisolated static let valueNames: Set<String> = ["id", "chapterId", "paragraphId"]
