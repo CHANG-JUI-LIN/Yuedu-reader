@@ -71,6 +71,8 @@ enum PremiumPillar: String, CaseIterable, Identifiable {
                                titleKey: "字體匯入", detailKey: "匯入喜歡的字體，閱讀和介面都能用"),
                 PremiumBenefit(feature: .dialogueHighlight, iconName: "text.bubble",
                                titleKey: "對話氣泡與高亮", detailKey: "對白排成聊天氣泡，重點按規則自動上色"),
+                PremiumBenefit(feature: .commentStyles, iconName: "quote.bubble",
+                               titleKey: "氣泡設定", detailKey: "段評氣泡、本章說與作者說卡片，換成你的樣式"),
             ]
         case .habits:
             return [
@@ -159,6 +161,9 @@ struct PremiumPitch: Equatable {
         case .readingStyles?:
             return .init(headlineKey: "一鍵換上整套排版",
                          pitchKey: "依語言調好的內建樣式，還能把你調好的設定存成自己的樣式。")
+        case .commentStyles?:
+            return .init(headlineKey: "段評和評論卡片，照你的樣子畫",
+                         pitchKey: "段評氣泡、本章說、作者說和神評論卡片換上自己的樣式，評論列表的外觀也能調。")
         case .moduleImport?:
             return .init(headlineKey: "用模組接上更多內容",
                          pitchKey: "從網址、檔案或模組倉庫加入第三方模組，榜單、搜尋和評論跟著進來。")

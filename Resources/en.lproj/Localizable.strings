@@ -3267,6 +3267,9 @@
 "把畫面分成 3×3 區塊，每一格點了做什麼由你決定。" = "Split the screen into a 3×3 grid and decide what each tap does.";
 "對白和重點一眼就看到" = "See dialogue and key lines at a glance";
 "對話排成聊天氣泡，關鍵字依規則自動上色。" = "Dialogue appears as chat bubbles, and keywords are colored automatically by your rules.";
+"段評氣泡、本章說與作者說卡片，換成你的樣式" = "Your own style for paragraph comment bubbles, chapter comments and author's notes";
+"段評和評論卡片，照你的樣子畫" = "Comments and comment cards, drawn your way";
+"段評氣泡、本章說、作者說和神評論卡片換上自己的樣式，評論列表的外觀也能調。" = "Give paragraph comment bubbles and the chapter comment, author's note and top comment cards your own style, and adjust how the comment list looks.";
 "整套排版一鍵帶走" = "Take your whole layout with one tap";
 "字級、行距、標題樣式與高亮一起匯出匯入，也能讀 Legado 的設定檔。" = "Export and import font size, line spacing, title styles, and highlights together. Legado settings files work too.";
 "把喜歡的圖片變成書頁" = "Turn a favorite picture into your page";

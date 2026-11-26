@@ -26,6 +26,10 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
     /// 閱讀樣式: applying a built-in style, saving one's own, and 只套用到這本書
     /// (maintainer, 2026-11-21). Every setting a style sets stays free to change by hand.
     case readingStyles
+    /// 氣泡設定: the 段評 bubble's styles and the 本章說／作者說／神評論 cards' templates, and how
+    /// the comment list looks. Locked with 閱讀裝飾; sold on its own row from 2026-11-24
+    /// (maintainer: the paywall only spoke of dialogue bubbles).
+    case commentStyles
 
     var id: String { rawValue }
 
@@ -58,6 +62,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .launchScreen: return "app.dashed"
         case .moduleImport: return "puzzlepiece.extension"
         case .readingStyles: return "rectangle.stack"
+        case .commentStyles: return "quote.bubble"
         }
     }
 
@@ -78,6 +83,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .launchScreen: return "啟動圖"
         case .moduleImport: return "新增模組"
         case .readingStyles: return "閱讀樣式"
+        case .commentStyles: return "氣泡設定"
         }
     }
 
@@ -97,6 +103,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         case .launchScreen: return "換上你自己的開屏畫面"
         case .moduleImport: return "從網址、檔案或剪貼簿加入第三方模組"
         case .readingStyles: return "內建多套排版，也能把自己的設定存成樣式"
+        case .commentStyles: return "段評氣泡、本章說與作者說卡片，換成你的樣式"
         }
     }
 

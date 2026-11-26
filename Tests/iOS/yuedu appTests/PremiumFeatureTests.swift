@@ -24,6 +24,13 @@ struct PremiumFeatureTests {
         #expect(PremiumFeature.marketedFeatures().contains(.readerThemePacks))
     }
 
+    @Test("氣泡設定 is sold on its own row, not as 對話氣泡與高亮")
+    func commentStylesAreMarketed() {
+        #expect(PremiumFeature.marketedFeatures().contains(.commentStyles))
+        #expect(PremiumPillar.pillar(for: .commentStyles) == .comfort)
+        #expect(PremiumPitch.pitch(for: .commentStyles) != PremiumPitch.pitch(for: .dialogueHighlight))
+    }
+
     // MARK: - Paywall pillars
 
     @Test("every marketed feature is sold under a pillar, so the paywall never drops one")

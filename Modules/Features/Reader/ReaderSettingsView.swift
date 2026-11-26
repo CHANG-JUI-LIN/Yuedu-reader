@@ -792,7 +792,7 @@ struct ReaderSettingsView: View {
                         title: localized(item == .commentBubble ? "氣泡設定" : item.titleKey),
                         systemImage: item.systemImage
                     ) {
-                        requestPaywall(.dialogueHighlight)
+                        requestPaywall(item == .commentBubble ? .commentStyles : .dialogueHighlight)
                     }
                 }
             }
