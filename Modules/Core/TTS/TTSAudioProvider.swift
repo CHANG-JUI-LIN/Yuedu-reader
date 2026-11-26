@@ -312,35 +312,6 @@ enum DirectChapterAudioResolver {
         return nil
     }
 
-    /// Heuristic that decides whether a fetched chapter is actually an audiobook
-    /// stream rather than prose. Aggregation sources serve audiobooks under a
-    /// text (`bookSourceType == 0`) source, so the only reliable signal is the
-    /// content itself: a single audio direct link with essentially no body text
-    /// (strip the media reference + markup, confirm little prose remains).
-    static func looksLikeAudioContent(_ content: String) -> Bool {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, request(from: trimmed) != nil else { return false }
-
-        var residual = trimmed
-        for candidate in candidates(from: trimmed) where isAudioCandidate(candidate) {
-            residual = residual.replacingOccurrences(of: candidate, with: "")
-        }
-        // Strip <audio> elements, any remaining markup, leftover URLs and Legado
-        // option objects, then check that almost nothing (prose) is left over.
-        for pattern in [
-            #"(?is)<audio\b[^>]*>.*?</audio>"#,
-            #"(?is)<audio\b[^>]*/?>"#,
-            #"<[^>]+>"#,
-            #"https?://[^\s<>"']+"#,
-            #"\{[^}]*\}"#,
-        ] {
-            residual = residual.replacingOccurrences(
-                of: pattern, with: "", options: .regularExpression)
-        }
-        residual = residual.trimmingCharacters(in: .whitespacesAndNewlines)
-        return residual.count <= 16
-    }
-
     private static func candidates(from content: String) -> [String] {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }

@@ -53,6 +53,26 @@ struct IllustrationChapterReaderKindTests {
         }
     }
 
+    @Test("a comic from an aggregate source switched out of its 漫画 mode stays in the image reader")
+    func comicFromModeSwitchedSourceStays() async throws {
+        let aggregate = Self.source(type: 0)
+        let runtime = BookSourceRuntimeStateStore.shared
+        let previous = runtime.sourceVariableJSON(for: aggregate.bookSourceUrl)
+        defer { runtime.setSourceVariableJSON(previous, for: aggregate.bookSourceUrl) }
+        try await withSources([aggregate]) { sources in
+            try await withStore { store, positions in
+                runtime.setSourceVariableJSON(#"{"搜索模式":"模式：漫画"}"#, for: aggregate.bookSourceUrl)
+                let book = store.addOnlineBook(name: "漫畫", author: "", sourceId: sources[0].id,
+                                               bookInfoURL: "https://aggregate.test/7", chapters: Self.chapters(20))
+                #expect(book.contentPipelineKind == .manga)
+
+                runtime.setSourceVariableJSON(#"{"搜索模式":"模式：小说"}"#, for: aggregate.bookSourceUrl)
+                #expect(await store.returnTextDeclaredComicsToTextReader(positionStore: positions) == 0)
+                #expect(store.readingBook(id: book.id)?.resolvedPipelineKind == .manga)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private static func source(type: Int) -> BookSource {

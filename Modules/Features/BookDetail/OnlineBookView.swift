@@ -1126,7 +1126,7 @@ struct OnlineBookView: View {
                 openingReader = false
                 return
             }
-            // A shelf book that turned out to be an audiobook (`upgradeToAudioIfDetected`) plays
+            // A shelf book that is an audiobook plays
             // out of the now-playing bar, as every shelf audiobook does. A copy read without
             // being added keeps its cover: closing it is when 加入書架？ is asked.
             if temporaryReaderBookId == nil,

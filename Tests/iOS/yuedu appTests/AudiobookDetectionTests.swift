@@ -2,72 +2,56 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-@Suite("Audiobook content detection")
+@Suite("Direct chapter audio links")
 struct AudiobookDetectionTests {
     private func dataURL(_ payload: [String: Any], type: String = "qingtian") throws -> String {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return "data:;base64,\(data.base64EncodedString()),{\"type\":\"\(type)\"}"
     }
 
-    @Test("plain mp3 direct link is detected as audio")
+    @Test("plain mp3 direct link resolves")
     func plainMP3() {
         let content = "https://cdn.example.com/audio/ch1.mp3"
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         let request = DirectChapterAudioResolver.request(from: content)
         #expect(request?.url?.absoluteString == content)
     }
 
-    @Test("Legado url,{headers} form resolves and is detected")
+    @Test("Legado url,{headers} form resolves")
     func legadoOptionsForm() {
         let content = #"https://cdn.example.com/ch1.m4a,{"headers":{"Referer":"https://example.com"}}"#
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content)?.url != nil)
     }
 
-    @Test("<audio> element is detected as audio")
+    @Test("<audio> element resolves")
     func audioTag() {
         let content = #"<audio controls src="https://cdn.example.com/a.aac"></audio>"#
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content)?.url != nil)
     }
 
-    @Test("audiobook path without a file extension is detected")
+    @Test("audiobook path without a file extension resolves")
     func audiobookPath() {
         let content = "https://api.example.com/audiobook/stream?id=42"
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
+        #expect(DirectChapterAudioResolver.request(from: content)?.url != nil)
     }
 
     // Real 番茄畅听 CDN link shape: no file extension, a /video/ path (!), and the
     // only audio marker is `mime_type=audio_mpeg` in the query. This is what the
     // 光遇聚合 /content endpoint returns for 听书 chapters.
-    @Test("fanqie CDN link with mime_type=audio query is detected")
+    @Test("fanqie CDN link with mime_type=audio query resolves")
     func fanqieCDNAudioLink() {
         let content = "https://v5-ex-novelapp.fqnovelvod.com/1a409e5bb93d06d864bd670dc57562ef/6a2d5360/video/tos/cn/tos-cn-v-710116/056d517d10fd46d29ea6c776d33df5ab/?a=1967&ch=0&br=250&mime_type=audio_mpeg&qs=13&btag=c0000e00038000&dy_q=1781268193&l=20260612204313D39F4F9E3549091FD894\n"
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content)?.url != nil)
     }
 
-    @Test("prose text is not audio")
+    @Test("prose text has no audio link")
     func prose() {
         let content = "第一章 風起\n他站在山巔，望著遠方的雲海，心中百感交集。"
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content) == nil)
     }
 
-    @Test("prose with a single embedded audio link stays prose")
-    func proseWithOneLink() {
-        let content = """
-        這是一段很長的正文內容，講述了主角的冒險旅程，充滿了細節描寫與情感刻畫。
-        延伸收聽：https://cdn.example.com/extra.mp3
-        故事還在繼續，主角踏上了新的征途，前方充滿未知與挑戰。
-        """
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent(content))
-    }
-
-    @Test("manga image list is not audio")
+    @Test("manga image list has no audio link")
     func mangaList() {
         let content = #"["https://cdn.example.com/1.jpg","https://cdn.example.com/2.jpg","https://cdn.example.com/3.jpg"]"#
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content) == nil)
     }
 

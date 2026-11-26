@@ -281,6 +281,43 @@ struct ReaderViewModelChapterStateTests {
         #expect(!viewModel.isChapterContentAvailable(at: 0))
     }
 
+    /// Feedback #251: the reader follows the book's declared type, as in legado — an
+    /// audio-only or image-only chapter in a text book leaves the book text.
+    @Test("a fetched chapter's content never changes the book's type")
+    func fetchedChapterKeepsBookType() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReaderKind-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        let book = store.addOnlineBook(
+            name: "Book", author: "Author", sourceId: UUID(), bookInfoURL: "https://example.com",
+            contentKind: .text,
+            chapters: [
+                OnlineChapterRef(index: 0, title: "Chapter 1", url: "https://example.com/1"),
+                OnlineChapterRef(index: 1, title: "Chapter 2", url: "https://example.com/2"),
+            ]
+        )
+        let fetcher = MockChapterFetcher()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+        let contents = [
+            "https://cdn.example.com/audio/ch1.mp3",
+            #"<img src="https://cdn.example.com/1.jpg"><img src="https://cdn.example.com/2.jpg">"#,
+        ]
+        for (index, content) in contents.enumerated() {
+            await fetcher.enqueuePending(chapterIndex: index)
+            await viewModel.ensureChapterReady(book: book, chapterIndex: index, priority: .immediate, store: store)
+            await waitUntil { await fetcher.hasPendingRequest(for: index) }
+            await fetcher.resolvePending(
+                chapterIndex: index, with: .success(makePackage(bookId: book.id, chapterIndex: index, content: content)))
+            await waitForState(.ready, in: viewModel, chapterIndex: index)
+        }
+
+        #expect(store.readingBook(id: book.id)?.resolvedPipelineKind == .html)
+        store.flushPendingMetadataSave()
+        store.waitForQueuedWrites()
+    }
+
     @Test("source switch drops every chapter state")
     func resetAllChapterStatesClearsEverything() async throws {
         let fetcher = MockChapterFetcher()

@@ -1717,35 +1717,17 @@ class BookStore: @MainActor ObservableObject, BookProvider {
 
     /// Whether `book`'s source, still installed, declares it text — what `addOnlineBook` stores
     /// it as, inferred the same way. A book without a source on this device, or read through a
-    /// module, is never taken as declared text.
+    /// module, is never taken as declared text. Nor is one from an aggregate source that keeps a
+    /// 类型／搜索模式 (`sourceRuntimeModeMarkers`): what it declares is the mode it is in now,
+    /// and a comic added in its 漫画 mode is still one after the source is switched to 小说.
     private func declaresText(_ book: ReadingBook) -> Bool {
         guard book.module == nil, let sourceId = book.bookSourceId,
-              BookSourceStore.shared.source(id: sourceId) != nil else { return false }
+              let source = BookSourceStore.shared.source(id: sourceId),
+              OnlineBookContentInference.sourceRuntimeModeMarkers(for: source).isEmpty else { return false }
         return Self.inferredOnlineContentKind(
             explicit: nil, sourceId: sourceId, runtimeVariables: book.runtimeVariables,
             bookInfoURL: book.bookInfoURL ?? book.source, tocURL: book.tocURL
         ) == .text
-    }
-
-    /// Promote an online book to the audio pipeline once a fetched chapter turns
-    /// out to be an audiobook stream. Aggregation sources report `bookSourceType
-    /// == 0` (text) even when serving audiobooks, so the content itself is the
-    /// only reliable signal. After this flips, `BookReaderView` reactively swaps
-    /// to the audio player and the change persists for future opens. Idempotent.
-    /// `chapterIndex` is the chapter whose content was detected, as for comics.
-    @discardableResult
-    func upgradeToAudioIfDetected(bookId: UUID, content: String, atChapter chapterIndex: Int) -> Bool {
-        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
-        guard records[idx].isOnline,
-              records[idx].contentPipelineKind != .manga,
-              records[idx].contentPipelineKind != .audio,
-              records[idx].contentPipelineKind != .video else { return false }
-        guard DirectChapterAudioResolver.looksLikeAudioContent(content) else { return false }
-        records[idx].contentPipelineKind = .audio
-        records[idx].audioChapterIndex = chapterIndex
-        records[idx].audioTimeSeconds = 0
-        saveMeta()
-        return true
     }
 
     /// Download a remote cover (with source headers) and store it on the book.

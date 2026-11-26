@@ -118,55 +118,11 @@ struct DahuilangAudioTests {
         #expect(book.resolvedPipelineKind == .audio)
     }
 
-    @Test("upgradeToAudioIfDetected promotes html book on audio content")
-    @MainActor
-    func upgradeToAudioIfDetectedPromotes() throws {
-        let metadataURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("books-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: metadataURL) }
-        let store = BookStore(metadataFileURL: metadataURL)
-
-        let book = store.addOnlineBook(
-            name: "大圣归来", author: "天命蜉蝣",
-            sourceId: UUID(), bookInfoURL: "https://test.example",
-            contentKind: .text,
-            chapters: []
-        )
-
-        let audioURL = "https://v5-ex-novelapp.fqnovelvod.com/a?mime_type=audio_mpeg\n"
-        let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: audioURL, atChapter: 0)
-        #expect(promoted)
-
-        let updated = try #require(store.books.first(where: { $0.id == book.id }))
-        #expect(updated.contentPipelineKind == .audio)
-    }
-
-    @Test("upgradeToAudioIfDetected does not promote prose content")
-    @MainActor
-    func upgradeToAudioIfDetectedRejectsProse() throws {
-        let metadataURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("books-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: metadataURL) }
-        let store = BookStore(metadataFileURL: metadataURL)
-
-        let book = store.addOnlineBook(
-            name: "大圣归来", author: "天命蜉蝣",
-            sourceId: UUID(), bookInfoURL: "https://test.example",
-            contentKind: .text,
-            chapters: []
-        )
-
-        let prose = "第一章 江流儿\n长安城外的山道上，一个少年快步前行。"
-        let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: prose, atChapter: 0)
-        #expect(!promoted)
-    }
-
     // MARK: - DirectChapterAudioResolver 邊緣案例
 
     @Test("fanqie CDN URL with trailing newline is audio")
     func fanqieCDNURLWithNewline() {
         let content = "https://v5-ex-novelapp.fqnovelvod.com/1a409e5bb93d06d864bd670dc57562ef/6a2d5360/video/tos/cn/tos-cn-v-710116/056d517d10fd46d29ea6c776d33df5ab/?a=1967&ch=0&br=250&mime_type=audio_mpeg&qs=13&btag=c0000e00038000&dy_q=1781268193&l=20260612204313D39F4F9E3549091FD894\n"
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         let req = DirectChapterAudioResolver.request(from: content)
         #expect(req?.url != nil)
     }
@@ -174,29 +130,25 @@ struct DahuilangAudioTests {
     @Test("audio URL with Legado headers form is detected")
     func audioURLWithLegadoHeaders() {
         let content = #"https://cdn.example.com/ch1.mp3,{"headers":{"Referer":"https://fanqienovel.com"}}"#
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content)?.url != nil)
     }
 
-    @Test("json-wrapped audio URL is not detected as prose")
+    @Test("json-wrapped audio URL resolves")
     func jsonWrappedAudioURL() {
         let content = #"{"code":0,"data":{"audio_url":"https://cdn.example.com/a.mp3","duration":1800}}"#
-        // The resolver should find the URL via urlLikeMatches even in JSON
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         #expect(DirectChapterAudioResolver.request(from: content)?.url != nil)
     }
 
-    @Test("absolute silence or empty is not audio")
+    @Test("absolute silence or empty has no audio link")
     func emptyContentNotAudio() {
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent(""))
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent("  "))
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent("\n\n"))
+        #expect(DirectChapterAudioResolver.request(from: "") == nil)
+        #expect(DirectChapterAudioResolver.request(from: "  ") == nil)
+        #expect(DirectChapterAudioResolver.request(from: "\n\n") == nil)
     }
 
     @Test("server error HTML is not audio")
     func serverErrorHTMLNotAudio() {
         let html = "<!DOCTYPE html><html><body><h1>503 Service Unavailable</h1></body></html>"
-        #expect(!DirectChapterAudioResolver.looksLikeAudioContent(html))
         #expect(DirectChapterAudioResolver.request(from: html) == nil)
     }
 
@@ -207,7 +159,6 @@ struct DahuilangAudioTests {
         https://cdn.example.com/chapter1.mp3
         https://cdn.example.com/data.json
         """
-        #expect(DirectChapterAudioResolver.looksLikeAudioContent(content))
         let req = DirectChapterAudioResolver.request(from: content)
         #expect(req?.url?.absoluteString.contains("chapter1.mp3") ?? false)
     }

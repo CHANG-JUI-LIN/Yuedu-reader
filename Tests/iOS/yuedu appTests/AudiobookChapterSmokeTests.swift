@@ -143,7 +143,6 @@ struct AudiobookChapterSmokeTests {
             let content = pkg.content
             log("🎧 chapter → contentLen=\(content.count)")
             log("   head=\(String(content.prefix(400)).replacingOccurrences(of: "\n", with: "⏎"))")
-            log("   looksAudio=\(DirectChapterAudioResolver.looksLikeAudioContent(content))")
             log("   audioURL=\(DirectChapterAudioResolver.request(from: content)?.url?.absoluteString ?? "nil")")
         } catch {
             log("🎧 chapter → ERROR: \(error)")

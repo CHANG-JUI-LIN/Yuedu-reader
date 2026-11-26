@@ -62,9 +62,6 @@ final class ReaderViewModel: ObservableObject {
     private var bookSourceFetcher: BookSourceFetching
     private var offlineDownloadManager: (any OfflineDownloadManaging)?
     private var inFlightRequests: [Int: InFlightRequest] = [:]
-    /// Books already checked for auto manga detection this session (cached-chapter path),
-    /// so a genuine text book is not re-probed on every `ensureChapterReady`.
-    private var mangaDetectionAttempted: Set<UUID> = []
     private struct CachedChapterInspectionKey: Hashable {
         let bookId: UUID
         let chapterIndex: Int
@@ -189,8 +186,7 @@ final class ReaderViewModel: ObservableObject {
                 existing.task.cancel()
                 await chapterFetcher.cancelChapter(bookId: book.id, chapterIndex: chapterIndex)
             }
-            inspectCachedChapter(
-                book: book, chapterIndex: chapterIndex, store: store)
+            inspectCachedChapter(book: book, chapterIndex: chapterIndex)
             return
         }
 
@@ -480,27 +476,17 @@ final class ReaderViewModel: ObservableObject {
     /// `nonisolated` so concurrent tasks don't serialize back onto the MainActor.
     // MARK: - Private
 
-    /// Reads an already-validated cached package off the main presentation path. Besides the
-    /// one-shot media probe, each cached text chapter is inspected until paragraph-review
-    /// capability is found. `ChapterFetching` returns the existing package here; no network
-    /// fallback is introduced because this method is called only after `isChapterCached`.
-    private func inspectCachedChapter(
-        book: ReadingBook,
-        chapterIndex: Int,
-        store: BookStore?
-    ) {
+    /// Reads an already-validated cached package off the main presentation path: each cached
+    /// text chapter is inspected until paragraph-review capability is found. `ChapterFetching`
+    /// returns the existing package here; no network fallback is introduced because this method
+    /// is called only after `isChapterCached`.
+    private func inspectCachedChapter(book: ReadingBook, chapterIndex: Int) {
         let inspectionKey = CachedChapterInspectionKey(
             bookId: book.id,
             chapterIndex: chapterIndex
         )
-        let shouldInspectParagraphReviews = !hasParagraphReviews
-            && paragraphReviewInspectionAttempted.insert(inspectionKey).inserted
-        let shouldDetectMedia = book.isOnline
-            && book.contentPipelineKind != .manga
-            && store != nil
-            && mangaDetectionAttempted.insert(book.id).inserted
-
-        guard shouldInspectParagraphReviews || shouldDetectMedia else { return }
+        guard !hasParagraphReviews,
+              paragraphReviewInspectionAttempted.insert(inspectionKey).inserted else { return }
         Task { [weak self] in
             guard let self else { return }
             guard let package = await self.chapterFetcher.cachedChapterPackage(
@@ -508,12 +494,7 @@ final class ReaderViewModel: ObservableObject {
                   !package.content.isEmpty
             else { return }
 
-            if shouldInspectParagraphReviews {
-                self.recordParagraphReviewsIfPresent(in: package.content)
-            }
-            if shouldDetectMedia, let store {
-                store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
-            }
+            self.recordParagraphReviewsIfPresent(in: package.content)
         }
     }
 
@@ -612,11 +593,8 @@ final class ReaderViewModel: ObservableObject {
                 if case .ready = result {
                     self.recordParagraphReviewsIfPresent(in: package.content)
                 }
-                if case .ready = result, let store {
-                    // A comic is read in the image reader only when its source declares one
-                    // (feedback #251): chapters never move a book there.
-                    store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
-                }
+                // The image reader and the audio player follow the book's declared type, as in
+                // legado (feedback #251): a chapter's content never moves a book to either.
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
             } catch {
                 // Cancellation is not a verdict on the chapter, and it arrives in more than

@@ -214,10 +214,10 @@ private struct BookReaderContent: View {
 
     private var isAudiobook: Bool { book?.resolvedPipelineKind == .audio }
 
-    /// An audiobook reaches a reader pushed in a tab only when its book turned out to be one
-    /// mid-read (`BookStore.upgradeToAudioIfDetected`): every page opens an audiobook out of the
-    /// now-playing bar instead (`NowPlayingHub.openIfAudiobook`). Its player would be pushed into
-    /// the tab under the tab bar and that bar, so it moves to the bar too.
+    /// An audiobook reaches a reader pushed in a tab only when its book's type changed while it
+    /// was open: every page opens an audiobook out of the now-playing bar instead
+    /// (`NowPlayingHub.openIfAudiobook`). Its player would be pushed into the tab under the tab
+    /// bar and that bar, so it moves to the bar too.
     private var playsUnderNowPlayingBar: Bool {
         isAudiobook && isInTabNavigation && NowPlayingHub.rootTabsAreFrontmost
     }
