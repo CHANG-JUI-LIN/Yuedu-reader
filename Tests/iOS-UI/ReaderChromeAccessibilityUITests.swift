@@ -144,9 +144,14 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         let railButton = app.buttons["書架"].firstMatch
         for _ in 0..<6 where !(tabButton.exists || railButton.exists) {
             // In the navigation bar on an iPhone; in the toolbar's side rail on the Duo.
+            // iOS 17.5's bar gives it no `BackButton` identifier, only the previous page's
+            // title (「Chrome Source」), so there it is the bar's first button.
             let back = app.buttons["BackButton"].firstMatch
-            guard back.waitForExistence(timeout: 5) else { break }
-            back.tap()
+            let barBack = app.navigationBars.buttons.firstMatch
+            let found = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in back.exists || barBack.exists },
+                                                  object: nil)
+            guard XCTWaiter.wait(for: [found], timeout: 5) == .completed else { break }
+            (back.exists ? back : barBack).tap()
         }
         rootTab(app, "書架").tap()
         let book = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
