@@ -7,7 +7,9 @@ import SwiftUI
 /// source lists with the source's own filters above them — as Apple Books lays out a
 /// store, or as Legado lists them (發現頁顯示設定 › 佈局). The gear opens 發現頁設定, which
 /// picks the categories the page shows; the avatar opens the source's login page — where
-/// Legado sources keep their settings.
+/// Legado sources keep their settings. Opened from 資源庫, the search button at the bottom
+/// trailing corner searches this source alone, on the search page (`pageSearch`; maintainer,
+/// 2026-11-26).
 struct ExploreSourcePage: View {
     @StateObject private var discover: DiscoverViewModel
     @State private var showsLogin = false
@@ -16,6 +18,9 @@ struct ExploreSourcePage: View {
     /// covers the whole screen, which cannot come up while the sheet is still there.
     @State private var pendingPageAddress: String?
     @AppStorage(ExploreSettings.sourcePageLayoutKey) private var layout = ExploreSourcePageLayout.default
+    @State private var searchText = ""
+    /// The stack the search page is pushed onto.
+    @Environment(\.explorePush) private var push
     private let source: BookSource
     /// Opens a category that is a web page (a source's `java.startBrowser` link).
     let onNavigate: (String) -> Void
@@ -31,6 +36,12 @@ struct ExploreSourcePage: View {
 
     private var hasLogin: Bool {
         !currentSource.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Whether the page offers its search: the source is one 搜索 asks (`SearchSourceScope`
+    /// keeps enabled sources only) and has a search rule, and a stack takes the search page.
+    private var searchesSource: Bool {
+        push != nil && currentSource.enabled && currentSource.searchUrl.contains(where: { !$0.isWhitespace })
     }
 
     var body: some View {
@@ -65,6 +76,10 @@ struct ExploreSourcePage: View {
                         }
                     }
                 }
+            }
+            .pageSearch(text: $searchText, prompt: localized("輸入書名或作者"), isEnabled: searchesSource) { query in
+                // Legado's 搜索 on a source, with what was typed here.
+                push?(.explore(.searchInSource(sourceURL: currentSource.bookSourceUrl, query: query)))
             }
             .sheet(isPresented: $showsDiscoverSettings, onDismiss: openPendingPage) {
                 DiscoverPageSettingsSheet(discover: discover) { pendingPageAddress = $0 }

@@ -4,7 +4,9 @@ import UniformTypeIdentifiers
 
 /// A module's page (Phase 6e), pushed from 資源庫: what it lists, the sites it sends requests to,
 /// where it came from with 檢查更新, and 移除模組. Since M6 its toolbar has 匯出 and 停用, and
-/// 在資源庫中展示 decides whether its card is in 資源庫.
+/// 在資源庫中展示 decides whether its card is in 資源庫. Opened from 資源庫, a module that searches
+/// has the search button at the bottom trailing corner, which lists what it finds (`pageSearch`;
+/// maintainer, 2026-11-26).
 struct RuleModuleDetailView: View {
     let moduleID: String
     @ObservedObject var library: RuleModuleLibrary
@@ -12,7 +14,11 @@ struct RuleModuleDetailView: View {
     @State private var showsUpdate = false
     @State private var confirmsRemoval = false
     @State private var removalFailure: String?
+    @State private var searchText = ""
     @Environment(\.dismiss) private var dismiss
+    /// The stack the search's results are pushed onto. 設定 sets none: the module's page there
+    /// is its settings alone.
+    @Environment(\.explorePush) private var push
 
     init(moduleID: String, library: RuleModuleLibrary? = nil) {
         let library = library ?? .shared
@@ -57,7 +63,16 @@ struct RuleModuleDetailView: View {
                 }
             }
         }
+        .pageSearch(text: $searchText, prompt: localized("輸入書名或作者"), isEnabled: searchesModule) { query in
+            push?(.explore(.moduleList(.search(query, moduleID: moduleID))))
+        }
         .task { if !library.isLoaded { await library.load() } }
+    }
+
+    /// Whether the page offers the module's search: it has one and is on (a module turned off
+    /// is not asked), and a stack takes the results. 搜尋來源 is 搜索's choice, not asked here.
+    private var searchesModule: Bool {
+        push != nil && library.isEnabled(moduleID) && library.installed(id: moduleID)?.module.search != nil
     }
 
     private func page(_ installed: InstalledRuleModule) -> some View {

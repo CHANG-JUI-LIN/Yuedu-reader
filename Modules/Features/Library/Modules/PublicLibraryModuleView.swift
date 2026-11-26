@@ -3,10 +3,19 @@ import SwiftUI
 /// 古騰堡's and 青空文庫's page in 資源庫's 官方模組, laid out as a bundled module's
 /// (`RuleModuleDetailView`): what they give 首頁 and 搜索, and the sites they reach. An official
 /// module has no page of books to browse (maintainer, 2026-10-21, and again 2026-10-22 when these
-/// two still opened their shelves): its lists are read on 首頁, its books found by 搜索.
+/// two still opened their shelves): its lists are read on 首頁, its books found by 搜索. Opened
+/// from 資源庫, the search button at the bottom trailing corner searches this library alone (`pageSearch`; maintainer,
+/// 2026-11-26), on the pages its finds already have: Gutenberg's search feed, and 青空文庫's
+/// works list with the catalog's matches.
 struct PublicLibraryModuleView: View {
     let key: SourceInstanceKey
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
+    @State private var searchText = ""
+    /// 青空文庫's matches, searched off the main actor as 搜索 searches them.
+    @State private var aozoraSearch = PublicLibrarySearchModel()
+    /// The stack the results are pushed onto.
+    @Environment(\.explorePush) private var push
 
     var body: some View {
         Form {
@@ -49,6 +58,32 @@ struct PublicLibraryModuleView: View {
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
+        .pageSearch(text: $searchText, prompt: localized("輸入書名或作者"), isEnabled: searchesLibrary) { query in
+            Task { await search(query) }
+        }
+        .task {
+            // 青空文庫's search reads its catalog, which 探索 may never have loaded.
+            if key.type == .aozora, aozora.catalog == nil { await aozora.load() }
+        }
+    }
+
+    /// Whether the page offers the library's search: a stack takes the results, and for
+    /// 青空文庫 its catalog is read.
+    private var searchesLibrary: Bool {
+        push != nil && (key.type != .aozora || aozora.catalog != nil)
+    }
+
+    /// Pushes what the library finds for `query`, on the page 搜索 and the home open it on.
+    private func search(_ query: String) async {
+        if key.type == .aozora {
+            await aozoraSearch.search(query, in: aozora.catalog)
+            guard let answer = aozoraSearch.answer, answer.query == query else { return }
+            push?(.publicLibrary(.aozoraWorks(title: query, works: answer.works, index: answer.index)))
+        } else {
+            push?(.feed(OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
+                                      url: GutenbergEndpoint.current.searchURL(query: query).absoluteString,
+                                      title: query, presentation: .storefront)))
+        }
     }
 
     private var title: String {

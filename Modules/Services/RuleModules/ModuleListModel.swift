@@ -11,10 +11,19 @@ struct ModuleListRoute: Hashable, Sendable {
     /// A genre of a module's book (format 3.0.2): the module's `genre` list for the word, else
     /// what its `search` finds for it (`ModuleProvider.tagPage`); `entryID` is then unused.
     var tag: String? = nil
+    /// What the reader searched for on the module's page in 資源庫: the module's `search`, page
+    /// by page; `entryID` is then unused.
+    var keyword: String? = nil
 
     /// A genre's page, from 作品詳情's genre link.
     static func tag(_ tag: String, moduleID: String) -> ModuleListRoute {
         ModuleListRoute(moduleID: moduleID, entryID: "", title: tag, parameters: [:], tag: tag)
+    }
+
+    /// The module's search for `keyword`, from its page's search field: titled with the keyword,
+    /// as a genre's page is with the genre.
+    static func search(_ keyword: String, moduleID: String) -> ModuleListRoute {
+        ModuleListRoute(moduleID: moduleID, entryID: "", title: keyword, parameters: [:], keyword: keyword)
     }
 }
 
@@ -52,17 +61,21 @@ final class ModuleListModel: ObservableObject {
     var canLoadMore: Bool { next != nil }
 
     /// The installed module's provider, while it still has the list (or, for a genre, a list
-    /// or search that opens one).
+    /// or search that opens one; for a search, its search).
     private func provider() -> ModuleProvider? {
         guard let module = library.module(id: route.moduleID)?.module else { return nil }
         let provider = ModuleProvider(module: module, client: client)
+        if route.keyword != nil { return module.search == nil ? nil : provider }
         if route.tag != nil { return provider.opensTags ? provider : nil }
         return provider.entry(route.entryID) == nil ? nil : provider
     }
 
-    /// The page after `cursor`: the list's, or the genre's. A genre too short for the module's
-    /// search has no page: nothing is listed.
+    /// The page after `cursor`: the list's, the search's or the genre's. A keyword or genre too
+    /// short for the module's search has no page: nothing is listed.
     private func page(from provider: ModuleProvider, after cursor: CollectionCursor?) async throws -> CollectionPage {
+        if let keyword = route.keyword {
+            return try await provider.search(keyword, after: cursor) ?? CollectionPage(entries: [], next: nil)
+        }
         guard let tag = route.tag else {
             return try await provider.page(ofList: route.entryID, parameters: route.parameters, after: cursor)
         }

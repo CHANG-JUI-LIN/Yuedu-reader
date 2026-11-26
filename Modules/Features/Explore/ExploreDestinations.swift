@@ -62,8 +62,8 @@ private struct ExploreRouteDestinations: ViewModifier {
             } else {
                 deletedSourceState
             }
-        case .searchInSource(let sourceURL):
-            SearchView(sessionScope: SearchSourceScope(
+        case .searchInSource(let sourceURL, let query):
+            SearchView(initialQuery: query, sessionScope: SearchSourceScope(
                 mode: .custom, selectedSourceURLs: [sourceURL]
             ))
             .environmentObject(store)

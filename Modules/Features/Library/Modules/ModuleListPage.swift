@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// A module row's 查看全部 (Phase 6f-2): its list as a grid of covers, a page at a time.
+/// A module row's 查看全部 (Phase 6f-2): its list as a grid of covers, a page at a time. Also a
+/// genre's page, and what the module's own search in 資源庫 found (`ModuleListRoute.keyword`).
 struct ModuleListPage: View {
     let route: ModuleListRoute
     @StateObject private var model: ModuleListModel
@@ -56,9 +57,15 @@ struct ModuleListPage: View {
         case .loaded:
             let cards = cards
             if cards.isEmpty {
-                ContentUnavailableView {
-                    UnavailableLabel(localized(route.tag == nil ? "此目錄沒有內容" : "這個分類沒有其他作品"),
-                                     systemImage: "books.vertical")
+                if let keyword = route.keyword {
+                    ContentUnavailableView {
+                        UnavailableLabel(String(format: localized("沒有找到「%@」"), keyword), systemImage: "magnifyingglass")
+                    }
+                } else {
+                    ContentUnavailableView {
+                        UnavailableLabel(localized(route.tag == nil ? "此目錄沒有內容" : "這個分類沒有其他作品"),
+                                         systemImage: "books.vertical")
+                    }
                 }
             } else {
                 HomeSectionCards(layout: HomeSectionLayout(style: .coverGrid), cards: cards,

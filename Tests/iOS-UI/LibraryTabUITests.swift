@@ -14,8 +14,9 @@ final class LibraryTabUITests: XCTestCase {
 
     /// A source library in a scratch directory, for `-book-source-store-dir`: the simulator's own
     /// sources are never touched, and 來源配置 shows only once one has a discover page. Each entry
-    /// is a name and its group; `discovers` gives each a discover page.
-    private func sourceDirectory(_ entries: [(name: String, group: String)], discovers: Bool = true) throws -> URL {
+    /// is a name and its group; `discovers` gives each a discover page, `searches` a search.
+    private func sourceDirectory(_ entries: [(name: String, group: String)], discovers: Bool = true,
+                                 searches: Bool = false) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("LibraryTabUITests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -29,6 +30,10 @@ final class LibraryTabUITests: XCTestCase {
             if discovers {
                 source["exploreUrl"] = "熱門::https://library-ui-test-\(index).example/hot"
                 source["enabledExplore"] = true
+            }
+            if searches {
+                source["searchUrl"] = "https://library-ui-test-\(index).example/search?q={{key}}"
+                source["ruleSearch"] = ["bookList": "li", "name": "h3@text", "bookUrl": "a@href"]
             }
             return source
         }
@@ -272,6 +277,57 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertTrue(app.buttons["library.source.女频書源"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["library.source.男频書源甲"].exists)
         XCTAssertFalse(app.buttons["library.sources.all"].exists)
+    }
+
+    /// A source's discover page searches that source alone (maintainer, 2026-11-26): what is
+    /// typed in the page's own search opens 搜索 with it, scoped to the source. On iOS 26 and
+    /// later the search is a button at the bottom trailing corner until tapped; below, a field
+    /// under the navigation bar. Run on iOS 17.5 for the field closing as the push begins.
+    @MainActor
+    func testSourcePageSearchesThatSource() throws {
+        let directory = try sourceDirectory([("可搜尋的來源", "搜尋測試")], searches: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try launch(["-book-source-store-dir", directory.path])
+
+        let group = scrolledTo(app.buttons["library.group.搜尋測試"].firstMatch, in: app)
+        XCTAssertTrue(group.waitForExistence(timeout: 10), app.debugDescription)
+        group.tap()
+        let source = app.buttons["library.source.可搜尋的來源"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
+        source.tap()
+        XCTAssertTrue(app.navigationBars["可搜尋的來源"].waitForExistence(timeout: 5), app.debugDescription)
+
+        let prompt = NSPredicate(format: "placeholderValue == %@", "輸入書名或作者")
+        var field = app.searchFields.matching(prompt).firstMatch
+        if !field.waitForExistence(timeout: 3) {
+            // iOS 26+: the minimized search, a button in the bottom bar (the tab bar is hidden).
+            let button = app.toolbars.buttons.firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the search takes the tab bar's place")
+            attach(app, "source-page-search-button")
+            button.tap()
+            field = app.searchFields.matching(prompt).firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        } else {
+            attach(app, "source-page-search-field")
+        }
+        field.tap()
+        // Latin letters: XCUITest's typing of Chinese submits a search field on its own.
+        field.typeText("fate\n")
+
+        // 搜索's title reads 搜尋 in 繁體中文.
+        XCTAssertTrue(app.navigationBars["搜尋"].waitForExistence(timeout: 10), app.debugDescription)
+        let query = app.searchFields.firstMatch
+        XCTAssertTrue(query.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(query.value as? String, "fate", "the search page starts with what was typed")
+        let scope = app.buttons["搜尋範圍"].firstMatch
+        XCTAssertTrue(scope.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(scope.value as? String, "已選 1 個來源配置", "only this source is searched")
+        attach(app, "source-search-results")
+
+        back(app)
+        XCTAssertTrue(app.navigationBars["可搜尋的來源"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.navigationBars["搜尋"].exists, app.debugDescription)
     }
 
     /// 來源配置 with no source that has a discover page: no section, not a card that leads to

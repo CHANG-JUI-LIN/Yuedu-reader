@@ -51,11 +51,12 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         return try await page(of: entry, parameters: parameters, after: cursor)
     }
 
-    /// The first page of the module's search for `keyword` (搜索, Phase 6g); nil when the
-    /// module has no search, or none for a keyword this short (`minKeywordLength`).
-    func search(_ keyword: String) async throws -> CollectionPage? {
+    /// A page of the module's search for `keyword`: 搜索 asks for the first (Phase 6g), the
+    /// module's own search in 資源庫 for the rest as well (`ModuleListRoute.keyword`). Nil when
+    /// the module has no search, or none for a keyword this short (`minKeywordLength`).
+    func search(_ keyword: String, after cursor: CollectionCursor? = nil) async throws -> CollectionPage? {
         guard let search = module.search, search.takes(keyword: keyword) else { return nil }
-        return try await page(of: search, parameters: [:], after: nil, keyword: keyword)
+        return try await page(of: search, parameters: [:], after: cursor, keyword: keyword)
     }
 
     // MARK: - Home

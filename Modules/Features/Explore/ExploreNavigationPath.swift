@@ -7,8 +7,9 @@ enum ExploreNavigationRoute: Hashable {
     case book(OnlineBook)
     /// A category of any source — from its source's page or a section of the home.
     case sourceCategory(ExploreCategoryReference)
-    /// Legado's 搜索 on a source: the search page scoped to that source alone.
-    case searchInSource(sourceURL: String)
+    /// Legado's 搜索 on a source: the search page scoped to that source alone, searching `query`
+    /// at once when there is one (the search field on the source's discover page).
+    case searchInSource(sourceURL: String, query: String = "")
     /// 書源管理, pushed on every version.
     case sourceManager
     /// 聚合設定, from 探索's ••• (中繼資料語言偏好推薦, 參與聚合的來源; Phase 5 plan, decision 36).
@@ -46,8 +47,8 @@ enum ExploreNavigationRoute: Hashable {
             return lhsBook.id == rhsBook.id
         case (.sourceCategory(let lhsReference), .sourceCategory(let rhsReference)):
             return lhsReference == rhsReference
-        case (.searchInSource(let lhsURL), .searchInSource(let rhsURL)):
-            return lhsURL == rhsURL
+        case (.searchInSource(let lhsURL, let lhsQuery), .searchInSource(let rhsURL, let rhsQuery)):
+            return lhsURL == rhsURL && lhsQuery == rhsQuery
         case (.sourceManager, .sourceManager), (.aggregationSettings, .aggregationSettings),
              (.subscriptions, .subscriptions), (.aiRecommendations, .aiRecommendations),
              (.moduleManager, .moduleManager), (.genres, .genres):
@@ -82,9 +83,10 @@ enum ExploreNavigationRoute: Hashable {
         case .sourceCategory(let reference):
             hasher.combine(3)
             hasher.combine(reference)
-        case .searchInSource(let sourceURL):
+        case .searchInSource(let sourceURL, let query):
             hasher.combine(4)
             hasher.combine(sourceURL)
+            hasher.combine(query)
         case .sourceManager:
             hasher.combine(7)
         case .aggregationSettings:

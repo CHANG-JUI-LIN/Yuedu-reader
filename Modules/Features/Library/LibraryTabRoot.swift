@@ -147,6 +147,8 @@ struct LibraryTabRoot: View {
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
         .environment(\.explorePush, .onto($path, store: store))
+        // A source's discover page and a module's page searched from their own corner (2026-11-26).
+        .environment(\.offersPageSearch, true)
     }
 
     // MARK: •••

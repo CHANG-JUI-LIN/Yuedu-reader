@@ -34,10 +34,10 @@ struct ModuleListPageTests {
         let folder: URL
     }
 
-    private func makeFixture(installed: Bool = true) async throws -> Fixture {
+    private func makeFixture(installed: Bool = true, appVersion: String = "2.0.8") async throws -> Fixture {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleListPage-\(UUID().uuidString)")
         let store = RuleModuleStore(directory: folder)
-        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8", officialFiles: { [] })
+        let library = RuleModuleLibrary(store: store, appVersion: appVersion, officialFiles: { [] })
         if installed { try await library.install(moduleJSON(), from: nil) } else { await library.load() }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ModuleStub.self]
@@ -123,6 +123,67 @@ struct ModuleListPageTests {
                                    library: g.library, client: g.client)
         await gone.load()
         #expect(gone.state == .missing)
+    }
+
+    /// A module whose search pages (the module page's own search in 資源庫).
+    private func searchModuleJSON() -> Data {
+        let object: [String: Any] = [
+            // `minKeywordLength` is format 3.0.
+            "id": "m.search", "title": "搜尋模組", "version": "1.0", "requiredVersion": "3.0", "hosts": ["example.com"],
+            "modules": [[String: Any]](),
+            "search": [
+                "params": [["name": "page", "type": "page"]],
+                "minKeywordLength": 2,
+                "request": ["url": "https://example.com/s?q={{keyword}}&p={{page}}"],
+                "list": ["items": "$.books[*]", "title": "$.title", "url": "$.href"],
+            ] as [String: Any],
+        ]
+        return try! JSONSerialization.data(withJSONObject: object)
+    }
+
+    @Test("a module page's search lists what the module's search finds, page by page")
+    func search() async throws {
+        let f = try await makeFixture(appVersion: "3.0")
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        try await f.library.install(searchModuleJSON(), from: nil)
+        ModuleStub.install([
+            "example.com/s?q=%E4%B8%89%E9%AB%94&p=1": .json(#"{"books":[{"title":"三體","href":"https://example.com/b/1"}]}"#),
+            "example.com/s?q=%E4%B8%89%E9%AB%94&p=2": .json(#"{"books":[{"title":"三體II","href":"https://example.com/b/2"}]}"#),
+            "example.com/s?q=%E4%B8%89%E9%AB%94&p=3": .json(#"{"books":[]}"#),
+        ])
+        let route = ModuleListRoute.search("三體", moduleID: "m.search")
+        #expect(route.title == "三體", "titled with what was searched, as a genre's page with the genre")
+        let model = ModuleListModel(route: route, library: f.library, client: f.client)
+        await model.load()
+        #expect(model.state == .loaded)
+        #expect(titles(model) == ["三體"])
+        await model.loadMore()
+        #expect(titles(model) == ["三體", "三體II"])
+        await model.loadMore()
+        #expect(!model.canLoadMore)
+
+        // Too short for the module's search: nothing is asked, and nothing is listed.
+        ModuleStub.install([:])
+        let short = ModuleListModel(route: .search("三", moduleID: "m.search"), library: f.library, client: f.client)
+        await short.load()
+        #expect(short.state == .loaded)
+        #expect(short.entries.isEmpty)
+        #expect(ModuleStub.urls.isEmpty)
+    }
+
+    @Test("a module page's search of a module without a search, or turned off, says the module is missing")
+    func searchMissing() async throws {
+        let f = try await makeFixture(appVersion: "3.0")
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        try await f.library.install(searchModuleJSON(), from: nil)
+        let listOnly = ModuleListModel(route: .search("三體", moduleID: "m.list"), library: f.library, client: f.client)
+        await listOnly.load()
+        #expect(listOnly.state == .missing)
+
+        f.library.setEnabled(false, id: "m.search")
+        let off = ModuleListModel(route: .search("三體", moduleID: "m.search"), library: f.library, client: f.client)
+        await off.load()
+        #expect(off.state == .missing)
     }
 
     @Test("查看全部 of a module row opens its list with the section's values")

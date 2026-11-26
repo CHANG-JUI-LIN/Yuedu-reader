@@ -23,6 +23,19 @@ struct ExploreNavigationAndMetadataTests {
         #expect(navigation.path.isEmpty)
     }
 
+    @Test("a source's search from its discover page is a route of its own for each query")
+    func searchInSourceCarriesItsQuery() {
+        let url = "https://fixture.example"
+        #expect(ExploreNavigationRoute.searchInSource(sourceURL: url) == .searchInSource(sourceURL: url, query: ""))
+        #expect(ExploreNavigationRoute.searchInSource(sourceURL: url, query: "三體")
+            == .searchInSource(sourceURL: url, query: "三體"))
+        #expect(ExploreNavigationRoute.searchInSource(sourceURL: url, query: "三體")
+            != .searchInSource(sourceURL: url, query: "球狀閃電"))
+        let routes: Set<ExploreNavigationRoute> = [.searchInSource(sourceURL: url, query: "三體"),
+                                                   .searchInSource(sourceURL: url, query: "球狀閃電")]
+        #expect(routes.count == 2, "the query is hashed with the source")
+    }
+
     @Test("detail tags augment rather than erase discover tags")
     func detailTagsPreserveDiscoverTags() {
         let tags = OnlineBookMetadataFormatter.tags(
